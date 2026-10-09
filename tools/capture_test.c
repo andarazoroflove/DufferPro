@@ -11,7 +11,14 @@ int main(void) {
     golf_init(&gs);
     render_init(&rc, fb);
     
-    /* 1. Play Mode (Tee view) */
+    /* 1. Splash Screen */
+    gs.mode = MODE_SPLASH;
+    rc.tick_count = 15; /* Active pulsing prompt */
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_splash.bmp");
+    printf("Saved screenshot_splash.bmp\n");
+    
+    /* 2. Play Mode (Tee view) */
     golf_set_mode(&gs, MODE_PLAY);
     render_center_camera_on(&rc, gs.tee_gx, gs.tee_gy, gs.grid[gs.tee_gx][gs.tee_gy].elevation);
     render_pan_camera(&rc, 0, 70);
@@ -19,7 +26,7 @@ int main(void) {
     render_save_bmp(&rc, "screenshot_play.bmp");
     printf("Saved screenshot_play.bmp\n");
     
-    /* 2. Build Mode */
+    /* 3. Build Mode */
     golf_set_mode(&gs, MODE_BUILD);
     rc.mouse_gx = gs.tee_gx + 2;
     rc.mouse_gy = gs.tee_gy - 4;
@@ -28,7 +35,7 @@ int main(void) {
     render_save_bmp(&rc, "screenshot_build.bmp");
     printf("Saved screenshot_build.bmp\n");
     
-    /* 3. Green & Pin View */
+    /* 4. Green & Pin View */
     golf_set_mode(&gs, MODE_PLAY);
     render_center_camera_on(&rc, gs.pin_gx, gs.pin_gy, gs.grid[gs.pin_gx][gs.pin_gy].elevation);
     render_pan_camera(&rc, 0, 50);

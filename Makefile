@@ -1,4 +1,4 @@
-# RetroSimGolf-1H Makefile
+# Duffer Makefile
 # Portable C99 Makefile supporting MinGW (Windows), Linux, and macOS
 
 CC = gcc
@@ -8,7 +8,7 @@ SRCS = src/golf_core.c src/golf_render.c src/main.c
 OBJS = src/golf_core.o src/golf_render.o src/main.o
 
 ifeq ($(OS),Windows_NT)
-    TARGET = build/retrosimgolf.exe
+    TARGET = build/duffer.exe
     ifneq ($(wildcard vendor/SDL2/include/SDL2/SDL.h),)
         INCLUDES = -Isrc -Ivendor/SDL2/include
         LDFLAGS = -Lvendor/SDL2/lib -lmingw32 -lSDL2main -lSDL2 -mwindows
@@ -17,7 +17,7 @@ ifeq ($(OS),Windows_NT)
         LDFLAGS = $(shell sdl2-config --libs 2>nul) -mwindows
     endif
 else
-    TARGET = build/retrosimgolf
+    TARGET = build/duffer
     INCLUDES = -Isrc $(shell sdl2-config --cflags)
     LDFLAGS = $(shell sdl2-config --libs) -lm
 endif
@@ -36,6 +36,7 @@ $(TARGET): $(OBJS)
 
 clean:
 	@if exist src\*.o del /Q /F src\*.o
+	@if exist build\duffer.exe del /Q /F build\duffer.exe
 	@if exist build\retrosimgolf.exe del /Q /F build\retrosimgolf.exe
 else
 $(TARGET): $(OBJS)
@@ -44,7 +45,7 @@ $(TARGET): $(OBJS)
 	@echo Built target: $(TARGET)
 
 clean:
-	@rm -f src/*.o build/retrosimgolf build/retrosimgolf.exe
+	@rm -f src/*.o build/duffer build/duffer.exe build/retrosimgolf build/retrosimgolf.exe
 endif
 
 .PHONY: all clean

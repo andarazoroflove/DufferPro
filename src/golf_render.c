@@ -3,10 +3,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "splash_art.h"
 
 /* Pixel format: 0xAARRGGBB */
+#ifndef COLOR_ARGB
 #define COLOR_ARGB(a, r, g, b) (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 #define COLOR_RGB(r, g, b)     COLOR_ARGB(255, r, g, b)
+#endif
+
+/* Splash Screen Art Buffer */
+static uint32_t s_splash_art[SCREEN_W * SCREEN_H];
 
 /* Procedural Sprite Buffers */
 static uint32_t s_tile_rough[4][TILE_W * TILE_H];
@@ -527,6 +533,7 @@ void render_init(RenderContext *rc, uint32_t *buffer) {
     rc->mouse_valid = false;
     rc->tick_count = 0;
     generate_procedural_graphics();
+    generate_splash_background(s_splash_art);
 }
 
 void render_free(RenderContext *rc) {
@@ -914,9 +921,33 @@ static void render_hud(RenderContext *rc, const GolfState *gs) {
     }
 }
 
+/* Splash Screen Presentation */
+void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
+    memcpy(rc->framebuffer, s_splash_art, sizeof(s_splash_art));
+    
+    /* Subtitle in green ribbon */
+    draw_text(rc, 270, 122, "* A 90s RETRO ISOMETRIC GOLF ENGINE *", COLOR_RGB(255, 235, 110), true);
+    
+    /* Blinking prompt at bottom */
+    draw_rect(rc, 150, 426, 340, 30, COLOR_RGB(18, 26, 36));
+    draw_rect_border(rc, 150, 426, 340, 30, COLOR_RGB(235, 195, 65));
+    
+    bool pulse = (tick_count / 30) & 1;
+    uint32_t txt_col = pulse ? COLOR_RGB(255, 245, 130) : COLOR_RGB(200, 180, 80);
+    draw_text(rc, 172, 437, "[ CLICK OR PRESS SPACE TO TEE OFF ]", txt_col, true);
+    
+    /* Bottom status info */
+    draw_text(rc, 16, SCREEN_H - 16, "DUFFER V1.0 - 100% ANSI C99 FIXED-POINT ENGINE", COLOR_RGB(200, 230, 200), true);
+}
+
 /* Main Frame Render Function */
 void render_frame(RenderContext *rc, const GolfState *gs) {
     rc->tick_count++;
+    
+    if (gs->mode == MODE_SPLASH) {
+        render_splash_screen(rc, rc->tick_count);
+        return;
+    }
     
     /* 1. Clear background to atmospheric sky color (classic soft retro blue) */
     draw_rect(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(138, 172, 204));

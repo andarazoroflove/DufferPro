@@ -49,4 +49,7 @@ void draw_rect_border(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_
 /* Screenshot helper (saves 640x480 BMP) */
 bool render_save_bmp(const RenderContext *rc, const char *filename);
 
+/* Splash Screen Renderer */
+void render_splash_screen(RenderContext *rc, uint32_t tick_count);
+
 #endif /* GOLF_RENDER_H */

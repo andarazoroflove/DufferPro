@@ -57,8 +57,9 @@ typedef struct {
 
 /* Game Modes */
 typedef enum {
-    MODE_BUILD = 0,
-    MODE_PLAY
+    MODE_SPLASH = 0,
+    MODE_PLAY,
+    MODE_BUILD
 } GameMode;
 
 /* Build Tools */
@@ -211,3 +212,4 @@ int32_t golf_distance_to_pin_yards(const GolfState *gs);
 const ClubData* golf_get_club_data(ClubType club);
 
 #endif /* GOLF_CORE_H */
+

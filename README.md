@@ -1,19 +1,20 @@
-# RetroSimGolf-1H ⛳
+# Duffer ⛳
 
 > **A Lightweight, Single-Hole 2.5D Isometric Golf Engine**  
 > Inspired by late-90s and early-2000s classics (*Sid Meier's SimGolf*, *RollerCoaster Tycoon* terrain).
 
-![Play Mode](docs/screenshots/screenshot_play.png)
+![Duffer Title Screen](docs/screenshots/screenshot_splash.png)
 
 ---
 
 ## Highlights & Architectural Pillars
 
 - **Pure ANSI C (C99):** No C++, OOP runtimes, external math frameworks, or GPU shader pipelines.
+- **Sweet Retro Splash Screen:** High-nostalgia title screen featuring a custom 3D golden "DUFFER" logo, a golfer in shorts and polo examining his irons beside a vintage leather bag, and rolling fairway scenery.
 - **Decoupled Simulation Core:** Headless simulation in `golf_core.c` and `golf_core.h` with zero OS or graphical dependencies.
 - **Deterministic 16.16 Fixed-Point Math:** `fixed_math.h` implements complete 16.16 arithmetic, integer square root, and 256-angle sine/cosine LUT. **Zero floating-point (`float`/`double`)** calculations in physics or vector updates.
 - **2:1 Stepped Isometric Projection:** 64×32 pixel diamond tiles, 12-pixel discrete elevation tiers, vertical cliff skirts to seal tier gaps, and Y-sorted dynamic entities.
-- **Self-Contained Procedural Pixel Art:** All tiles (Fairway mowing stripes, Rough grass stippling, Sand bunker grain, Green swirl, Animated water ripples), cliff rock strata, trees, rocks, flags, golfer, and HUD fonts are procedurally generated in code. Runs immediately without external asset files!
+- **Self-Contained Procedural Pixel Art:** All tiles (Fairway mowing stripes, Rough grass stippling, Sand bunker grain, Green swirl, Animated water ripples), cliff rock strata, trees, rocks, flags, golfer, splash screen, and HUD fonts are procedurally generated in code. Runs immediately without external asset files!
 - **Dual Mode Workflow:**
   - **Build Mode:** Interactive hole routing, Tee & Pin cup placement, automatic distance (yards) & Par computation (Par 3/4/5), brush-based Fairway painting with 16-bitmask autotiling, Green painting, Sand traps, and Obstacle placement (Pine, Oak, Granite Boulders).
   - **Play Mode:** Authentic 3-click links-style swing gauge (Power & Accuracy snap), club selection (Driver to Putter), trajectory integration (wind offset, gravity, drag, tree canopy deflections, surface restitution, and slope rolling).
@@ -22,9 +23,9 @@
 
 ## Screenshots
 
-| Play Mode (Tee Box & Fairway) | Build Mode (Hole Sculpting) | Green & Pin Cup View |
-| :---: | :---: | :---: |
-| ![Play Mode](docs/screenshots/screenshot_play.png) | ![Build Mode](docs/screenshots/screenshot_build.png) | ![Green View](docs/screenshots/screenshot_green.png) |
+| Title Splash Screen | Play Mode (Tee Box) | Build Mode (Hole Sculpting) | Green & Pin Cup View |
+| :---: | :---: | :---: | :---: |
+| ![Title Splash](docs/screenshots/screenshot_splash.png) | ![Play Mode](docs/screenshots/screenshot_play.png) | ![Build Mode](docs/screenshots/screenshot_build.png) | ![Green View](docs/screenshots/screenshot_green.png) |
 
 ---
 
@@ -36,10 +37,11 @@ Duffer/
 ├── .gitignore                 # Sanitized Git ignore rules
 ├── README.md                  # Comprehensive engine documentation
 ├── build/                     # Runnable executable output directory
-│   ├── retrosimgolf.exe       # Game binary
+│   ├── duffer.exe             # Game binary
 │   └── SDL2.dll               # SDL2 32-bit runtime (MinGW)
 ├── docs/
-│   └── screenshots/           # Engine screenshots
+│   └── screenshots/           # In-engine screenshots
+│       ├── screenshot_splash.png
 │       ├── screenshot_play.png
 │       ├── screenshot_build.png
 │       └── screenshot_green.png
@@ -50,10 +52,12 @@ Duffer/
 │   ├── golf_core.c            # Procedural terrain, 16-mask autotiler, physics
 │   ├── golf_render.h          # Software isometric blitter interface
 │   ├── golf_render.c          # Procedural pixel art, cliff skirts, HUD, BMP saver
+│   ├── splash_art.h           # Procedural splash art rasterizer & 3D logo
 │   └── main.c                 # SDL2 frontend, event loop, input mapping
 ├── tools/
 │   ├── capture_test.c         # Headless screenshot verification utility
-│   └── gen_font.py            # Font generator script
+│   ├── gen_font.py            # Font generator script
+│   └── test_splash.py         # Splash prototype script
 └── vendor/
     └── SDL2/                  # Vendored 32-bit MinGW development library
 ```
@@ -109,6 +113,7 @@ All kinematic vectors use 16.16 fixed-point arithmetic (`fixed`):
 ### Universal Controls
 | Key / Input | Action |
 | :--- | :--- |
+| `[SPACE]` / **Any Key** / **Click** | Dismiss Splash Screen / Tee Off |
 | `[TAB]` | Toggle between **Play Mode** and **Build Mode** |
 | `[R]` | Reset ball to Tee marker |
 | `[G]` | Regenerate new procedural terrain & routing |
@@ -142,7 +147,7 @@ mingw32-make
 
 # Run from build directory
 cd build
-./retrosimgolf.exe
+./duffer.exe
 ```
 
 ### Linux (Ubuntu / Debian / Fedora / Arch)
@@ -156,7 +161,7 @@ sudo dnf install SDL2-devel gcc make
 
 # Compile & run
 make
-./build/retrosimgolf
+./build/duffer
 ```
 
 ### macOS
@@ -164,7 +169,7 @@ Install SDL2 via Homebrew:
 ```sh
 brew install sdl2
 make
-./build/retrosimgolf
+./build/duffer
 ```
 
 ---

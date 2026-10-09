@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
     }
     
     SDL_Window *window = SDL_CreateWindow(
-        "RetroSimGolf-1H [SimGolf Style Engine]",
+        "Duffer [Retro Golf Engine]",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_W,
@@ -141,6 +141,7 @@ int main(int argc, char *argv[]) {
     /* Center camera on Tee */
     if (s_game_state.has_tee) {
         render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+        render_pan_camera(&s_render_ctx, 0, 70);
     }
     
     bool running = true;
@@ -156,6 +157,18 @@ int main(int argc, char *argv[]) {
                     break;
                     
                 case SDL_KEYDOWN:
+                    if (s_game_state.mode == MODE_SPLASH) {
+                        if (event.key.keysym.sym == SDLK_ESCAPE) {
+                            running = false;
+                        } else {
+                            golf_set_mode(&s_game_state, MODE_PLAY);
+                            if (s_game_state.has_tee) {
+                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
+                            }
+                        }
+                        break;
+                    }
                     switch (event.key.keysym.sym) {
                         case SDLK_ESCAPE:
                             running = false;
@@ -279,6 +292,14 @@ int main(int argc, char *argv[]) {
                     break;
                     
                 case SDL_MOUSEBUTTONDOWN:
+                    if (s_game_state.mode == MODE_SPLASH) {
+                        golf_set_mode(&s_game_state, MODE_PLAY);
+                        if (s_game_state.has_tee) {
+                            render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                            render_pan_camera(&s_render_ctx, 0, 70);
+                        }
+                        break;
+                    }
                     if (event.button.button == SDL_BUTTON_RIGHT) {
                         s_rbutton_down = true;
                         s_prev_mouse_x = event.button.x;

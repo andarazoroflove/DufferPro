@@ -434,12 +434,12 @@ void golf_place_default_routing(GolfState *gs) {
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
-    set_banner(gs, "WELCOME TO RETRO SIM GOLF", 180);
+    set_banner(gs, "DUFFER - READY TO TEE OFF", 180);
 }
 
 void golf_init(GolfState *gs) {
     memset(gs, 0, sizeof(GolfState));
-    gs->mode = MODE_PLAY;
+    gs->mode = MODE_SPLASH;
     gs->current_tool = TOOL_FAIRWAY;
     gs->brush_size = 1;
     gs->current_club = CLUB_1W;
@@ -930,3 +930,4 @@ void golf_tick(GolfState *gs) {
         }
     }
 }
+

@@ -101,3 +101,4 @@ lines.append('#endif /* FONT8X8_H */')
 with open('src/font8x8.h', 'w') as f:
     f.write('\n'.join(lines) + '\n')
 print('Crisp font written to src/font8x8.h')
+

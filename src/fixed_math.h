@@ -79,3 +79,4 @@ static inline fixed fixed_cos(uint8_t angle) {
 uint8_t fixed_atan2(fixed dy, fixed dx);
 
 #endif /* FIXED_MATH_H */
+

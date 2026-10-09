@@ -3,6 +3,8 @@
 *.obj
 *.exe
 *.dll.a
+build/duffer
+build/duffer.exe
 build/retrosimgolf
 build/retrosimgolf.exe
 
@@ -21,3 +23,4 @@ tools/capture_test.exe
 *~
 .DS_Store
 Thumbs.db
+

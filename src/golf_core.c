@@ -238,6 +238,7 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     gs->golfer.walk_anim_frame = 0;
     gs->golfer.walk_ticks = 0;
     gs->golfer.step_timer = 0;
+    gs->golfer.current_z = gs->ball.ground_z;
     gs->audio_event = AUDIO_EVT_NONE;
     
     /* Turn aim toward pin */
@@ -1272,7 +1273,7 @@ void golf_tick(GolfState *gs) {
         fixed gdx = gs->golfer.target_x - gs->golfer.x;
         fixed gdy = gs->golfer.target_y - gs->golfer.y;
         fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
-        fixed walk_spd = 7000; /* ~0.107 tiles per tick (~6.4 tiles/sec) */
+        fixed walk_spd = 3500; /* ~0.053 tiles per tick (~3.2 tiles/sec, ~22 yards/sec) */
         
         if (gdist <= walk_spd || gdist < TO_FIXED(1) / 3) {
             golf_golfer_arrive_at_ball(gs);
@@ -1281,10 +1282,26 @@ void golf_tick(GolfState *gs) {
             gs->golfer.x += FMUL(walk_spd, fixed_cos(gs->golfer.facing_angle));
             gs->golfer.y += FMUL(walk_spd, fixed_sin(gs->golfer.facing_angle));
             gs->golfer.walk_ticks++;
-            gs->golfer.walk_anim_frame = (gs->golfer.walk_ticks / 7) % 4;
+            gs->golfer.walk_anim_frame = (gs->golfer.walk_ticks / 10) % 4;
+            
+            /* Smooth continuous elevation tracking - prevents popping or sinking on slopes */
+            fixed target_gz = golf_get_ground_z_fixed(gs, gs->golfer.x, gs->golfer.y);
+            /* Never sink below dry-land lowland shore elevation (12px) even if clipping water edge */
+            if (target_gz < TO_FIXED(HEIGHT_STEP_PX)) {
+                target_gz = TO_FIXED(HEIGHT_STEP_PX);
+            }
+            fixed z_diff = target_gz - gs->golfer.current_z;
+            fixed z_step = 22000; /* ~0.33 px per tick (~20 px/sec) */
+            if (z_diff > z_step) {
+                gs->golfer.current_z += z_step;
+            } else if (z_diff < -z_step) {
+                gs->golfer.current_z -= z_step;
+            } else {
+                gs->golfer.current_z = target_gz;
+            }
             
             gs->golfer.step_timer++;
-            if (gs->golfer.step_timer >= 12) {
+            if (gs->golfer.step_timer >= 20) {
                 gs->golfer.step_timer = 0;
                 SurfaceType surf = golf_get_surface_at(gs, gs->golfer.x, gs->golfer.y);
                 if (surf == SURF_SAND) {
@@ -1302,6 +1319,7 @@ void golf_tick(GolfState *gs) {
 void golf_golfer_arrive_at_ball(GolfState *gs) {
     gs->golfer.x = gs->ball.x;
     gs->golfer.y = gs->ball.y;
+    gs->golfer.current_z = gs->ball.ground_z;
     gs->golfer.target_x = gs->ball.x;
     gs->golfer.target_y = gs->ball.y;
     gs->golfer.state = GOLFER_STATE_READY;

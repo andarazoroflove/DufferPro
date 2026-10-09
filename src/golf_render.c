@@ -1136,7 +1136,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
     /* 1. Clear background to atmospheric sky color (classic soft retro blue) */
     draw_rect(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(138, 172, 204));
     
-    /* 2. Painter's Algorithm Back-to-Front Isometric Tile & Feature Rendering */
+    /* 2. Pass 1: Painter's Algorithm Back-to-Front Isometric Ground Surface */
     for (int gy = 0; gy < GRID_H; ++gy) {
         for (int gx = 0; gx < GRID_W; ++gx) {
             const GolfTile *tile = &gs->grid[gx][gy];
@@ -1191,69 +1191,181 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             if (rc->mouse_valid && rc->mouse_gx == gx && rc->mouse_gy == gy) {
                 draw_tile_highlight(rc, sx, sy, (gs->mode == MODE_BUILD) ? COLOR_RGB(255, 230, 60) : COLOR_RGB(200, 240, 255));
             }
+        }
+    }
+    
+    /* 3. Pass 2: Depth-Sorted Entities (Scenery, Pin Flag, Golfer & Ball)
+     * All entities are rendered ON TOP of the terrain surface and sorted by ground contact Y,
+     * ensuring the golfer always walks smoothly OVER the terrain and never sinks into it.
+     */
+    typedef enum {
+        RENT_FLAG = 0,
+        RENT_PINE,
+        RENT_OAK,
+        RENT_ROCK,
+        RENT_GOLFER,
+        RENT_BALL
+    } RenderEntityType;
+
+    typedef struct {
+        int32_t base_sy;
+        int32_t draw_sx;
+        int32_t draw_sy;
+        RenderEntityType type;
+        const uint32_t *sprite;
+        int w, h;
+    } RenderEntityItem;
+
+    #define MAX_RENDER_ENTITIES 512
+    static RenderEntityItem s_entities[MAX_RENDER_ENTITIES];
+    int num_entities = 0;
+
+    /* Collect visible stationary scenery & pin flag */
+    for (int gy = 0; gy < GRID_H; ++gy) {
+        for (int gx = 0; gx < GRID_W; ++gx) {
+            const GolfTile *tile = &gs->grid[gx][gy];
+            int elevation = tile->elevation;
+            
+            int sx, sy;
+            grid_to_screen(gx, gy, elevation, rc->camera_x, rc->camera_y, &sx, &sy);
+            
+            if (sx + 64 < 0 || sx - 32 >= SCREEN_W || sy + 64 < 0 || sy - 48 >= SCREEN_H) {
+                continue;
+            }
             
             /* Cup & Pin Flag (4-frame waving pennant) */
-            if (gs->has_pin && gs->pin_gx == gx && gs->pin_gy == gy) {
-                blit_sprite(rc, sx + 24, sy - 12, s_sprite_flag[(rc->tick_count / 8) % 4], SPRITE_FLAG_W, SPRITE_FLAG_H);
+            if (gs->has_pin && gs->pin_gx == gx && gs->pin_gy == gy && num_entities < MAX_RENDER_ENTITIES) {
+                s_entities[num_entities++] = (RenderEntityItem){
+                    .base_sy = sy + 16,
+                    .draw_sx = sx + 24,
+                    .draw_sy = sy - 12,
+                    .type = RENT_FLAG,
+                    .sprite = s_sprite_flag[(rc->tick_count / 8) % 4],
+                    .w = SPRITE_FLAG_W,
+                    .h = SPRITE_FLAG_H
+                };
             }
             
             /* Natural Obstacles */
-            if (tile->feature == FEAT_PINE) {
-                blit_sprite(rc, sx + 16, sy - 28, s_sprite_pine, SPRITE_PINE_W, SPRITE_PINE_H);
-            } else if (tile->feature == FEAT_OAK) {
-                blit_sprite(rc, sx + 13, sy - 26, s_sprite_oak, SPRITE_OAK_W, SPRITE_OAK_H);
-            } else if (tile->feature == FEAT_ROCK) {
-                blit_sprite(rc, sx + 20, sy + 4, s_sprite_rock, SPRITE_ROCK_W, SPRITE_ROCK_H);
+            if (tile->feature == FEAT_PINE && num_entities < MAX_RENDER_ENTITIES) {
+                s_entities[num_entities++] = (RenderEntityItem){
+                    .base_sy = sy + 16,
+                    .draw_sx = sx + 16,
+                    .draw_sy = sy - 28,
+                    .type = RENT_PINE,
+                    .sprite = s_sprite_pine,
+                    .w = SPRITE_PINE_W,
+                    .h = SPRITE_PINE_H
+                };
+            } else if (tile->feature == FEAT_OAK && num_entities < MAX_RENDER_ENTITIES) {
+                s_entities[num_entities++] = (RenderEntityItem){
+                    .base_sy = sy + 16,
+                    .draw_sx = sx + 13,
+                    .draw_sy = sy - 26,
+                    .type = RENT_OAK,
+                    .sprite = s_sprite_oak,
+                    .w = SPRITE_OAK_W,
+                    .h = SPRITE_OAK_H
+                };
+            } else if (tile->feature == FEAT_ROCK && num_entities < MAX_RENDER_ENTITIES) {
+                s_entities[num_entities++] = (RenderEntityItem){
+                    .base_sy = sy + 16,
+                    .draw_sx = sx + 20,
+                    .draw_sy = sy + 4,
+                    .type = RENT_ROCK,
+                    .sprite = s_sprite_rock,
+                    .w = SPRITE_ROCK_W,
+                    .h = SPRITE_ROCK_H
+                };
             }
+        }
+    }
+    
+    /* Collect Golfer Entity */
+    if (gs->mode == MODE_PLAY && num_entities < MAX_RENDER_ENTITIES) {
+        fixed gfx = gs->golfer.x;
+        fixed gfy = gs->golfer.y;
+        fixed gz = (gs->golfer.current_z > 0) ? gs->golfer.current_z : golf_get_ground_z_fixed(gs, gfx, gfy);
+        if (gz < TO_FIXED(HEIGHT_STEP_PX)) gz = TO_FIXED(HEIGHT_STEP_PX);
+        
+        int32_t g_sx = FROM_FIXED(FMUL(gfx - gfy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        int32_t g_sy = FROM_FIXED(FMUL(gfx + gfy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + rc->camera_y + TILE_HALF_H;
+        
+        if (g_sx + SPRITE_GOLFER_W >= 0 && g_sx - SPRITE_GOLFER_W < SCREEN_W &&
+            g_sy >= 0 && g_sy - SPRITE_GOLFER_H < SCREEN_H) {
             
-            /* Golfer Sprite */
-            if (gs->mode == MODE_PLAY) {
-                int ggx = FROM_FIXED(gs->golfer.x);
-                int ggy = FROM_FIXED(gs->golfer.y);
-                if (ggx == gx && ggy == gy) {
-                    fixed gfx = gs->golfer.x;
-                    fixed gfy = gs->golfer.y;
-                    fixed gz = golf_get_ground_z_fixed(gs, gfx, gfy);
-                    int32_t g_sx = FROM_FIXED(FMUL(gfx - gfy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-                    int32_t g_sy = FROM_FIXED(FMUL(gfx + gfy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + rc->camera_y + TILE_HALF_H;
-                    
-                    const uint32_t *golfer_spr = s_sprite_golfer;
-                    if (gs->golfer.state == GOLFER_STATE_WALKING) {
-                        golfer_spr = s_sprite_golfer_walk[gs->golfer.walk_anim_frame & 3];
-                    }
-                    blit_sprite(rc, g_sx - 11, g_sy - 30, golfer_spr, SPRITE_GOLFER_W, SPRITE_GOLFER_H);
+            const uint32_t *golfer_spr = s_sprite_golfer;
+            if (gs->golfer.state == GOLFER_STATE_WALKING) {
+                golfer_spr = s_sprite_golfer_walk[gs->golfer.walk_anim_frame & 3];
+            }
+            s_entities[num_entities++] = (RenderEntityItem){
+                .base_sy = g_sy,
+                .draw_sx = g_sx - 11,
+                .draw_sy = g_sy - 30,
+                .type = RENT_GOLFER,
+                .sprite = golfer_spr,
+                .w = SPRITE_GOLFER_W,
+                .h = SPRITE_GOLFER_H
+            };
+        }
+    }
+    
+    /* Collect Ball & Drop Shadow Entity */
+    int32_t ball_ground_sx = 0, ball_ground_sy = 0, ball_screen_y = 0;
+    if (gs->mode == MODE_PLAY && num_entities < MAX_RENDER_ENTITIES) {
+        fixed fx = gs->ball.x;
+        fixed fy = gs->ball.y;
+        ball_ground_sx = FROM_FIXED(FMUL(fx - fy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        ball_ground_sy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
+        ball_screen_y = ball_ground_sy - FROM_FIXED(gs->ball.z - gs->ball.ground_z);
+        
+        if (ball_ground_sx >= -10 && ball_ground_sx < SCREEN_W + 10 &&
+            (ball_ground_sy >= -10 || ball_screen_y >= -10) && ball_screen_y < SCREEN_H + 10) {
+            s_entities[num_entities++] = (RenderEntityItem){
+                .base_sy = ball_ground_sy,
+                .draw_sx = ball_ground_sx,
+                .draw_sy = ball_screen_y,
+                .type = RENT_BALL,
+                .sprite = NULL,
+                .w = 0,
+                .h = 0
+            };
+        }
+    }
+    
+    /* Fast insertion sort by ground contact base_sy */
+    for (int i = 1; i < num_entities; ++i) {
+        RenderEntityItem key = s_entities[i];
+        int j = i - 1;
+        while (j >= 0 && s_entities[j].base_sy > key.base_sy) {
+            s_entities[j + 1] = s_entities[j];
+            j--;
+        }
+        s_entities[j + 1] = key;
+    }
+    
+    /* Render sorted entities from back to front */
+    for (int i = 0; i < num_entities; ++i) {
+        const RenderEntityItem *e = &s_entities[i];
+        if (e->type == RENT_BALL) {
+            /* Draw Ball Ground Drop Shadow */
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -2; dx <= 2; ++dx) {
+                    blend_pixel(rc, ball_ground_sx + dx, ball_ground_sy + dy, COLOR_ARGB(140, 20, 20, 20));
                 }
             }
-            
-            /* Ball & Shadow */
-            int bgx = FROM_FIXED(gs->ball.x);
-            int bgy = FROM_FIXED(gs->ball.y);
-            if (bgx == gx && bgy == gy) {
-                /* Ball sub-tile screen coordinates */
-                fixed fx = gs->ball.x;
-                fixed fy = gs->ball.y;
-                int32_t ball_ground_sx = FROM_FIXED(FMUL(fx - fy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-                int32_t ball_ground_sy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
-                int32_t ball_screen_y = ball_ground_sy - FROM_FIXED(gs->ball.z - gs->ball.ground_z);
-                
-                /* Draw Ground Drop Shadow */
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -2; dx <= 2; ++dx) {
-                        blend_pixel(rc, ball_ground_sx + dx, ball_ground_sy + dy, COLOR_ARGB(140, 20, 20, 20));
-                    }
-                }
-                
-                /* Draw Ball (crisp 3x3 white sphere) */
-                set_pixel(rc, ball_ground_sx - 1, ball_screen_y - 1, COLOR_RGB(255, 255, 255));
-                set_pixel(rc, ball_ground_sx,     ball_screen_y - 1, COLOR_RGB(255, 255, 255));
-                set_pixel(rc, ball_ground_sx + 1, ball_screen_y - 1, COLOR_RGB(220, 220, 220));
-                set_pixel(rc, ball_ground_sx - 1, ball_screen_y,     COLOR_RGB(255, 255, 255));
-                set_pixel(rc, ball_ground_sx,     ball_screen_y,     COLOR_RGB(255, 255, 255));
-                set_pixel(rc, ball_ground_sx + 1, ball_screen_y,     COLOR_RGB(200, 200, 200));
-                set_pixel(rc, ball_ground_sx - 1, ball_screen_y + 1, COLOR_RGB(200, 200, 200));
-                set_pixel(rc, ball_ground_sx,     ball_screen_y + 1, COLOR_RGB(180, 180, 180));
-                set_pixel(rc, ball_ground_sx + 1, ball_screen_y + 1, COLOR_RGB(150, 150, 150));
-            }
+            /* Draw Ball (crisp 3x3 white sphere) */
+            set_pixel(rc, ball_ground_sx - 1, ball_screen_y - 1, COLOR_RGB(255, 255, 255));
+            set_pixel(rc, ball_ground_sx,     ball_screen_y - 1, COLOR_RGB(255, 255, 255));
+            set_pixel(rc, ball_ground_sx + 1, ball_screen_y - 1, COLOR_RGB(220, 220, 220));
+            set_pixel(rc, ball_ground_sx - 1, ball_screen_y,     COLOR_RGB(255, 255, 255));
+            set_pixel(rc, ball_ground_sx,     ball_screen_y,     COLOR_RGB(255, 255, 255));
+            set_pixel(rc, ball_ground_sx + 1, ball_screen_y,     COLOR_RGB(200, 200, 200));
+            set_pixel(rc, ball_ground_sx - 1, ball_screen_y + 1, COLOR_RGB(200, 200, 200));
+            set_pixel(rc, ball_ground_sx,     ball_screen_y + 1, COLOR_RGB(180, 180, 180));
+            set_pixel(rc, ball_ground_sx + 1, ball_screen_y + 1, COLOR_RGB(150, 150, 150));
+        } else {
+            blit_sprite(rc, e->draw_sx, e->draw_sy, e->sprite, e->w, e->h);
         }
     }
     

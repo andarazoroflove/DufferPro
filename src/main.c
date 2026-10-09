@@ -473,7 +473,8 @@ int main(int argc, char *argv[]) {
                     /* Track golfer smoothly as he walks to ball */
                     focus_x = s_game_state.golfer.x;
                     focus_y = s_game_state.golfer.y;
-                    focus_gz = golf_get_ground_z_fixed(&s_game_state, focus_x, focus_y);
+                    focus_gz = (s_game_state.golfer.current_z > 0) ? s_game_state.golfer.current_z : golf_get_ground_z_fixed(&s_game_state, focus_x, focus_y);
+                    if (focus_gz < TO_FIXED(HEIGHT_STEP_PX)) focus_gz = TO_FIXED(HEIGHT_STEP_PX);
                 } else {
                     focus_x = s_game_state.ball.x;
                     focus_y = s_game_state.ball.y;

@@ -150,6 +150,7 @@ typedef enum {
 
 typedef struct {
     fixed x, y;             /* Current position in grid coordinates (16.16 fixed) */
+    fixed current_z;        /* Smoothed ground elevation (16.16 fixed) */
     fixed target_x, target_y;
     GolferState state;
     uint8_t facing_angle;   /* 0..255 */

@@ -1,0 +1,23 @@
+# Binaries and build outputs
+*.o
+*.obj
+*.exe
+*.dll.a
+build/retrosimgolf
+build/retrosimgolf.exe
+
+# Keep build directory structure with SDL2.dll for direct running if desired
+!build/SDL2.dll
+
+# Screenshots and temp files
+*.bmp
+tools/capture_test.exe
+
+# Editor & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

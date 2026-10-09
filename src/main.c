@@ -60,15 +60,15 @@ static bool handle_play_ui_click(GolfState *gs, int mx, int my) {
         return true;
     }
     
-    /* Swing Gauge click */
-    if (mx >= 310 && mx <= 510 && my >= SCREEN_H - 45 && my <= SCREEN_H - 20) {
-        golf_swing_click(gs);
-        return true;
-    }
-    
     /* Build toggle click */
     if (mx >= 520 && mx <= 630 && my >= SCREEN_H - 35) {
         golf_set_mode(gs, MODE_BUILD);
+        return true;
+    }
+    
+    /* Swing Gauge click (bar + hint prompt area) */
+    if (mx >= 300 && mx <= 518) {
+        golf_swing_click(gs);
         return true;
     }
     

@@ -899,32 +899,43 @@ static void render_hud(RenderContext *rc, const GolfState *gs) {
             draw_rect(rc, meter_x + 2 + px, meter_y + 2, 1, meter_h - 4, COLOR_RGB(r, g, b));
         }
         
-        /* Sweetspot notch at left (0% snap mark) */
-        int snap_notch_x = meter_x + 16;
+        /* Sweetspot notch at sweetspot_center (12.5% mark) */
+        int inner_w = meter_w - 4;
+        int snap_notch_x = meter_x + 2 + FROM_FIXED(FMUL(gs->swing.sweetspot_center, TO_FIXED(inner_w)));
+        
+        bool in_sweetspot = (gs->swing.state == SWING_STATE_ACCURACY &&
+                             FABS(gs->swing.cursor_pos - gs->swing.sweetspot_center) <= gs->swing.sweetspot_width);
+        uint32_t notch_col = in_sweetspot ? COLOR_RGB(255, 255, 120) : COLOR_RGB(255, 255, 255);
+        
         for (int ny = meter_y + 1; ny < meter_y + meter_h - 1; ++ny) {
-            set_pixel(rc, snap_notch_x, ny, COLOR_RGB(255, 255, 255));
-            set_pixel(rc, snap_notch_x + 1, ny, COLOR_RGB(255, 255, 255));
+            set_pixel(rc, snap_notch_x, ny, notch_col);
+            set_pixel(rc, snap_notch_x + 1, ny, notch_col);
         }
+        /* Top and bottom guide arrows for sweetspot */
+        set_pixel(rc, snap_notch_x - 1, meter_y + 1, COLOR_RGB(255, 220, 60));
+        set_pixel(rc, snap_notch_x + 2, meter_y + 1, COLOR_RGB(255, 220, 60));
+        set_pixel(rc, snap_notch_x - 1, meter_y + meter_h - 2, COLOR_RGB(255, 220, 60));
+        set_pixel(rc, snap_notch_x + 2, meter_y + meter_h - 2, COLOR_RGB(255, 220, 60));
         
         /* Current Needle Position */
         fixed needle_ratio = gs->swing.cursor_pos;
         if (needle_ratio < 0) needle_ratio = 0;
         if (needle_ratio > FIXED_ONE) needle_ratio = FIXED_ONE;
-        int needle_px = meter_x + 2 + FROM_FIXED(needle_ratio * (meter_w - 6));
+        int needle_px = meter_x + 2 + FROM_FIXED(FMUL(needle_ratio, TO_FIXED(inner_w)));
         
         for (int ny = meter_y - 2; ny < meter_y + meter_h + 2; ++ny) {
             set_pixel(rc, needle_px - 1, ny, COLOR_RGB(20, 20, 20));
-            set_pixel(rc, needle_px, ny, COLOR_RGB(255, 255, 255));
+            set_pixel(rc, needle_px,     ny, COLOR_RGB(255, 255, 255));
             set_pixel(rc, needle_px + 1, ny, COLOR_RGB(20, 20, 20));
         }
         
         /* Gauge action hint */
         const char *gauge_hint = "SPACE/CLICK: START SWING";
         if (gs->swing.state == SWING_STATE_POWER) gauge_hint = "CLICK: SET POWER";
-        else if (gs->swing.state == SWING_STATE_ACCURACY) gauge_hint = "CLICK: SNAP SWEET SPOT!";
+        else if (gs->swing.state == SWING_STATE_ACCURACY) gauge_hint = in_sweetspot ? ">> SNAP SWEET SPOT NOW! <<" : "CLICK: SNAP SWEET SPOT";
         else if (gs->swing.state == SWING_STATE_RESOLVED) gauge_hint = "BALL IN PLAY...";
         
-        draw_text(rc, 310, SCREEN_H - 16, gauge_hint, COLOR_RGB(240, 220, 120), true);
+        draw_text(rc, 310, SCREEN_H - 16, gauge_hint, in_sweetspot ? COLOR_RGB(255, 255, 120) : COLOR_RGB(240, 220, 120), true);
         
         /* Aim rotate hints */
         draw_text(rc, 525, SCREEN_H - 45, "[<] [>] AIM", COLOR_RGB(200, 210, 230), false);

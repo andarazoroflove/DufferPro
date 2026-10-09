@@ -68,12 +68,12 @@ uint8_t fixed_atan2(fixed dy, fixed dx) {
 
 /* Club Definitions */
 static const ClubData s_clubs[CLUB_COUNT] = {
-    { "DRIVER 1W",  "1W", 240, 31457,  23592,  19660, 60293, false }, /* 14 deg */
-    { "3-WOOD 3W",  "3W", 215, 28180,  27525,  26214, 58982, false }, /* 18 deg */
-    { "5-IRON 5I",  "5I", 175, 23592,  34078,  36044, 55705, false }, /* 28 deg */
-    { "9-IRON 9I",  "9I", 130, 18350,  43253,  45875, 52428, false }, /* 40 deg */
-    { "WEDGE PW",   "PW",  90, 13762,  52428,  55705, 49152, false }, /* 50 deg */
-    { "PUTTER PT",  "PT",  25,  6553,      0,      0, 62259, true  }  /* Ground roll */
+    { "DRIVER 1W",  "1W", 240, 36000, 185000, 28000, 60293, false }, /* Carry ~195 yds, Roll ~45 yds */
+    { "3-WOOD 3W",  "3W", 215, 29800, 200000, 26000, 59637, false }, /* Carry ~175 yds, Roll ~40 yds */
+    { "5-IRON 5I",  "5I", 175, 22900, 215000, 22000, 58327, false }, /* Carry ~145 yds, Roll ~30 yds */
+    { "9-IRON 9I",  "9I", 130, 16384, 228000, 16000, 56360, false }, /* Carry ~110 yds, Roll ~20 yds */
+    { "WEDGE PW",   "PW",  90, 11400, 238000, 10000, 54394, false }, /* Carry ~80 yds,  Roll ~10 yds */
+    { "PUTTER PT",  "PT",  25, 18000,      0,     0, 62259, true  }  /* Ground roll up to 25 yds */
 };
 
 const ClubData* golf_get_club_data(ClubType club) {
@@ -92,11 +92,11 @@ static void core_srand(uint32_t seed) {
 }
 
 /* Physics parameters in 16.16 fixed point */
-#define GRAVITY_FIXED       4500    /* ~0.068 pixels/tick^2 downward */
-#define AIR_DRAG_FIXED      65208   /* ~0.995 */
-#define WIND_FACTOR_FIXED     120   /* Wind velocity perturbation */
-#define SLOPE_ACCEL_FIXED     350   /* Roll acceleration down elevation gradient */
-#define STOP_SPEED_THRESHOLD 1200   /* Threshold to stop rolling */
+#define GRAVITY_FIXED        5200   /* ~0.079 pixels/tick^2 downward */
+#define AIR_DRAG_FIXED      65405   /* ~0.998 air drag on horizontal velocity */
+#define WIND_FACTOR_FIXED     150   /* Wind deflection multiplier */
+#define SLOPE_ACCEL_FIXED     300   /* Elevation slope acceleration */
+#define STOP_SPEED_THRESHOLD  800   /* Threshold to stop rolling */
 #define CUP_RADIUS_FIXED    22000   /* Cup capture radius (~0.33 tiles) */
 #define CUP_MAX_SPEED       18000   /* Maximum entry speed to sink */
 
@@ -220,6 +220,13 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     gs->prev_ball_gy = gs->tee_gy;
     gs->strokes = 0;
     gs->hole_completed = false;
+    
+    /* Reset swing gauge to ready state */
+    gs->swing.state = SWING_STATE_READY;
+    gs->swing.cursor_pos = gs->swing.sweetspot_center;
+    gs->swing.locked_power = 0;
+    gs->swing.locked_accuracy = 0;
+    gs->swing.moving_up = true;
     
     /* Turn aim toward pin */
     if (gs->has_pin) {
@@ -588,16 +595,17 @@ void golf_init(GolfState *gs) {
     gs->wind.angle = 48;
     gs->wind.speed = TO_FIXED(8); /* 8 mph */
     
-    /* Gauge settings */
+    /* Gauge settings: Classic deliberate 90s tempo */
+    gs->swing.sweetspot_center = TO_FIXED(1) / 8; /* 12.5% notch mark */
+    gs->swing.sweetspot_width = 3200;             /* ~5% snap tolerance window */
+    gs->swing.cursor_speed = 700;                 /* ~1.55 sec backswing (deliberate & playable) */
     gs->swing.state = SWING_STATE_READY;
-    gs->swing.cursor_pos = 0;
-    gs->swing.cursor_speed = 1800; /* ~0.027 per tick */
+    gs->swing.cursor_pos = gs->swing.sweetspot_center;
     gs->swing.moving_up = true;
-    gs->swing.sweetspot_center = 0;
-    gs->swing.sweetspot_width = 7500;
     
     golf_generate_terrain(gs, 42);
     golf_place_default_routing(gs);
+    golf_reset_ball_to_tee(gs);
 }
 
 /* Tool execution in Build Mode */
@@ -750,17 +758,18 @@ void golf_swing_click(GolfState *gs) {
     
     switch (gs->swing.state) {
         case SWING_STATE_READY:
-            /* Click 1: Start power needle */
+        case SWING_STATE_RESOLVED:
+            /* Click 1: Start power needle rising from 0 */
             gs->swing.state = SWING_STATE_POWER;
             gs->swing.cursor_pos = 0;
             gs->swing.moving_up = true;
             break;
             
         case SWING_STATE_POWER:
-            /* Click 2: Lock power, start needle downward towards snap mark */
+            /* Click 2: Lock power level, start needle downward towards snap mark */
             gs->swing.locked_power = gs->swing.cursor_pos;
-            if (gs->swing.locked_power < TO_FIXED(1) / 10) {
-                gs->swing.locked_power = TO_FIXED(1) / 10; /* Min 10% */
+            if (gs->swing.locked_power < TO_FIXED(1) / 5) {
+                gs->swing.locked_power = TO_FIXED(1) / 5; /* Minimum 20% power */
             }
             gs->swing.state = SWING_STATE_ACCURACY;
             gs->swing.moving_up = false;
@@ -781,22 +790,28 @@ void golf_swing_click(GolfState *gs) {
                 fixed pwr = gs->swing.locked_power;
                 fixed acc = gs->swing.locked_accuracy;
                 
-                /* Slice/Hook deviation in angle (up to ~20 brads) */
-                int32_t angle_dev = FROM_FIXED(FMUL(acc, TO_FIXED(24)));
+                /* Surface lie penalty */
+                if (gs->ball.current_surf == SURF_ROUGH) {
+                    pwr = FMUL(pwr, 52428); /* 80% power from rough */
+                } else if (gs->ball.current_surf == SURF_SAND) {
+                    pwr = FMUL(pwr, 36044); /* 55% power from bunker */
+                }
+                
+                /* Slice/Hook deviation in angle (acc typically -8000 to +30000) */
+                int32_t angle_dev = FROM_FIXED(FMUL(acc, TO_FIXED(28)));
                 uint8_t final_angle = (uint8_t)(gs->aim_angle + angle_dev);
                 
                 if (club->is_putter) {
                     /* Ground roll */
-                    fixed roll_speed = FMUL(club->launch_speed, pwr);
+                    fixed roll_speed = FMUL(club->launch_speed_h, pwr);
                     gs->ball.vx = FMUL(roll_speed, fixed_cos(final_angle));
                     gs->ball.vy = FMUL(roll_speed, fixed_sin(final_angle));
                     gs->ball.vz = 0;
                     gs->ball.state = BALL_ROLLING;
                 } else {
-                    /* Ballistic flight */
-                    fixed launch_spd = FMUL(club->launch_speed, pwr);
-                    fixed horiz_spd = FMUL(launch_spd, fixed_cos((uint8_t)(club->launch_angle >> 10)));
-                    fixed vert_spd  = FMUL(launch_spd, fixed_sin((uint8_t)(club->launch_angle >> 10)));
+                    /* High ballistic flight */
+                    fixed horiz_spd = FMUL(club->launch_speed_h, pwr);
+                    fixed vert_spd  = FMUL(club->launch_speed_v, pwr);
                     
                     gs->ball.vx = FMUL(horiz_spd, fixed_cos(final_angle));
                     gs->ball.vy = FMUL(horiz_spd, fixed_sin(final_angle));
@@ -806,17 +821,14 @@ void golf_swing_click(GolfState *gs) {
                     gs->ball.bounce_count = 0;
                 }
                 
-                if (FABS(acc) < gs->swing.sweetspot_width) {
-                    set_banner(gs, "SWEET SPOT! CLEAN STRIKE!", 90);
+                if (FABS(acc) <= gs->swing.sweetspot_width) {
+                    set_banner(gs, "CRACK! SWEET SPOT STRIKE!", 90);
                 } else if (acc < 0) {
                     set_banner(gs, "HOOK / DRAW!", 90);
                 } else {
                     set_banner(gs, "SLICE / FADE!", 90);
                 }
             }
-            break;
-            
-        case SWING_STATE_RESOLVED:
             break;
     }
 }
@@ -833,17 +845,18 @@ void golf_tick(GolfState *gs) {
             gs->swing.cursor_pos += gs->swing.cursor_speed;
             if (gs->swing.cursor_pos >= FIXED_ONE) {
                 gs->swing.cursor_pos = FIXED_ONE;
-                /* Auto-lock at 100% and reverse */
+                /* Auto-lock at 100% and reverse smoothly */
                 gs->swing.locked_power = FIXED_ONE;
                 gs->swing.state = SWING_STATE_ACCURACY;
                 gs->swing.moving_up = false;
             }
         } else if (gs->swing.state == SWING_STATE_ACCURACY) {
-            gs->swing.cursor_pos -= (gs->swing.cursor_speed * 5) / 4;
-            /* If needle drops way past snap, miss-hit */
-            if (gs->swing.cursor_pos <= -TO_FIXED(1) / 3) {
-                gs->swing.cursor_pos = -TO_FIXED(1) / 3;
-                golf_swing_click(gs); /* Force miss-hit lock */
+            /* Return stroke towards snap mark at classic tempo */
+            gs->swing.cursor_pos -= (gs->swing.cursor_speed * 11) / 10;
+            /* If needle drops past 0, miss-hit auto-snap */
+            if (gs->swing.cursor_pos <= 0) {
+                gs->swing.cursor_pos = 0;
+                golf_swing_click(gs);
             }
         }
     }
@@ -852,19 +865,18 @@ void golf_tick(GolfState *gs) {
     if (gs->ball.state == BALL_IN_FLIGHT) {
         gs->ball.air_ticks++;
         
-        /* Gravity */
+        /* Gravity (downward in pixel space) */
         gs->ball.vz -= GRAVITY_FIXED;
         
-        /* Wind force */
+        /* Wind force (horizontal) */
         fixed wx = FMUL(gs->wind.speed, fixed_cos(gs->wind.angle));
         fixed wy = FMUL(gs->wind.speed, fixed_sin(gs->wind.angle));
         gs->ball.vx += FMUL(wx, WIND_FACTOR_FIXED);
         gs->ball.vy += FMUL(wy, WIND_FACTOR_FIXED);
         
-        /* Air drag */
+        /* Air drag on horizontal velocity */
         gs->ball.vx = FMUL(gs->ball.vx, AIR_DRAG_FIXED);
         gs->ball.vy = FMUL(gs->ball.vy, AIR_DRAG_FIXED);
-        gs->ball.vz = FMUL(gs->ball.vz, AIR_DRAG_FIXED);
         
         /* Integrate position */
         gs->ball.x += gs->ball.vx;
@@ -1033,7 +1045,7 @@ void golf_tick(GolfState *gs) {
             
             /* Reset swing gauge */
             gs->swing.state = SWING_STATE_READY;
-            gs->swing.cursor_pos = 0;
+            gs->swing.cursor_pos = gs->swing.sweetspot_center;
             
             /* Recommend club */
             int32_t yds = golf_distance_to_pin_yards(gs);
@@ -1063,7 +1075,7 @@ void golf_tick(GolfState *gs) {
         gs->ball.state = BALL_IDLE;
         gs->ball.current_surf = golf_get_surface_at(gs, gs->ball.x, gs->ball.y);
         gs->swing.state = SWING_STATE_READY;
-        gs->swing.cursor_pos = 0;
+        gs->swing.cursor_pos = gs->swing.sweetspot_center;
         
         if (gs->has_pin) {
             fixed pin_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;

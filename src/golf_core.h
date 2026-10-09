@@ -92,10 +92,10 @@ typedef struct {
     const char *name;
     const char *short_name;
     int32_t nominal_yards;
-    fixed launch_speed;       /* Fixed point speed */
-    fixed launch_angle;       /* Fixed point vertical angle in radians/brads */
-    fixed backspin;           /* Bounce damping factor */
-    fixed friction_mult;      /* Roll friction factor */
+    fixed launch_speed_h;     /* Horizontal speed in tiles/tick (fixed 16.16) */
+    fixed launch_speed_v;     /* Vertical speed in pixels/tick (fixed 16.16) */
+    fixed restitution;        /* Bounce damping factor (fixed 16.16) */
+    fixed roll_friction;      /* Roll friction multiplier (fixed 16.16) */
     bool is_putter;
 } ClubData;
 

@@ -94,7 +94,7 @@ static void core_srand(uint32_t seed) {
 /* Physics parameters in 16.16 fixed point */
 #define GRAVITY_FIXED        5200   /* ~0.079 pixels/tick^2 downward */
 #define AIR_DRAG_FIXED      65405   /* ~0.998 air drag on horizontal velocity */
-#define WIND_FACTOR_FIXED     150   /* Wind deflection multiplier */
+#define WIND_FACTOR_FIXED        2   /* Realistic wind drift (~5 yds in 15 mph crosswind) */
 #define SLOPE_ACCEL_FIXED     300   /* Elevation slope acceleration */
 #define STOP_SPEED_THRESHOLD  800   /* Threshold to stop rolling */
 #define CUP_RADIUS_FIXED    22000   /* Cup capture radius (~0.33 tiles) */
@@ -606,7 +606,7 @@ void golf_init(GolfState *gs) {
     
     /* Gauge settings: Classic deliberate 90s tempo */
     gs->swing.sweetspot_center = TO_FIXED(1) / 8; /* 12.5% notch mark */
-    gs->swing.sweetspot_width = 3200;             /* ~5% snap tolerance window */
+    gs->swing.sweetspot_width = 4800;             /* ~7.3% snap tolerance window */
     gs->swing.cursor_speed = 700;                 /* ~1.55 sec backswing (deliberate & playable) */
     gs->swing.state = SWING_STATE_READY;
     gs->swing.cursor_pos = gs->swing.sweetspot_center;
@@ -797,15 +797,15 @@ void golf_set_aim_target(GolfState *gs, fixed target_x, fixed target_y) {
     gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
     
     /* Auto-select matching club for this distance */
-    if (gs->ball.current_surf == SURF_GREEN || gs->aim_distance_yds <= 18) {
+    if (gs->ball.current_surf == SURF_GREEN || gs->aim_distance_yds <= 20) {
         gs->current_club = CLUB_PT;
-    } else if (gs->aim_distance_yds > 210) {
+    } else if (gs->aim_distance_yds > 215) {
         gs->current_club = CLUB_1W;
-    } else if (gs->aim_distance_yds > 165) {
+    } else if (gs->aim_distance_yds > 175) {
         gs->current_club = CLUB_3W;
-    } else if (gs->aim_distance_yds > 120) {
+    } else if (gs->aim_distance_yds > 130) {
         gs->current_club = CLUB_5I;
-    } else if (gs->aim_distance_yds > 65) {
+    } else if (gs->aim_distance_yds > 80) {
         gs->current_club = CLUB_9I;
     } else {
         gs->current_club = CLUB_PW;
@@ -859,21 +859,40 @@ void golf_swing_click(GolfState *gs) {
                     pwr = FMUL(pwr, 36044); /* 55% power from bunker */
                 }
                 
-                /* Slice/Hook deviation in angle (acc typically -8000 to +30000) */
-                int32_t angle_dev = FROM_FIXED(FMUL(acc, TO_FIXED(28)));
+                /* Distance scaling for the shot length */
+                fixed dist_scale = FIXED_ONE;
+                fixed root_scale = FIXED_ONE;
+                if (club->nominal_yards > 0 && gs->aim_distance_yds > 0) {
+                    if (gs->aim_distance_yds < club->nominal_yards) {
+                        /* Scale club power so full swing reaches targeted landing zone */
+                        dist_scale = FDIV(TO_FIXED(gs->aim_distance_yds), TO_FIXED(club->nominal_yards));
+                        if (dist_scale < TO_FIXED(1) / 5) dist_scale = TO_FIXED(1) / 5; /* Minimum 20% scale */
+                        root_scale = fixed_sqrt(dist_scale);
+                    }
+                }
+                
+                /* Precision Accuracy tuning: Sweet spot delivers dead-center precision */
+                int32_t angle_dev = 0;
+                if (FABS(acc) <= gs->swing.sweetspot_width) {
+                    angle_dev = 0; /* Sweet spot: dead straight down aim line */
+                } else {
+                    /* Gentle, realistic slice/hook outside sweet spot */
+                    fixed dev = (acc > 0) ? (acc - gs->swing.sweetspot_width) : (acc + gs->swing.sweetspot_width);
+                    angle_dev = FROM_FIXED(FMUL(dev, TO_FIXED(10)));
+                }
                 uint8_t final_angle = (uint8_t)(gs->aim_angle + angle_dev);
                 
                 if (club->is_putter) {
-                    /* Ground roll */
-                    fixed roll_speed = FMUL(club->launch_speed_h, pwr);
+                    /* Ground roll (linear distance scaling with roll speed) */
+                    fixed roll_speed = FMUL(FMUL(club->launch_speed_h, pwr), dist_scale);
                     gs->ball.vx = FMUL(roll_speed, fixed_cos(final_angle));
                     gs->ball.vy = FMUL(roll_speed, fixed_sin(final_angle));
                     gs->ball.vz = 0;
                     gs->ball.state = BALL_ROLLING;
                 } else {
-                    /* High ballistic flight */
-                    fixed horiz_spd = FMUL(club->launch_speed_h, pwr);
-                    fixed vert_spd  = FMUL(club->launch_speed_v, pwr);
+                    /* High ballistic flight (square-root scaling preserves natural arc) */
+                    fixed horiz_spd = FMUL(FMUL(club->launch_speed_h, pwr), root_scale);
+                    fixed vert_spd  = FMUL(FMUL(club->launch_speed_v, pwr), root_scale);
                     
                     gs->ball.vx = FMUL(horiz_spd, fixed_cos(final_angle));
                     gs->ball.vy = FMUL(horiz_spd, fixed_sin(final_angle));
@@ -944,6 +963,15 @@ void golf_tick(GolfState *gs) {
         gs->ball.x += gs->ball.vx;
         gs->ball.y += gs->ball.vy;
         gs->ball.z += gs->ball.vz;
+        
+        /* Boundary check: Out of Bounds */
+        if (gs->ball.x < 0 || gs->ball.x >= TO_FIXED(GRID_W) ||
+            gs->ball.y < 0 || gs->ball.y >= TO_FIXED(GRID_H)) {
+            gs->ball.state = BALL_WATER;
+            gs->strokes++;
+            set_banner(gs, "OUT OF BOUNDS! (+1 PENALTY)", 120);
+            return;
+        }
         
         /* Tree canopy collision check */
         int32_t bgx = FROM_FIXED(gs->ball.x);
@@ -1044,6 +1072,16 @@ void golf_tick(GolfState *gs) {
         
         gs->ball.x += gs->ball.vx;
         gs->ball.y += gs->ball.vy;
+        
+        /* Boundary check: Out of Bounds */
+        if (gs->ball.x < 0 || gs->ball.x >= TO_FIXED(GRID_W) ||
+            gs->ball.y < 0 || gs->ball.y >= TO_FIXED(GRID_H)) {
+            gs->ball.state = BALL_WATER;
+            gs->strokes++;
+            set_banner(gs, "OUT OF BOUNDS! (+1 PENALTY)", 120);
+            return;
+        }
+        
         gs->ball.ground_z = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
         gs->ball.z = gs->ball.ground_z;
         
@@ -1131,7 +1169,12 @@ void golf_tick(GolfState *gs) {
             }
         }
     } else if (gs->ball.state == BALL_WATER) {
-        /* Drop ball back to previous lie */
+        /* Drop ball back to previous lie (safely clamped within course boundaries) */
+        if (gs->prev_ball_gx < 0) gs->prev_ball_gx = 0;
+        if (gs->prev_ball_gx >= GRID_W) gs->prev_ball_gx = GRID_W - 1;
+        if (gs->prev_ball_gy < 0) gs->prev_ball_gy = 0;
+        if (gs->prev_ball_gy >= GRID_H) gs->prev_ball_gy = GRID_H - 1;
+        
         gs->ball.x = TO_FIXED(gs->prev_ball_gx) + FIXED_HALF;
         gs->ball.y = TO_FIXED(gs->prev_ball_gy) + FIXED_HALF;
         gs->ball.ground_z = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
@@ -1153,6 +1196,22 @@ void golf_tick(GolfState *gs) {
             fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
             gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
             gs->has_custom_aim = false;
+        }
+        
+        /* Auto-select club for drop position */
+        int32_t drop_yds = golf_distance_to_pin_yards(gs);
+        if (gs->ball.current_surf == SURF_GREEN || drop_yds <= 20) {
+            gs->current_club = CLUB_PT;
+        } else if (drop_yds > 215) {
+            gs->current_club = CLUB_1W;
+        } else if (drop_yds > 175) {
+            gs->current_club = CLUB_3W;
+        } else if (drop_yds > 130) {
+            gs->current_club = CLUB_5I;
+        } else if (drop_yds > 80) {
+            gs->current_club = CLUB_9I;
+        } else {
+            gs->current_club = CLUB_PW;
         }
     }
 }

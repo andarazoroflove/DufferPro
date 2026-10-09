@@ -41,11 +41,12 @@ static uint32_t s_sprite_rock[SPRITE_ROCK_W * SPRITE_ROCK_H];
 
 #define SPRITE_FLAG_W 16
 #define SPRITE_FLAG_H 40
-static uint32_t s_sprite_flag[SPRITE_FLAG_W * SPRITE_FLAG_H];
+static uint32_t s_sprite_flag[4][SPRITE_FLAG_W * SPRITE_FLAG_H];
 
 #define SPRITE_GOLFER_W 22
 #define SPRITE_GOLFER_H 32
 static uint32_t s_sprite_golfer[SPRITE_GOLFER_W * SPRITE_GOLFER_H];
+static uint32_t s_sprite_golfer_walk[4][SPRITE_GOLFER_W * SPRITE_GOLFER_H];
 
 /* Fast PRNG for procedural texture generation */
 static uint32_t s_tex_rand = 987654321;
@@ -443,27 +444,38 @@ static void generate_procedural_graphics(void) {
         }
     }
     
-    /* 11. Generate Flag Sprite (16x40) */
-    memset(s_sprite_flag, 0, sizeof(s_sprite_flag));
-    /* Cup hole */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -4; dx <= 4; ++dx) {
-            if (dx * dx * 4 + dy * dy * 16 <= 64) {
-                s_sprite_flag[(38 + dy) * SPRITE_FLAG_W + (8 + dx)] = COLOR_RGB(15, 18, 22);
+    /* 11. Generate Flag Sprite (16x40) - 4 animated waving frames */
+    for (int f = 0; f < 4; ++f) {
+        memset(s_sprite_flag[f], 0, sizeof(s_sprite_flag[f]));
+        /* Cup hole */
+        for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -4; dx <= 4; ++dx) {
+                if (dx * dx * 4 + dy * dy * 16 <= 64) {
+                    s_sprite_flag[f][(38 + dy) * SPRITE_FLAG_W + (8 + dx)] = COLOR_RGB(15, 18, 22);
+                }
             }
         }
-    }
-    /* White pole */
-    for (int y = 4; y < 38; ++y) {
-        s_sprite_flag[y * SPRITE_FLAG_W + 8] = COLOR_RGB(245, 245, 245);
-        s_sprite_flag[y * SPRITE_FLAG_W + 7] = COLOR_RGB(160, 160, 160);
-    }
-    /* Red/Yellow pennant waving */
-    for (int y = 5; y < 17; ++y) {
-        int w = 7 - (y - 5) / 2;
-        for (int x = 9; x <= 9 + w; ++x) {
-            int col = ((x + y) & 2) ? COLOR_RGB(235, 45, 45) : COLOR_RGB(255, 215, 30);
-            s_sprite_flag[y * SPRITE_FLAG_W + x] = col;
+        /* White pole */
+        for (int y = 4; y < 38; ++y) {
+            s_sprite_flag[f][y * SPRITE_FLAG_W + 8] = COLOR_RGB(245, 245, 245);
+            s_sprite_flag[f][y * SPRITE_FLAG_W + 7] = COLOR_RGB(160, 160, 160);
+        }
+        /* Red/Yellow pennant waving in the wind */
+        for (int y = 5; y < 17; ++y) {
+            int w = 7 - (y - 5) / 2;
+            int wave = 0;
+            if (f == 0 && y >= 6 && y <= 9) wave = 1;
+            else if (f == 1 && y >= 9 && y <= 12) wave = 1;
+            else if (f == 2 && y >= 12 && y <= 15) wave = 1;
+            else if (f == 3 && y >= 8 && y <= 11) wave = -1;
+            
+            int wy = y + wave;
+            if (wy >= 0 && wy < SPRITE_FLAG_H) {
+                for (int x = 9; x <= 9 + w; ++x) {
+                    int col = ((x + y + f) & 2) ? COLOR_RGB(235, 45, 45) : COLOR_RGB(255, 215, 30);
+                    s_sprite_flag[f][wy * SPRITE_FLAG_W + x] = col;
+                }
+            }
         }
     }
     
@@ -522,6 +534,97 @@ static void generate_procedural_graphics(void) {
     /* Club head near ground */
     s_sprite_golfer[28 * SPRITE_GOLFER_W + 19] = COLOR_RGB(150, 155, 160);
     s_sprite_golfer[28 * SPRITE_GOLFER_W + 20] = COLOR_RGB(180, 185, 190);
+
+    /* 13. Generate Golfer Walking Animation Sprites (22x32 x 4 frames) */
+    for (int f = 0; f < 4; ++f) {
+        memset(s_sprite_golfer_walk[f], 0, sizeof(s_sprite_golfer_walk[f]));
+        
+        /* Ground shadow */
+        for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -5; dx <= 5; ++dx) {
+                if (dx * dx * 4 + dy * dy * 25 <= 100) {
+                    s_sprite_golfer_walk[f][(30 + dy) * SPRITE_GOLFER_W + (11 + dx)] = COLOR_ARGB(120, 20, 30, 15);
+                }
+            }
+        }
+        
+        /* Bobbing offset: body bobs up 1px on passing steps (frames 1 & 3) */
+        int bob = (f == 1 || f == 3) ? -1 : 0;
+        
+        /* White Visor/Cap */
+        for (int y = 4 + bob; y <= 6 + bob; ++y) {
+            for (int x = 9; x <= 14; ++x) {
+                s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x] = (y == 4 + bob) ? COLOR_RGB(250, 250, 250) : COLOR_RGB(220, 220, 220);
+            }
+        }
+        /* Face & Hair */
+        for (int y = 7 + bob; y <= 9 + bob; ++y) {
+            for (int x = 10; x <= 13; ++x) {
+                s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x] = COLOR_RGB(235, 190, 145);
+            }
+            s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + 9] = COLOR_RGB(90, 60, 35);
+        }
+        /* Red Polo Shirt */
+        for (int y = 10 + bob; y <= 18 + bob; ++y) {
+            for (int x = 8; x <= 15; ++x) {
+                int lit = (x < 11) ? 25 : -20;
+                s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x] = COLOR_RGB(200 + lit, 35 + lit / 2, 35 + lit / 2);
+            }
+        }
+        
+        /* Arm swing */
+        int arm_dx = (f == 0) ? -2 : (f == 2) ? 2 : 0;
+        s_sprite_golfer_walk[f][(16 + bob) * SPRITE_GOLFER_W + (8 + arm_dx)] = COLOR_RGB(235, 190, 145);
+        s_sprite_golfer_walk[f][(17 + bob) * SPRITE_GOLFER_W + (8 + arm_dx)] = COLOR_RGB(240, 240, 240);
+        
+        /* Golf Club slung diagonally behind */
+        for (int i = 0; i < 11; ++i) {
+            int cx = 13 + i / 2;
+            int cy = 11 + bob + i;
+            if (cx < SPRITE_GOLFER_W && cy < SPRITE_GOLFER_H && cy >= 0) {
+                s_sprite_golfer_walk[f][cy * SPRITE_GOLFER_W + cx] = COLOR_RGB(205, 210, 215);
+            }
+        }
+        
+        /* Trousers & Legs animated for 4-phase stride */
+        int l_leg_x = 9, r_leg_x = 13;
+        int l_shoe_y = 28, r_shoe_y = 28;
+        if (f == 0) {
+            l_leg_x = 8; r_leg_x = 14;
+            l_shoe_y = 28; r_shoe_y = 27;
+        } else if (f == 1) {
+            l_leg_x = 10; r_leg_x = 12;
+            l_shoe_y = 27; r_shoe_y = 28;
+        } else if (f == 2) {
+            l_leg_x = 14; r_leg_x = 8;
+            l_shoe_y = 27; r_shoe_y = 28;
+        } else if (f == 3) {
+            l_leg_x = 12; r_leg_x = 10;
+            l_shoe_y = 28; r_shoe_y = 27;
+        }
+        
+        /* Khaki legs */
+        for (int y = 19 + bob; y <= 26; ++y) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                int px1 = l_leg_x + dx;
+                int px2 = r_leg_x + dx;
+                if (px1 >= 0 && px1 < SPRITE_GOLFER_W)
+                    s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + px1] = COLOR_RGB(190, 170, 130);
+                if (px2 >= 0 && px2 < SPRITE_GOLFER_W)
+                    s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + px2] = COLOR_RGB(165, 145, 110);
+            }
+        }
+        
+        /* White shoes with black saddle */
+        for (int dx = -2; dx <= 1; ++dx) {
+            int px1 = l_leg_x + dx;
+            int px2 = r_leg_x + dx;
+            if (px1 >= 0 && px1 < SPRITE_GOLFER_W && l_shoe_y < SPRITE_GOLFER_H)
+                s_sprite_golfer_walk[f][l_shoe_y * SPRITE_GOLFER_W + px1] = (dx == 0) ? COLOR_RGB(40, 40, 40) : COLOR_RGB(230, 230, 230);
+            if (px2 >= 0 && px2 < SPRITE_GOLFER_W && r_shoe_y < SPRITE_GOLFER_H)
+                s_sprite_golfer_walk[f][r_shoe_y * SPRITE_GOLFER_W + px2] = (dx == 0) ? COLOR_RGB(40, 40, 40) : COLOR_RGB(230, 230, 230);
+        }
+    }
 }
 
 void render_init(RenderContext *rc, uint32_t *buffer) {
@@ -1063,7 +1166,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             const uint32_t *sprite = NULL;
             switch (tile->surface) {
                 case SURF_WATER:
-                    sprite = s_tile_water[(rc->tick_count / 16 + tile->variant) % 4];
+                    sprite = s_tile_water[(rc->tick_count / 6 + tile->variant) % 4];
                     break;
                 case SURF_FAIRWAY:
                     sprite = s_tile_fairway[tile->autotile_mask & 15];
@@ -1089,9 +1192,9 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                 draw_tile_highlight(rc, sx, sy, (gs->mode == MODE_BUILD) ? COLOR_RGB(255, 230, 60) : COLOR_RGB(200, 240, 255));
             }
             
-            /* Cup & Pin Flag */
+            /* Cup & Pin Flag (4-frame waving pennant) */
             if (gs->has_pin && gs->pin_gx == gx && gs->pin_gy == gy) {
-                blit_sprite(rc, sx + 24, sy - 12, s_sprite_flag, SPRITE_FLAG_W, SPRITE_FLAG_H);
+                blit_sprite(rc, sx + 24, sy - 12, s_sprite_flag[(rc->tick_count / 8) % 4], SPRITE_FLAG_W, SPRITE_FLAG_H);
             }
             
             /* Natural Obstacles */
@@ -1104,11 +1207,21 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             }
             
             /* Golfer Sprite */
-            if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE) {
-                int bgx = FROM_FIXED(gs->ball.x);
-                int bgy = FROM_FIXED(gs->ball.y);
-                if (bgx == gx && bgy == gy) {
-                    blit_sprite(rc, sx + 6, sy - 12, s_sprite_golfer, SPRITE_GOLFER_W, SPRITE_GOLFER_H);
+            if (gs->mode == MODE_PLAY) {
+                int ggx = FROM_FIXED(gs->golfer.x);
+                int ggy = FROM_FIXED(gs->golfer.y);
+                if (ggx == gx && ggy == gy) {
+                    fixed gfx = gs->golfer.x;
+                    fixed gfy = gs->golfer.y;
+                    fixed gz = golf_get_ground_z_fixed(gs, gfx, gfy);
+                    int32_t g_sx = FROM_FIXED(FMUL(gfx - gfy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+                    int32_t g_sy = FROM_FIXED(FMUL(gfx + gfy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + rc->camera_y + TILE_HALF_H;
+                    
+                    const uint32_t *golfer_spr = s_sprite_golfer;
+                    if (gs->golfer.state == GOLFER_STATE_WALKING) {
+                        golfer_spr = s_sprite_golfer_walk[gs->golfer.walk_anim_frame & 3];
+                    }
+                    blit_sprite(rc, g_sx - 11, g_sy - 30, golfer_spr, SPRITE_GOLFER_W, SPRITE_GOLFER_H);
                 }
             }
             

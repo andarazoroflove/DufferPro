@@ -228,6 +228,18 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     gs->swing.locked_accuracy = 0;
     gs->swing.moving_up = true;
     
+    /* Reset golfer character */
+    gs->golfer.x = gs->ball.x;
+    gs->golfer.y = gs->ball.y;
+    gs->golfer.target_x = gs->ball.x;
+    gs->golfer.target_y = gs->ball.y;
+    gs->golfer.state = GOLFER_STATE_READY;
+    gs->golfer.facing_angle = 192;
+    gs->golfer.walk_anim_frame = 0;
+    gs->golfer.walk_ticks = 0;
+    gs->golfer.step_timer = 0;
+    gs->audio_event = AUDIO_EVT_NONE;
+    
     /* Turn aim toward pin */
     if (gs->has_pin) {
         gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
@@ -235,6 +247,7 @@ void golf_reset_ball_to_tee(GolfState *gs) {
         fixed dx = gs->aim_target_x - gs->ball.x;
         fixed dy = gs->aim_target_y - gs->ball.y;
         gs->aim_angle = fixed_atan2(dy, dx);
+        gs->golfer.facing_angle = gs->aim_angle;
         fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
         gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
     } else {
@@ -821,6 +834,9 @@ void golf_swing_click(GolfState *gs) {
     switch (gs->swing.state) {
         case SWING_STATE_READY:
         case SWING_STATE_RESOLVED:
+            /* Arrive at ball immediately if walking */
+            golf_golfer_arrive_at_ball(gs);
+            gs->golfer.state = GOLFER_STATE_SWINGING;
             /* Click 1: Start power needle rising from 0 */
             gs->swing.state = SWING_STATE_POWER;
             gs->swing.cursor_pos = 0;
@@ -841,6 +857,7 @@ void golf_swing_click(GolfState *gs) {
             /* Click 3: Lock snap/accuracy */
             gs->swing.locked_accuracy = gs->swing.cursor_pos - gs->swing.sweetspot_center;
             gs->swing.state = SWING_STATE_RESOLVED;
+            gs->golfer.state = GOLFER_STATE_WATCHING;
             
             /* Execute ball strike! */
             {
@@ -848,6 +865,17 @@ void golf_swing_click(GolfState *gs) {
                 gs->strokes++;
                 gs->prev_ball_gx = FROM_FIXED(gs->ball.x);
                 gs->prev_ball_gy = FROM_FIXED(gs->ball.y);
+                
+                /* Trigger audio event based on club */
+                if (club->is_putter) {
+                    gs->audio_event = AUDIO_EVT_SWING_PUTTER;
+                } else if (gs->current_club == CLUB_1W) {
+                    gs->audio_event = AUDIO_EVT_SWING_DRIVER;
+                } else if (gs->current_club == CLUB_PW) {
+                    gs->audio_event = AUDIO_EVT_SWING_WEDGE;
+                } else {
+                    gs->audio_event = AUDIO_EVT_SWING_IRON;
+                }
                 
                 fixed pwr = gs->swing.locked_power;
                 fixed acc = gs->swing.locked_accuracy;
@@ -916,6 +944,8 @@ void golf_swing_click(GolfState *gs) {
 
 /* Physics and Simulation Tick */
 void golf_tick(GolfState *gs) {
+    gs->audio_event = AUDIO_EVT_NONE;
+    
     if (gs->banner_timer > 0) {
         gs->banner_timer--;
     }
@@ -985,6 +1015,7 @@ void golf_tick(GolfState *gs) {
                     gs->ball.vz = -FABS(gs->ball.vz) / 2 - TO_FIXED(1);
                     gs->ball.vx = gs->ball.vx / 3;
                     gs->ball.vy = gs->ball.vy / 3;
+                    gs->audio_event = AUDIO_EVT_TREE_HIT;
                     set_banner(gs, "THWACK! STRUCK TREE BRANCHES!", 90);
                 }
             } else if (feat == FEAT_ROCK) {
@@ -994,6 +1025,7 @@ void golf_tick(GolfState *gs) {
                     gs->ball.vz = FABS(gs->ball.vz) + TO_FIXED(2);
                     gs->ball.vx = -gs->ball.vx / 2;
                     gs->ball.vy = -gs->ball.vy / 2;
+                    gs->audio_event = AUDIO_EVT_ROCK_HIT;
                     set_banner(gs, "CLANG! STRUCK BOULDER!", 90);
                 }
             }
@@ -1011,6 +1043,7 @@ void golf_tick(GolfState *gs) {
             if (surf == SURF_WATER) {
                 gs->ball.state = BALL_WATER;
                 gs->strokes++; /* +1 penalty stroke */
+                gs->audio_event = AUDIO_EVT_WATER_SPLASH;
                 set_banner(gs, "SPLASH! WATER HAZARD (+1 PENALTY)", 120);
                 return;
             }
@@ -1035,6 +1068,9 @@ void golf_tick(GolfState *gs) {
             gs->ball.vx = FMUL(gs->ball.vx, fric);
             gs->ball.vy = FMUL(gs->ball.vy, fric);
             gs->ball.bounce_count++;
+            if (gs->ball.bounce_count <= 2) {
+                gs->audio_event = AUDIO_EVT_BALL_BOUNCE;
+            }
             
             if (FABS(gs->ball.vz) < TO_FIXED(1) / 2 || gs->ball.bounce_count > 4) {
                 gs->ball.vz = 0;
@@ -1103,6 +1139,7 @@ void golf_tick(GolfState *gs) {
                     gs->ball.vy = 0;
                     gs->ball.state = BALL_HOLED;
                     gs->hole_completed = true;
+                    gs->audio_event = AUDIO_EVT_CUP_SINK;
                     
                     int32_t rel = gs->strokes - gs->par;
                     if (gs->strokes == 1) {
@@ -1135,6 +1172,21 @@ void golf_tick(GolfState *gs) {
             gs->ball.vy = 0;
             gs->ball.state = BALL_IDLE;
             gs->ball.current_surf = golf_get_surface_at(gs, gs->ball.x, gs->ball.y);
+            
+            /* Start golfer walking towards ball if not already close */
+            fixed gdx = gs->ball.x - gs->golfer.x;
+            fixed gdy = gs->ball.y - gs->golfer.y;
+            fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
+            if (gdist > TO_FIXED(1) / 2) {
+                gs->golfer.state = GOLFER_STATE_WALKING;
+                gs->golfer.target_x = gs->ball.x;
+                gs->golfer.target_y = gs->ball.y;
+                gs->golfer.facing_angle = fixed_atan2(gdy, gdx);
+                gs->golfer.walk_ticks = 0;
+                gs->golfer.step_timer = 0;
+            } else {
+                golf_golfer_arrive_at_ball(gs);
+            }
             
             /* Ready for next shot: turn aim towards pin */
             if (gs->has_pin) {
@@ -1214,5 +1266,77 @@ void golf_tick(GolfState *gs) {
             gs->current_club = CLUB_PW;
         }
     }
+    
+    /* 3. Golfer Walking Simulation & Footstep Audio */
+    if (gs->mode == MODE_PLAY && gs->golfer.state == GOLFER_STATE_WALKING) {
+        fixed gdx = gs->golfer.target_x - gs->golfer.x;
+        fixed gdy = gs->golfer.target_y - gs->golfer.y;
+        fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
+        fixed walk_spd = 7000; /* ~0.107 tiles per tick (~6.4 tiles/sec) */
+        
+        if (gdist <= walk_spd || gdist < TO_FIXED(1) / 3) {
+            golf_golfer_arrive_at_ball(gs);
+        } else {
+            gs->golfer.facing_angle = fixed_atan2(gdy, gdx);
+            gs->golfer.x += FMUL(walk_spd, fixed_cos(gs->golfer.facing_angle));
+            gs->golfer.y += FMUL(walk_spd, fixed_sin(gs->golfer.facing_angle));
+            gs->golfer.walk_ticks++;
+            gs->golfer.walk_anim_frame = (gs->golfer.walk_ticks / 7) % 4;
+            
+            gs->golfer.step_timer++;
+            if (gs->golfer.step_timer >= 12) {
+                gs->golfer.step_timer = 0;
+                SurfaceType surf = golf_get_surface_at(gs, gs->golfer.x, gs->golfer.y);
+                if (surf == SURF_SAND) {
+                    gs->audio_event = AUDIO_EVT_FOOTSTEP_SAND;
+                } else if (surf == SURF_ROUGH) {
+                    gs->audio_event = AUDIO_EVT_FOOTSTEP_ROUGH;
+                } else {
+                    gs->audio_event = AUDIO_EVT_FOOTSTEP_GRASS;
+                }
+            }
+        }
+    }
+}
+
+void golf_golfer_arrive_at_ball(GolfState *gs) {
+    gs->golfer.x = gs->ball.x;
+    gs->golfer.y = gs->ball.y;
+    gs->golfer.target_x = gs->ball.x;
+    gs->golfer.target_y = gs->ball.y;
+    gs->golfer.state = GOLFER_STATE_READY;
+    gs->golfer.walk_anim_frame = 0;
+    gs->golfer.facing_angle = gs->aim_angle;
+}
+
+int golf_get_water_proximity(const GolfState *gs, fixed view_x, fixed view_y) {
+    int32_t cx = FROM_FIXED(view_x);
+    int32_t cy = FROM_FIXED(view_y);
+    int min_dist_sq = 999999;
+    
+    for (int dy = -10; dy <= 10; ++dy) {
+        for (int dx = -10; dx <= 10; ++dx) {
+            int gx = cx + dx;
+            int gy = cy + dy;
+            if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
+                if (gs->grid[gx][gy].surface == SURF_WATER) {
+                    int d2 = dx * dx + dy * dy;
+                    if (d2 < min_dist_sq) {
+                        min_dist_sq = d2;
+                    }
+                }
+            }
+        }
+    }
+    
+    if (min_dist_sq >= 100) return 0;
+    int dist = 0;
+    while ((dist + 1) * (dist + 1) <= min_dist_sq) {
+        dist++;
+    }
+    int pct = 100 - dist * 10;
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return pct;
 }
 

@@ -11,6 +11,7 @@
 
 #include "golf_core.h"
 #include "golf_render.h"
+#include "golf_audio.h"
 
 #define FPS                60
 #define FRAME_DELAY_MS     (1000 / FPS)
@@ -83,7 +84,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
     
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
         fprintf(stderr, "SDL_Init Error: %s\n", SDL_GetError());
         return 1;
     }
@@ -136,9 +137,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    /* Initialize Game & Renderer */
+    /* Initialize Game, Renderer & Audio */
     golf_init(&s_game_state);
     render_init(&s_render_ctx, s_framebuffer);
+    golf_audio_init();
     
     /* Center camera on Tee */
     if (s_game_state.has_tee) {
@@ -439,20 +441,47 @@ int main(int argc, char *argv[]) {
         /* Simulation Tick */
         golf_tick(&s_game_state);
         
+        /* Audio SFX Dispatch */
+        if (s_game_state.audio_event != AUDIO_EVT_NONE) {
+            golf_audio_play_sfx(s_game_state.audio_event);
+            s_game_state.audio_event = AUDIO_EVT_NONE;
+        }
+        
+        /* Audio Ambient Soundscape Update (Wind + Water Proximity) */
+        if (s_game_state.mode == MODE_PLAY || s_game_state.mode == MODE_BUILD) {
+            fixed ear_x = (s_game_state.golfer.state == GOLFER_STATE_WALKING) ? s_game_state.golfer.x : s_game_state.ball.x;
+            fixed ear_y = (s_game_state.golfer.state == GOLFER_STATE_WALKING) ? s_game_state.golfer.y : s_game_state.ball.y;
+            float water_prox = golf_get_water_proximity(&s_game_state, ear_x, ear_y);
+            golf_audio_update_ambient(s_game_state.wind.speed, water_prox);
+        } else {
+            golf_audio_update_ambient(0, 0.0f);
+        }
+        
         /* Camera Tracking: Keep player and ball centered in Play Mode */
         if (s_game_state.mode == MODE_PLAY) {
-            bool in_action = (s_game_state.ball.state == BALL_IN_FLIGHT || s_game_state.ball.state == BALL_ROLLING || s_game_state.swing.state != SWING_STATE_READY);
+            bool in_action = (s_game_state.ball.state == BALL_IN_FLIGHT || 
+                              s_game_state.ball.state == BALL_ROLLING || 
+                              s_game_state.golfer.state == GOLFER_STATE_WALKING || 
+                              s_game_state.swing.state != SWING_STATE_READY);
             if (in_action) {
                 s_free_cam = false;
             }
             
             if (!s_free_cam) {
-                fixed bx = s_game_state.ball.x;
-                fixed by = s_game_state.ball.y;
-                fixed bgz = s_game_state.ball.ground_z;
+                fixed focus_x, focus_y, focus_gz;
+                if (s_game_state.golfer.state == GOLFER_STATE_WALKING) {
+                    /* Track golfer smoothly as he walks to ball */
+                    focus_x = s_game_state.golfer.x;
+                    focus_y = s_game_state.golfer.y;
+                    focus_gz = golf_get_ground_z_fixed(&s_game_state, focus_x, focus_y);
+                } else {
+                    focus_x = s_game_state.ball.x;
+                    focus_y = s_game_state.ball.y;
+                    focus_gz = s_game_state.ball.ground_z;
+                }
                 
-                int32_t target_sx = FROM_FIXED(FMUL(bx - by, TO_FIXED(TILE_HALF_W)));
-                int32_t target_sy = FROM_FIXED(FMUL(bx + by, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(bgz);
+                int32_t target_sx = FROM_FIXED(FMUL(focus_x - focus_y, TO_FIXED(TILE_HALF_W)));
+                int32_t target_sy = FROM_FIXED(FMUL(focus_x + focus_y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(focus_gz);
                 
                 int32_t desired_cam_x = SCREEN_W / 2 - target_sx - TILE_HALF_W;
                 int32_t desired_cam_y = SCREEN_H / 2 - target_sy - TILE_HALF_H;
@@ -478,16 +507,17 @@ int main(int argc, char *argv[]) {
         SDL_RenderCopy(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
         
-        /* Frame Rate Limiting (60 Hz) */
+        /* Frame Rate Limiting (prevent CPU runaway while letting VSync maintain silky 60 Hz) */
         uint32_t current_time = SDL_GetTicks();
         uint32_t elapsed = current_time - last_time;
-        if (elapsed < FRAME_DELAY_MS) {
-            SDL_Delay(FRAME_DELAY_MS - elapsed);
+        if (elapsed < 12) {
+            SDL_Delay(1);
         }
-        last_time = SDL_GetTicks();
+        last_time = current_time;
     }
     
     /* Cleanup */
+    golf_audio_shutdown();
     render_free(&s_render_ctx);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

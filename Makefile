@@ -4,8 +4,8 @@
 CC = gcc
 CFLAGS ?= -std=c99 -Wall -Wextra -O2
 
-SRCS = src/golf_core.c src/golf_render.c src/main.c
-OBJS = src/golf_core.o src/golf_render.o src/main.o
+SRCS = src/golf_core.c src/golf_render.c src/golf_audio.c src/main.c
+OBJS = src/golf_core.o src/golf_render.o src/golf_audio.o src/main.o
 
 ifeq ($(OS),Windows_NT)
     TARGET = build/duffer.exe

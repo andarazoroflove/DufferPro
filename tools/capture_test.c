@@ -123,11 +123,42 @@ int main(void) {
     int total_sim_ticks = 35;
     while (gs.ball.state != BALL_IDLE && total_sim_ticks < 500) {
         golf_tick(&gs);
+        if (gs.audio_event != AUDIO_EVT_NONE) {
+            printf("  [Ball in motion] Audio Event: %d\n", gs.audio_event);
+            gs.audio_event = AUDIO_EVT_NONE;
+        }
         total_sim_ticks++;
     }
-    printf("Settled after %d ticks: Ball state=%d, Final Ball=(%.2f, %.2f), Strokes=%d, SwingState=%d\n",
+    printf("Settled after %d ticks: Ball state=%d, Final Ball=(%.2f, %.2f), GolferState=%d\n",
            total_sim_ticks, gs.ball.state, (float)FROM_FIXED(gs.ball.x), (float)FROM_FIXED(gs.ball.y),
-           gs.strokes, gs.swing.state);
+           gs.golfer.state);
+    
+    /* 7. Golfer Walking & Footstep Audio Test */
+    printf("\n--- Simulating Golfer Walking to Ball ---\n");
+    int walk_ticks = 0;
+    int footstep_events = 0;
+    while (gs.golfer.state == GOLFER_STATE_WALKING && walk_ticks < 300) {
+        golf_tick(&gs);
+        if (gs.audio_event >= AUDIO_EVT_FOOTSTEP_GRASS && gs.audio_event <= AUDIO_EVT_FOOTSTEP_ROUGH) {
+            footstep_events++;
+            printf("  Tick %d: Golfer at (%.2f, %.2f), Footstep SFX=%d, AnimFrame=%d\n",
+                   walk_ticks, (float)FROM_FIXED(gs.golfer.x), (float)FROM_FIXED(gs.golfer.y),
+                   gs.audio_event, gs.golfer.walk_anim_frame);
+            gs.audio_event = AUDIO_EVT_NONE;
+        }
+        if (walk_ticks == 8) {
+            int32_t ggx = FROM_FIXED(gs.golfer.x);
+            int32_t ggy = FROM_FIXED(gs.golfer.y);
+            render_center_camera_on(&rc, ggx, ggy, gs.grid[ggx][ggy].elevation);
+            render_pan_camera(&rc, 0, 70);
+            render_frame(&rc, &gs);
+            render_save_bmp(&rc, "screenshot_golfer_walking.bmp");
+            printf("Saved screenshot_golfer_walking.bmp\n");
+        }
+        walk_ticks++;
+    }
+    printf("Golfer finished walk after %d ticks, Footsteps generated: %d, Final Golfer State: %d\n",
+           walk_ticks, footstep_events, gs.golfer.state);
     
     render_free(&rc);
     return 0;

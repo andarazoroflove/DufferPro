@@ -23,9 +23,9 @@
 
 ## Screenshots
 
-| Title Splash Screen | Play Mode (Tee Box) | Build Mode (Hole Sculpting) | Green & Pin Cup View |
+| Title Splash Screen | Play Mode (Tee Box) | Build Mode (Hole Sculpting) | Randomized Hole Generation |
 | :---: | :---: | :---: | :---: |
-| ![Title Splash](docs/screenshots/screenshot_splash.png) | ![Play Mode](docs/screenshots/screenshot_play.png) | ![Build Mode](docs/screenshots/screenshot_build.png) | ![Green View](docs/screenshots/screenshot_green.png) |
+| ![Title Splash](docs/screenshots/screenshot_splash.png) | ![Play Mode](docs/screenshots/screenshot_play.png) | ![Build Mode](docs/screenshots/screenshot_build.png) | ![Randomized Hole](docs/screenshots/screenshot_random_hole.png) |
 
 ---
 
@@ -116,7 +116,7 @@ All kinematic vectors use 16.16 fixed-point arithmetic (`fixed`):
 | `[SPACE]` / **Any Key** / **Click** | Dismiss Splash Screen / Tee Off |
 | `[TAB]` | Toggle between **Play Mode** and **Build Mode** |
 | `[R]` | Reset ball to Tee marker |
-| `[G]` | Regenerate new procedural terrain & routing |
+| **`[RANDOM HOLE]`** / `[G]` | Click HUD button or press `[G]` to generate an all-new procedural terrain layout, dogleg fairway routing, and wind conditions |
 | `[F12]` | Capture BMP screenshot to disk |
 | `[ESC]` | Exit game |
 | **Right-Click Drag** | Pan isometric camera across the course |

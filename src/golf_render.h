@@ -22,6 +22,8 @@ typedef struct {
     int32_t camera_y;
     int32_t mouse_gx;       /* Hovered grid tile */
     int32_t mouse_gy;
+    int32_t mouse_sx;       /* Screen mouse X for UI hover */
+    int32_t mouse_sy;       /* Screen mouse Y for UI hover */
     bool mouse_valid;
     uint32_t tick_count;
 } RenderContext;

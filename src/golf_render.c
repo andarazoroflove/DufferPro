@@ -530,6 +530,8 @@ void render_init(RenderContext *rc, uint32_t *buffer) {
     rc->camera_y = 60;
     rc->mouse_gx = -1;
     rc->mouse_gy = -1;
+    rc->mouse_sx = -1;
+    rc->mouse_sy = -1;
     rc->mouse_valid = false;
     rc->tick_count = 0;
     generate_procedural_graphics();
@@ -775,42 +777,64 @@ static void render_hud(RenderContext *rc, const GolfState *gs) {
     draw_rect_border(rc, 0, 0, SCREEN_W, 28, COLOR_RGB(60, 80, 100));
     set_pixel(rc, 0, 27, COLOR_RGB(15, 20, 28));
     
-    /* Hole Number & Par */
-    snprintf(buf, sizeof(buf), "HOLE 1  PAR %d  %d YDS", gs->par, gs->hole_yards);
-    draw_text(rc, 12, 10, buf, COLOR_RGB(245, 220, 110), true);
+    /* Hole Number, Par & Yardage */
+    snprintf(buf, sizeof(buf), "HOLE 1  PAR %d  %dYDS", gs->par, gs->hole_yards);
+    draw_text(rc, 8, 10, buf, COLOR_RGB(245, 220, 110), true);
     
     /* Current Lie / Status */
-    const char *surf_name = "ROUGH (80%)";
-    if (gs->ball.current_surf == SURF_FAIRWAY) surf_name = "FAIRWAY (100%)";
-    else if (gs->ball.current_surf == SURF_GREEN) surf_name = "GREEN (100%)";
-    else if (gs->ball.current_surf == SURF_SAND) surf_name = "SAND BUNKER (55%)";
-    else if (gs->ball.current_surf == SURF_TEE) surf_name = "TEE BOX (100%)";
+    const char *surf_name = "ROUGH";
+    if (gs->ball.current_surf == SURF_FAIRWAY) surf_name = "FAIRWAY";
+    else if (gs->ball.current_surf == SURF_GREEN) surf_name = "GREEN";
+    else if (gs->ball.current_surf == SURF_SAND) surf_name = "SAND";
+    else if (gs->ball.current_surf == SURF_TEE) surf_name = "TEE";
     
     snprintf(buf, sizeof(buf), "LIE: %s", surf_name);
-    draw_text(rc, 220, 10, buf, COLOR_RGB(200, 230, 200), true);
+    draw_text(rc, 190, 10, buf, COLOR_RGB(200, 230, 200), true);
     
     /* Wind Indicator */
     int wind_mph = FROM_FIXED(gs->wind.speed);
     snprintf(buf, sizeof(buf), "WIND: %d MPH", wind_mph);
-    draw_text(rc, 430, 10, buf, COLOR_RGB(180, 210, 255), true);
+    draw_text(rc, 310, 10, buf, COLOR_RGB(180, 210, 255), true);
     
-    /* Wind Arrow */
-    int w_cx = 550, w_cy = 13;
+    /* Wind Compass Arrow */
+    int w_cx = 418, w_cy = 13;
     fixed wx = fixed_cos(gs->wind.angle);
     fixed wy = fixed_sin(gs->wind.angle);
-    int w_tx = w_cx + FROM_FIXED(wx * 10);
-    int w_ty = w_cy + FROM_FIXED(wy * 10);
+    int w_tx = w_cx + FROM_FIXED(wx * 7);
+    int w_ty = w_cy + FROM_FIXED(wy * 7);
+    set_pixel(rc, w_cx, w_cy, COLOR_RGB(255, 200, 50));
     draw_line(rc, w_cx, w_cy, w_tx, w_ty, COLOR_RGB(255, 255, 120), false);
     
+    /* Randomize Hole Button */
+    bool hover_rand = (rc->mouse_sy >= 4 && rc->mouse_sy <= 24 && rc->mouse_sx >= 432 && rc->mouse_sx <= 544);
+    uint32_t rand_bg = hover_rand ? COLOR_RGB(55, 82, 115) : COLOR_RGB(38, 52, 74);
+    uint32_t rand_border = hover_rand ? COLOR_RGB(255, 225, 90) : COLOR_RGB(215, 175, 55);
+    
+    draw_rect(rc, 432, 4, 112, 20, rand_bg);
+    draw_rect_border(rc, 432, 4, 112, 20, rand_border);
+    /* 3D bevel highlight */
+    for (int bx = 433; bx < 432 + 111; ++bx) set_pixel(rc, bx, 5, hover_rand ? COLOR_RGB(90, 120, 160) : COLOR_RGB(60, 80, 110));
+    for (int by = 5; by < 4 + 19; ++by) set_pixel(rc, 433, by, hover_rand ? COLOR_RGB(90, 120, 160) : COLOR_RGB(60, 80, 110));
+    draw_text(rc, 444, 10, "RANDOM HOLE", hover_rand ? COLOR_RGB(255, 255, 180) : COLOR_RGB(255, 235, 120), true);
+    
     /* Mode Badge */
+    bool hover_mode = (rc->mouse_sy >= 4 && rc->mouse_sy <= 24 && rc->mouse_sx >= 552 && rc->mouse_sx <= 630);
     if (gs->mode == MODE_PLAY) {
-        draw_rect(rc, 570, 4, 62, 20, COLOR_RGB(34, 120, 45));
-        draw_rect_border(rc, 570, 4, 62, 20, COLOR_RGB(90, 210, 100));
-        draw_text(rc, 578, 10, "PLAY", COLOR_RGB(255, 255, 255), false);
+        uint32_t bg = hover_mode ? COLOR_RGB(45, 150, 60) : COLOR_RGB(34, 120, 45);
+        uint32_t bd = hover_mode ? COLOR_RGB(130, 240, 140) : COLOR_RGB(90, 210, 100);
+        draw_rect(rc, 552, 4, 78, 20, bg);
+        draw_rect_border(rc, 552, 4, 78, 20, bd);
+        for (int bx = 553; bx < 552 + 77; ++bx) set_pixel(rc, bx, 5, COLOR_RGB(70, 170, 85));
+        for (int by = 5; by < 4 + 19; ++by) set_pixel(rc, 553, by, COLOR_RGB(70, 170, 85));
+        draw_text(rc, 574, 10, "PLAY", COLOR_RGB(255, 255, 255), false);
     } else {
-        draw_rect(rc, 565, 4, 67, 20, COLOR_RGB(160, 95, 20));
-        draw_rect_border(rc, 565, 4, 67, 20, COLOR_RGB(240, 180, 50));
-        draw_text(rc, 572, 10, "BUILD", COLOR_RGB(255, 255, 255), false);
+        uint32_t bg = hover_mode ? COLOR_RGB(190, 115, 25) : COLOR_RGB(160, 95, 20);
+        uint32_t bd = hover_mode ? COLOR_RGB(255, 210, 80) : COLOR_RGB(240, 180, 50);
+        draw_rect(rc, 552, 4, 78, 20, bg);
+        draw_rect_border(rc, 552, 4, 78, 20, bd);
+        for (int bx = 553; bx < 552 + 77; ++bx) set_pixel(rc, bx, 5, COLOR_RGB(210, 140, 45));
+        for (int by = 5; by < 4 + 19; ++by) set_pixel(rc, 553, by, COLOR_RGB(210, 140, 45));
+        draw_text(rc, 570, 10, "BUILD", COLOR_RGB(255, 255, 255), false);
     }
     
     /* 2. Bottom Control Bar */

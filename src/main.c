@@ -241,8 +241,11 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_g:
-                            golf_generate_terrain(&s_game_state, SDL_GetTicks());
-                            golf_place_default_routing(&s_game_state);
+                            golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
+                            if (s_game_state.has_tee) {
+                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
+                            }
                             break;
                             
                         case SDLK_1: golf_set_tool(&s_game_state, TOOL_FAIRWAY); break;
@@ -263,6 +266,9 @@ int main(int argc, char *argv[]) {
                     {
                         int mx = event.motion.x;
                         int my = event.motion.y;
+                        
+                        s_render_ctx.mouse_sx = mx;
+                        s_render_ctx.mouse_sy = my;
                         
                         /* Right button drag pans camera */
                         if (s_rbutton_down) {
@@ -309,8 +315,18 @@ int main(int argc, char *argv[]) {
                         int mx = event.button.x;
                         int my = event.button.y;
                         
+                        /* Check Randomize Hole Button click at top bar */
+                        if (my <= 28 && mx >= 432 && mx <= 544) {
+                            golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
+                            if (s_game_state.has_tee) {
+                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
+                            }
+                            break;
+                        }
+                        
                         /* Check Mode Badge click at top right */
-                        if (my <= 28 && mx >= 560) {
+                        if (my <= 28 && mx >= 552) {
                             golf_set_mode(&s_game_state, (s_game_state.mode == MODE_PLAY) ? MODE_BUILD : MODE_PLAY);
                             break;
                         }

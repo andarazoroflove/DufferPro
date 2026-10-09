@@ -43,6 +43,18 @@ int main(void) {
     render_save_bmp(&rc, "screenshot_green.bmp");
     printf("Saved screenshot_green.bmp\n");
     
+    /* 5. Randomized Hole Test */
+    golf_randomize_hole(&gs, 0x1337BEEF);
+    golf_set_mode(&gs, MODE_PLAY);
+    render_center_camera_on(&rc, gs.tee_gx, gs.tee_gy, gs.grid[gs.tee_gx][gs.tee_gy].elevation);
+    render_pan_camera(&rc, 0, 70);
+    rc.mouse_sx = 490; /* Hover over RANDOM HOLE button to test hover state */
+    rc.mouse_sy = 12;
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_random_hole.bmp");
+    printf("Saved screenshot_random_hole.bmp (Tee: %d,%d, Pin: %d,%d, Yds: %d, Par: %d)\n",
+           gs.tee_gx, gs.tee_gy, gs.pin_gx, gs.pin_gy, gs.hole_yards, gs.par);
+    
     render_free(&rc);
     return 0;
 }

@@ -187,6 +187,7 @@ typedef struct {
 void golf_init(GolfState *gs);
 void golf_generate_terrain(GolfState *gs, uint32_t seed);
 void golf_place_default_routing(GolfState *gs);
+void golf_randomize_hole(GolfState *gs, uint32_t seed);
 void golf_update_autotile_masks(GolfState *gs);
 void golf_recalc_hole_stats(GolfState *gs);
 

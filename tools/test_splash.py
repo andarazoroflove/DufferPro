@@ -335,3 +335,4 @@ draw.rectangle([rib_x1 + 2, rib_y1 + 2, rib_x2 - 2, rib_y2 - 2], outline=(235, 1
 
 img.save("docs/screenshots/splash_preview.png")
 print("Refined splash_preview.png saved successfully!")
+

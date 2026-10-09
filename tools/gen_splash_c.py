@@ -433,3 +433,4 @@ lines.append('#endif /* SPLASH_ART_H */')
 with open('src/splash_art.h', 'w') as f:
     f.write('\n'.join(lines) + '\n')
 print('src/splash_art.h generated!')
+

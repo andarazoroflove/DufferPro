@@ -1,4 +1,5 @@
 #include "golf_core.h"
+#include <stdio.h>
 #include <string.h>
 
 /* 256-entry Sine Lookup Table (16.16 Fixed Point) */
@@ -435,6 +436,147 @@ void golf_place_default_routing(GolfState *gs) {
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
     set_banner(gs, "DUFFER - READY TO TEE OFF", 180);
+}
+
+/* Completely generates new procedural terrain & sculpts an all-new golf hole */
+void golf_randomize_hole(GolfState *gs, uint32_t seed) {
+    golf_generate_terrain(gs, seed);
+    
+    /* Find dry land for Tee in south sector */
+    int tee_candidates[64][2];
+    int num_tee_cands = 0;
+    for (int y = 52; y <= 60; ++y) {
+        for (int x = 6; x <= 25; ++x) {
+            if (gs->grid[x][y].elevation > ELEV_WATER) {
+                if (num_tee_cands < 64) {
+                    tee_candidates[num_tee_cands][0] = x;
+                    tee_candidates[num_tee_cands][1] = y;
+                    num_tee_cands++;
+                }
+            }
+        }
+    }
+    
+    int tee_x = 14, tee_y = 56;
+    if (num_tee_cands > 0) {
+        int idx = core_rand() % num_tee_cands;
+        tee_x = tee_candidates[idx][0];
+        tee_y = tee_candidates[idx][1];
+    }
+    
+    /* Find dry land for Pin in north sector */
+    int pin_candidates[64][2];
+    int num_pin_cands = 0;
+    for (int y = 6; y <= 18; ++y) {
+        for (int x = 6; x <= 25; ++x) {
+            if (gs->grid[x][y].elevation > ELEV_WATER) {
+                if (num_pin_cands < 64) {
+                    pin_candidates[num_pin_cands][0] = x;
+                    pin_candidates[num_pin_cands][1] = y;
+                    num_pin_cands++;
+                }
+            }
+        }
+    }
+    
+    int pin_x = 18, pin_y = 10;
+    if (num_pin_cands > 0) {
+        int idx = core_rand() % num_pin_cands;
+        pin_x = pin_candidates[idx][0];
+        pin_y = pin_candidates[idx][1];
+    }
+    
+    gs->tee_gx = tee_x;
+    gs->tee_gy = tee_y;
+    gs->has_tee = true;
+    gs->grid[tee_x][tee_y].surface = SURF_TEE;
+    gs->grid[tee_x][tee_y].feature = FEAT_NONE;
+    if (tee_x > 0 && gs->grid[tee_x - 1][tee_y].elevation > ELEV_WATER) {
+        gs->grid[tee_x - 1][tee_y].surface = SURF_TEE;
+        gs->grid[tee_x - 1][tee_y].feature = FEAT_NONE;
+    }
+    
+    gs->pin_gx = pin_x;
+    gs->pin_gy = pin_y;
+    gs->has_pin = true;
+    
+    /* Green around pin (circular radius 2) */
+    for (int dy = -2; dy <= 2; ++dy) {
+        for (int dx = -2; dx <= 2; ++dx) {
+            int gx = pin_x + dx;
+            int gy = pin_y + dy;
+            if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
+                if (dx * dx + dy * dy <= 5 && gs->grid[gx][gy].elevation > ELEV_WATER) {
+                    gs->grid[gx][gy].surface = SURF_GREEN;
+                    gs->grid[gx][gy].feature = FEAT_NONE;
+                }
+            }
+        }
+    }
+    
+    /* Sculpt Fairway ribbon with randomized dogleg curve */
+    int dogleg = ((int)(core_rand() % 9) - 4); /* -4 to +4 lateral bend */
+    int steps = 120;
+    for (int i = 0; i <= steps; ++i) {
+        int cx = tee_x + ((pin_x - tee_x) * i) / steps;
+        int cy = tee_y + ((pin_y - tee_y) * i) / steps;
+        
+        /* Smooth parabolic dogleg deviation */
+        if (i > 15 && i < 90) {
+            int t_dev = (i - 15) * (90 - i);
+            cx += (dogleg * t_dev) / 1400;
+        }
+        
+        /* Fairway width: 2 to 3 tiles radius */
+        int f_rad = (i > 30 && i < 70) ? 3 : 2;
+        for (int rdy = -f_rad; rdy <= f_rad; ++rdy) {
+            for (int rdx = -f_rad; rdx <= f_rad; ++rdx) {
+                int fx = cx + rdx;
+                int fy = cy + rdy;
+                if (fx >= 0 && fx < GRID_W && fy >= 0 && fy < GRID_H) {
+                    if (gs->grid[fx][fy].elevation > ELEV_WATER && gs->grid[fx][fy].surface != SURF_GREEN && gs->grid[fx][fy].surface != SURF_TEE) {
+                        gs->grid[fx][fy].surface = SURF_FAIRWAY;
+                        gs->grid[fx][fy].feature = FEAT_NONE;
+                    }
+                }
+            }
+        }
+    }
+    
+    /* Strategic Sand Bunkers */
+    /* 1. Greenside trap */
+    int g_side = (core_rand() % 2 == 0) ? -3 : 3;
+    int b1x = pin_x + g_side, b1y = pin_y + ((core_rand() % 3) - 1);
+    if (b1x >= 0 && b1x < GRID_W && b1y >= 0 && b1y < GRID_H && gs->grid[b1x][b1y].elevation > ELEV_WATER) {
+        gs->grid[b1x][b1y].surface = SURF_SAND;
+        gs->grid[b1x][b1y].feature = FEAT_NONE;
+        if (b1y + 1 < GRID_H && gs->grid[b1x][b1y + 1].elevation > ELEV_WATER) {
+            gs->grid[b1x][b1y + 1].surface = SURF_SAND;
+            gs->grid[b1x][b1y + 1].feature = FEAT_NONE;
+        }
+    }
+    /* 2. Fairway landing trap */
+    int mid_i = steps / 2;
+    int mcx = tee_x + ((pin_x - tee_x) * mid_i) / steps + dogleg;
+    int mcy = tee_y + ((pin_y - tee_y) * mid_i) / steps;
+    int b2x = mcx + ((core_rand() % 2 == 0) ? -3 : 3);
+    int b2y = mcy;
+    if (b2x >= 0 && b2x < GRID_W && b2y >= 0 && b2y < GRID_H && gs->grid[b2x][b2y].elevation > ELEV_WATER) {
+        gs->grid[b2x][b2y].surface = SURF_SAND;
+        gs->grid[b2x][b2y].feature = FEAT_NONE;
+    }
+    
+    /* Dynamic Wind */
+    gs->wind.angle = (uint8_t)(core_rand() % 256);
+    gs->wind.speed = TO_FIXED(3 + (core_rand() % 16)); /* 3 to 18 mph */
+    
+    golf_update_autotile_masks(gs);
+    golf_recalc_hole_stats(gs);
+    golf_reset_ball_to_tee(gs);
+    
+    char msg[64];
+    snprintf(msg, sizeof(msg), "NEW HOLE: %d YDS - PAR %d", gs->hole_yards, gs->par);
+    set_banner(gs, msg, 180);
 }
 
 void golf_init(GolfState *gs) {

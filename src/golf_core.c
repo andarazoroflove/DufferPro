@@ -230,12 +230,21 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     
     /* Turn aim toward pin */
     if (gs->has_pin) {
-        fixed dx = (TO_FIXED(gs->pin_gx) + FIXED_HALF) - gs->ball.x;
-        fixed dy = (TO_FIXED(gs->pin_gy) + FIXED_HALF) - gs->ball.y;
+        gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
+        gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
+        fixed dx = gs->aim_target_x - gs->ball.x;
+        fixed dy = gs->aim_target_y - gs->ball.y;
         gs->aim_angle = fixed_atan2(dy, dx);
+        fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+        gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
     } else {
         gs->aim_angle = 192; /* North */
+        fixed dist_tiles = TO_FIXED(40);
+        gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
+        gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
+        gs->aim_distance_yds = 200;
     }
+    gs->has_custom_aim = false;
     
     /* Recommend club */
     int32_t yds = golf_distance_to_pin_yards(gs);
@@ -744,10 +753,63 @@ void golf_change_club(GolfState *gs, int delta) {
     if (next < 0) next = CLUB_COUNT - 1;
     if (next >= CLUB_COUNT) next = 0;
     gs->current_club = (ClubType)next;
+    
+    /* If player hasn't placed custom aim spot, target follows club nominal range */
+    if (!gs->has_custom_aim) {
+        const ClubData *club = golf_get_club_data(gs->current_club);
+        gs->aim_distance_yds = club->nominal_yards;
+        fixed dist_tiles = TO_FIXED(club->nominal_yards) / YARDS_PER_TILE;
+        gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
+        gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
+    }
 }
 
 void golf_adjust_aim(GolfState *gs, int delta_angle) {
     gs->aim_angle = (uint8_t)(gs->aim_angle + delta_angle);
+    
+    /* Rotate target position around ball at current distance */
+    fixed dist_tiles = TO_FIXED(gs->aim_distance_yds) / YARDS_PER_TILE;
+    if (dist_tiles < TO_FIXED(2)) dist_tiles = TO_FIXED(2);
+    
+    gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
+    gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
+}
+
+/* Set aim landing spot directly to clicked world coordinates */
+void golf_set_aim_target(GolfState *gs, fixed target_x, fixed target_y) {
+    /* Clamp target within course bounds */
+    if (target_x < TO_FIXED(0)) target_x = TO_FIXED(0);
+    if (target_x > TO_FIXED(GRID_W - 1) + FIXED_HALF) target_x = TO_FIXED(GRID_W - 1) + FIXED_HALF;
+    if (target_y < TO_FIXED(0)) target_y = TO_FIXED(0);
+    if (target_y > TO_FIXED(GRID_H - 1) + FIXED_HALF) target_y = TO_FIXED(GRID_H - 1) + FIXED_HALF;
+    
+    gs->aim_target_x = target_x;
+    gs->aim_target_y = target_y;
+    gs->has_custom_aim = true;
+    
+    /* Calculate angle from ball to aim target */
+    fixed dx = target_x - gs->ball.x;
+    fixed dy = target_y - gs->ball.y;
+    gs->aim_angle = fixed_atan2(dy, dx);
+    
+    /* Calculate linear distance in yards */
+    fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+    gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
+    
+    /* Auto-select matching club for this distance */
+    if (gs->ball.current_surf == SURF_GREEN || gs->aim_distance_yds <= 18) {
+        gs->current_club = CLUB_PT;
+    } else if (gs->aim_distance_yds > 210) {
+        gs->current_club = CLUB_1W;
+    } else if (gs->aim_distance_yds > 165) {
+        gs->current_club = CLUB_3W;
+    } else if (gs->aim_distance_yds > 120) {
+        gs->current_club = CLUB_5I;
+    } else if (gs->aim_distance_yds > 65) {
+        gs->current_club = CLUB_9I;
+    } else {
+        gs->current_club = CLUB_PW;
+    }
 }
 
 /* 3-Click Swing Gauge handler */
@@ -1038,9 +1100,14 @@ void golf_tick(GolfState *gs) {
             
             /* Ready for next shot: turn aim towards pin */
             if (gs->has_pin) {
-                fixed pin_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
-                fixed pin_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
-                gs->aim_angle = fixed_atan2(pin_y - gs->ball.y, pin_x - gs->ball.x);
+                gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
+                gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
+                fixed dx = gs->aim_target_x - gs->ball.x;
+                fixed dy = gs->aim_target_y - gs->ball.y;
+                gs->aim_angle = fixed_atan2(dy, dx);
+                fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+                gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
+                gs->has_custom_aim = false;
             }
             
             /* Reset swing gauge */
@@ -1078,9 +1145,14 @@ void golf_tick(GolfState *gs) {
         gs->swing.cursor_pos = gs->swing.sweetspot_center;
         
         if (gs->has_pin) {
-            fixed pin_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
-            fixed pin_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
-            gs->aim_angle = fixed_atan2(pin_y - gs->ball.y, pin_x - gs->ball.x);
+            gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
+            gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
+            fixed dx = gs->aim_target_x - gs->ball.x;
+            fixed dy = gs->aim_target_y - gs->ball.y;
+            gs->aim_angle = fixed_atan2(dy, dx);
+            fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+            gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
+            gs->has_custom_aim = false;
         }
     }
 }

@@ -586,6 +586,52 @@ bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, 
     return false;
 }
 
+bool screen_to_world_fixed(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, fixed *out_fx, fixed *out_fy) {
+    /* Multi-tier inverse isometric raycast test (from highest elevation 3 down to 0) */
+    for (int elev = 3; elev >= 0; --elev) {
+        int32_t unshifted_y = sy - cam_y + (elev * HEIGHT_STEP_PX) - TILE_HALF_H;
+        int32_t unshifted_x = sx - cam_x - TILE_HALF_W;
+        
+        int32_t fx = (unshifted_x * 16 + unshifted_y * 32);
+        int32_t fy = (unshifted_y * 32 - unshifted_x * 16);
+        
+        int32_t gx = fx / (TILE_W * TILE_H / 2);
+        int32_t gy = fy / (TILE_W * TILE_H / 2);
+        
+        if (fx < 0) gx--;
+        if (fy < 0) gy--;
+        
+        if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
+            if (gs->grid[gx][gy].elevation == (uint8_t)elev) {
+                int32_t rem_x = fx - gx * (TILE_W * TILE_H / 2);
+                int32_t rem_y = fy - gy * (TILE_W * TILE_H / 2);
+                *out_fx = TO_FIXED(gx) + (rem_x << 6);
+                *out_fy = TO_FIXED(gy) + (rem_y << 6);
+                return true;
+            }
+        }
+    }
+    
+    /* Fallback to lowland plane (elev 1) */
+    int32_t unshifted_y = sy - cam_y + (1 * HEIGHT_STEP_PX) - TILE_HALF_H;
+    int32_t unshifted_x = sx - cam_x - TILE_HALF_W;
+    int32_t fx = (unshifted_x * 16 + unshifted_y * 32);
+    int32_t fy = (unshifted_y * 32 - unshifted_x * 16);
+    int32_t gx = fx / (TILE_W * TILE_H / 2);
+    int32_t gy = fy / (TILE_W * TILE_H / 2);
+    if (fx < 0) gx--;
+    if (fy < 0) gy--;
+    
+    if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
+        int32_t rem_x = fx - gx * (TILE_W * TILE_H / 2);
+        int32_t rem_y = fy - gy * (TILE_W * TILE_H / 2);
+        *out_fx = TO_FIXED(gx) + (rem_x << 6);
+        *out_fy = TO_FIXED(gy) + (rem_y << 6);
+        return true;
+    }
+    return false;
+}
+
 void render_center_camera_on(RenderContext *rc, int32_t gx, int32_t gy, int32_t elevation) {
     int32_t target_sx = (gx - gy) * TILE_HALF_W;
     int32_t target_sy = (gx + gy) * TILE_HALF_H - (elevation * HEIGHT_STEP_PX);
@@ -878,7 +924,7 @@ static void render_hud(RenderContext *rc, const GolfState *gs) {
         int dist_pin = golf_distance_to_pin_yards(gs);
         snprintf(buf, sizeof(buf), "STROKE %d", gs->strokes + 1);
         draw_text(rc, 172, SCREEN_H - 45, buf, COLOR_RGB(255, 255, 255), true);
-        snprintf(buf, sizeof(buf), "TO PIN: %d YDS", dist_pin);
+        snprintf(buf, sizeof(buf), "AIM:%dY PIN:%d", gs->aim_distance_yds, dist_pin);
         draw_text(rc, 172, SCREEN_H - 25, buf, COLOR_RGB(160, 230, 180), true);
         
         /* 3-Click Swing Gauge (Retro links-style meter) */
@@ -930,7 +976,7 @@ static void render_hud(RenderContext *rc, const GolfState *gs) {
         }
         
         /* Gauge action hint */
-        const char *gauge_hint = "SPACE/CLICK: START SWING";
+        const char *gauge_hint = "CLICK MAP: AIM | BAR: SWING";
         if (gs->swing.state == SWING_STATE_POWER) gauge_hint = "CLICK: SET POWER";
         else if (gs->swing.state == SWING_STATE_ACCURACY) gauge_hint = in_sweetspot ? ">> SNAP SWEET SPOT NOW! <<" : "CLICK: SNAP SWEET SPOT";
         else if (gs->swing.state == SWING_STATE_RESOLVED) gauge_hint = "BALL IN PLAY...";
@@ -1100,17 +1146,10 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
     
     /* 3. Aim Line & Landing Reticle in Play Mode */
     if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE) {
-        const ClubData *club = golf_get_club_data(gs->current_club);
-        fixed aim_dx = fixed_cos(gs->aim_angle);
-        fixed aim_dy = fixed_sin(gs->aim_angle);
-        
         fixed start_fx = gs->ball.x;
         fixed start_fy = gs->ball.y;
-        
-        /* Distance in tiles */
-        int tiles_dist = club->nominal_yards / YARDS_PER_TILE;
-        fixed end_fx = start_fx + FMUL(TO_FIXED(tiles_dist), aim_dx);
-        fixed end_fy = start_fy + FMUL(TO_FIXED(tiles_dist), aim_dy);
+        fixed end_fx = gs->aim_target_x;
+        fixed end_fy = gs->aim_target_y;
         
         fixed start_gz = golf_get_ground_z_fixed(gs, start_fx, start_fy);
         fixed end_gz = golf_get_ground_z_fixed(gs, end_fx, end_fy);
@@ -1121,16 +1160,56 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         int32_t sx1 = FROM_FIXED(FMUL(end_fx - end_fy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
         int32_t sy1 = FROM_FIXED(FMUL(end_fx + end_fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(end_gz) + rc->camera_y + TILE_HALF_H;
         
+        /* Draw dual-layer dotted trajectory line */
         draw_line(rc, sx0, sy0, sx1, sy1, COLOR_RGB(255, 235, 80), true);
         
-        /* Target Reticle at predicted landing */
-        for (int dy = -4; dy <= 4; ++dy) {
-            for (int dx = -4; dx <= 4; ++dx) {
+        /* Target Reticle at aim landing spot */
+        /* Outer ring */
+        for (int dy = -6; dy <= 6; ++dy) {
+            for (int dx = -6; dx <= 6; ++dx) {
                 int r2 = dx * dx + dy * dy;
-                if (r2 >= 9 && r2 <= 16) {
-                    set_pixel(rc, sx1 + dx, sy1 + dy, COLOR_RGB(255, 230, 40));
+                if (r2 >= 28 && r2 <= 36) {
+                    set_pixel(rc, sx1 + dx, sy1 + dy, COLOR_RGB(255, 255, 255));
                 }
             }
+        }
+        /* Inner ring */
+        for (int dy = -3; dy <= 3; ++dy) {
+            for (int dx = -3; dx <= 3; ++dx) {
+                int r2 = dx * dx + dy * dy;
+                if (r2 >= 7 && r2 <= 11) {
+                    set_pixel(rc, sx1 + dx, sy1 + dy, COLOR_RGB(255, 225, 40));
+                }
+            }
+        }
+        /* Center bullseye */
+        set_pixel(rc, sx1, sy1, COLOR_RGB(255, 60, 60));
+        set_pixel(rc, sx1 - 1, sy1, COLOR_RGB(255, 200, 60));
+        set_pixel(rc, sx1 + 1, sy1, COLOR_RGB(255, 200, 60));
+        set_pixel(rc, sx1, sy1 - 1, COLOR_RGB(255, 200, 60));
+        set_pixel(rc, sx1, sy1 + 1, COLOR_RGB(255, 200, 60));
+        
+        /* Crosshairs */
+        set_pixel(rc, sx1 - 8, sy1, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1 - 7, sy1, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1 + 7, sy1, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1 + 8, sy1, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1, sy1 - 8, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1, sy1 - 7, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1, sy1 + 7, COLOR_RGB(255, 240, 80));
+        set_pixel(rc, sx1, sy1 + 8, COLOR_RGB(255, 240, 80));
+        
+        /* Floating yardage badge above aiming spot */
+        char badge_buf[32];
+        snprintf(badge_buf, sizeof(badge_buf), "%d YDS", gs->aim_distance_yds);
+        int b_len = (int)strlen(badge_buf);
+        int b_w = b_len * 8 + 8;
+        int b_x = sx1 - b_w / 2;
+        int b_y = sy1 - 22;
+        if (b_x >= 4 && b_x + b_w < SCREEN_W - 4 && b_y >= 32) {
+            draw_rect(rc, b_x, b_y, b_w, 13, COLOR_RGB(16, 24, 34));
+            draw_rect_border(rc, b_x, b_y, b_w, 13, COLOR_RGB(255, 220, 70));
+            draw_text(rc, b_x + 4, b_y + 3, badge_buf, COLOR_RGB(255, 245, 150), false);
         }
     }
     

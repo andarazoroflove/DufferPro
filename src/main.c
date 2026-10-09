@@ -294,6 +294,14 @@ int main(int argc, char *argv[]) {
                         if (s_lbutton_down && s_game_state.mode == MODE_BUILD && s_render_ctx.mouse_valid && my < SCREEN_H - 58 && my > 28) {
                             golf_build_apply_tool(&s_game_state, s_render_ctx.mouse_gx, s_render_ctx.mouse_gy);
                         }
+                        
+                        /* Dynamic drag-aiming in Play Mode */
+                        if (s_lbutton_down && s_game_state.mode == MODE_PLAY && s_game_state.swing.state == SWING_STATE_READY && my < SCREEN_H - 58 && my > 28) {
+                            fixed target_fx, target_fy;
+                            if (screen_to_world_fixed(&s_game_state, mx, my, s_render_ctx.camera_x, s_render_ctx.camera_y, &target_fx, &target_fy)) {
+                                golf_set_aim_target(&s_game_state, target_fx, target_fy);
+                            }
+                        }
                     }
                     break;
                     
@@ -346,7 +354,29 @@ int main(int argc, char *argv[]) {
                                     golf_build_apply_tool(&s_game_state, s_render_ctx.mouse_gx, s_render_ctx.mouse_gy);
                                 }
                             } else {
-                                golf_swing_click(&s_game_state);
+                                /* Play Mode */
+                                if (s_game_state.swing.state == SWING_STATE_READY) {
+                                    /* Check if clicking directly on the golfer / ball (within 18 pixels) to start swing */
+                                    fixed fx = s_game_state.ball.x;
+                                    fixed fy = s_game_state.ball.y;
+                                    fixed gz = s_game_state.ball.ground_z;
+                                    int32_t bsx = FROM_FIXED(FMUL(fx - fy, TO_FIXED(TILE_HALF_W))) + s_render_ctx.camera_x + TILE_HALF_W;
+                                    int32_t bsy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + s_render_ctx.camera_y + TILE_HALF_H - 10;
+                                    int cdx = mx - bsx;
+                                    int cdy = my - bsy;
+                                    if (cdx * cdx + cdy * cdy <= 18 * 18) {
+                                        golf_swing_click(&s_game_state);
+                                    } else {
+                                        /* Clicked terrain: set aiming target spot! */
+                                        fixed target_fx, target_fy;
+                                        if (screen_to_world_fixed(&s_game_state, mx, my, s_render_ctx.camera_x, s_render_ctx.camera_y, &target_fx, &target_fy)) {
+                                            golf_set_aim_target(&s_game_state, target_fx, target_fy);
+                                        }
+                                    }
+                                } else {
+                                    /* Swing in progress: click anywhere to lock power or accuracy */
+                                    golf_swing_click(&s_game_state);
+                                }
                             }
                         }
                     }

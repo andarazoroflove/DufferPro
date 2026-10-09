@@ -55,6 +55,22 @@ int main(void) {
     printf("Saved screenshot_random_hole.bmp (Tee: %d,%d, Pin: %d,%d, Yds: %d, Par: %d)\n",
            gs.tee_gx, gs.tee_gy, gs.pin_gx, gs.pin_gy, gs.hole_yards, gs.par);
     
+    /* 5b. Click-to-Aim Test */
+    printf("\n--- Testing Click-to-Aim Mechanism ---\n");
+    /* Simulate player clicking the screen at (sx=450, sy=260) */
+    fixed click_fx, click_fy;
+    if (screen_to_world_fixed(&gs, 450, 260, rc.camera_x, rc.camera_y, &click_fx, &click_fy)) {
+        golf_set_aim_target(&gs, click_fx, click_fy);
+    }
+    printf("Clicked Screen (450, 260) -> World (%.1f, %.1f) -> Angle=%d, Distance=%d yds, Selected Club=%s\n",
+           (float)FROM_FIXED(gs.aim_target_x), (float)FROM_FIXED(gs.aim_target_y),
+           gs.aim_angle, gs.aim_distance_yds, golf_get_club_data(gs.current_club)->name);
+    rc.mouse_sx = 450;
+    rc.mouse_sy = 260;
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_aim_target.bmp");
+    printf("Saved screenshot_aim_target.bmp\n");
+    
     /* 6. Swing & Ball Flight Test */
     printf("\n--- Simulating 3-Click Swing ---\n");
     printf("Initial: State=%d, Ball=(%.2f, %.2f, z=%.2f)\n",

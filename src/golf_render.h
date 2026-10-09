@@ -35,6 +35,7 @@ void render_free(RenderContext *rc);
 /* Isometric coordinate conversions */
 void grid_to_screen(int32_t gx, int32_t gy, int32_t elevation, int32_t cam_x, int32_t cam_y, int32_t *sx, int32_t *sy);
 bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, int32_t *out_gx, int32_t *out_gy);
+bool screen_to_world_fixed(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, fixed *out_fx, fixed *out_fy);
 
 /* Main Draw Entrypoint */
 void render_frame(RenderContext *rc, const GolfState *gs);

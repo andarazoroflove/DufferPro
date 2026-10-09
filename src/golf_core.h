@@ -171,6 +171,10 @@ typedef struct {
     /* Player in Play Mode */
     ClubType current_club;
     uint8_t aim_angle;      /* 0..255 (0 = East, 64 = South, 128 = West, 192 = North) */
+    fixed aim_target_x;     /* Aim landing spot in grid units (fixed 16.16) */
+    fixed aim_target_y;
+    int32_t aim_distance_yds; /* Distance in yards to aim target */
+    bool has_custom_aim;    /* True if player explicitly placed aim spot */
     SwingGauge swing;
     BallEntity ball;
     Wind wind;
@@ -200,6 +204,7 @@ void golf_set_mode(GolfState *gs, GameMode mode);
 void golf_select_club(GolfState *gs, ClubType club);
 void golf_change_club(GolfState *gs, int delta);
 void golf_adjust_aim(GolfState *gs, int delta_angle);
+void golf_set_aim_target(GolfState *gs, fixed target_x, fixed target_y);
 void golf_swing_click(GolfState *gs);
 void golf_reset_ball_to_tee(GolfState *gs);
 

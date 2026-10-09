@@ -98,8 +98,8 @@ int main(void) {
     
     /* Click 3: Snap sweetspot & Strike ball! */
     golf_swing_click(&gs);
-    printf("Click 3: Ball state=%d (Expected 1/IN_FLIGHT), vz=%.2f px/tick\n",
-           gs.ball.state, (float)FROM_FIXED(gs.ball.vz));
+    printf("Click 3: Ball state=%d (Expected 1/IN_FLIGHT), vz=%.2f px/tick, AudioEvent=%d (Expected 1/SWING_DRIVER)\n",
+           gs.ball.state, (float)FROM_FIXED(gs.ball.vz), gs.audio_event);
     
     /* Fly 35 ticks into the air (near apex) and capture flight screenshot */
     for (int t = 0; t < 35; ++t) golf_tick(&gs);
@@ -159,6 +159,44 @@ int main(void) {
     }
     printf("Golfer finished walk after %d ticks, Footsteps generated: %d, Final Golfer State: %d\n",
            walk_ticks, footstep_events, gs.golfer.state);
+    
+    /* 8. Putting & Cup Sinking Audio Test */
+    printf("\n--- Simulating Putting & Cup Sinking Audio ---\n");
+    gs.ball.x = TO_FIXED(gs.pin_gx) + FIXED_HALF + 16384; /* ~0.25 tiles away */
+    gs.ball.y = TO_FIXED(gs.pin_gy) + FIXED_HALF;
+    gs.ball.ground_z = golf_get_ground_z_fixed(&gs, gs.ball.x, gs.ball.y);
+    gs.ball.z = gs.ball.ground_z;
+    gs.ball.state = BALL_IDLE;
+    gs.ball.current_surf = SURF_GREEN;
+    gs.current_club = CLUB_PT;
+    gs.aim_target_x = TO_FIXED(gs.pin_gx) + FIXED_HALF;
+    gs.aim_target_y = TO_FIXED(gs.pin_gy) + FIXED_HALF;
+    gs.aim_angle = 128; /* pointing directly toward cup */
+    gs.aim_distance_yds = 2;
+    gs.swing.state = SWING_STATE_READY;
+    gs.hole_completed = false;
+    
+    golf_swing_click(&gs); /* Click 1 */
+    gs.swing.locked_power = 15000;
+    gs.swing.state = SWING_STATE_ACCURACY;
+    gs.swing.cursor_pos = gs.swing.sweetspot_center;
+    golf_swing_click(&gs); /* Click 3: Strike putt */
+    printf("Putt Strike: AudioEvent=%d (Expected 4/SWING_PUTTER), Ball state=%d\n", gs.audio_event, gs.ball.state);
+    
+    int putt_ticks = 0;
+    bool cup_sink_triggered = false;
+    while (putt_ticks < 120 && gs.ball.state != BALL_IDLE && !gs.hole_completed) {
+        golf_tick(&gs);
+        if (gs.audio_event == AUDIO_EVT_CUP_SINK) {
+            cup_sink_triggered = true;
+            printf("  Putt Tick %d: AudioEvent=%d (AUDIO_EVT_CUP_SINK!), Ball state=%d, Hole Completed=%d\n",
+                   putt_ticks, gs.audio_event, gs.ball.state, gs.hole_completed);
+            gs.audio_event = AUDIO_EVT_NONE;
+            break;
+        }
+        putt_ticks++;
+    }
+    printf("Cup Sink Test Result: %s\n", cup_sink_triggered ? "SUCCESS (AUDIO_EVT_CUP_SINK FIRED)" : "FAILED");
     
     render_free(&rc);
     return 0;

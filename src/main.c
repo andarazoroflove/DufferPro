@@ -52,6 +52,14 @@ static bool handle_build_ui_click(GolfState *gs, int mx, int my) {
     return true; /* Consumed by UI */
 }
 
+/* Dispatch any pending procedural audio events immediately */
+static void dispatch_audio_events(void) {
+    if (s_game_state.audio_event != AUDIO_EVT_NONE) {
+        golf_audio_play_sfx((GolfSfxType)s_game_state.audio_event);
+        s_game_state.audio_event = AUDIO_EVT_NONE;
+    }
+}
+
 /* Handle bottom tool click in Play Mode */
 static bool handle_play_ui_click(GolfState *gs, int mx, int my) {
     if (my < SCREEN_H - 58) return false;
@@ -72,6 +80,7 @@ static bool handle_play_ui_click(GolfState *gs, int mx, int my) {
     if (mx >= 300 && mx <= 518) {
         s_free_cam = false;
         golf_swing_click(gs);
+        dispatch_audio_events();
         return true;
     }
     
@@ -187,6 +196,7 @@ int main(int argc, char *argv[]) {
                             if (s_game_state.mode == MODE_PLAY) {
                                 s_free_cam = false;
                                 golf_swing_click(&s_game_state);
+                                dispatch_audio_events();
                             }
                             break;
                             
@@ -379,6 +389,7 @@ int main(int argc, char *argv[]) {
                                     if (cdx * cdx + cdy * cdy <= 18 * 18) {
                                         s_free_cam = false;
                                         golf_swing_click(&s_game_state);
+                                        dispatch_audio_events();
                                     } else {
                                         /* Clicked terrain: set aiming target spot! */
                                         fixed target_fx, target_fy;
@@ -390,6 +401,7 @@ int main(int argc, char *argv[]) {
                                     /* Swing in progress: click anywhere to lock power or accuracy */
                                     s_free_cam = false;
                                     golf_swing_click(&s_game_state);
+                                    dispatch_audio_events();
                                 }
                             }
                         }
@@ -442,10 +454,7 @@ int main(int argc, char *argv[]) {
         golf_tick(&s_game_state);
         
         /* Audio SFX Dispatch */
-        if (s_game_state.audio_event != AUDIO_EVT_NONE) {
-            golf_audio_play_sfx(s_game_state.audio_event);
-            s_game_state.audio_event = AUDIO_EVT_NONE;
-        }
+        dispatch_audio_events();
         
         /* Audio Ambient Soundscape Update (Wind + Water Proximity) */
         if (s_game_state.mode == MODE_PLAY || s_game_state.mode == MODE_BUILD) {

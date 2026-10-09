@@ -71,47 +71,62 @@ static float synthesize_sfx_sample(SfxVoice *v) {
     
     switch (v->type) {
         case SFX_SWING_DRIVER: {
-            /* Punchy 130 Hz thump rapidly gliding to 40 Hz + crisp crack noise burst */
-            float env = expf(-progress * 9.0f);
-            float freq = 135.0f * expf(-t * 28.0f) + 42.0f;
-            float thump = sinf(2.0f * (float)M_PI * freq * t) * env;
-            
-            float crack_env = (t < 0.06f) ? (1.0f - t / 0.06f) : 0.0f;
-            float crack = audio_noise() * crack_env * 0.9f;
-            
-            /* High whoosh component */
-            float whoosh = audio_noise() * expf(-progress * 5.0f) * 0.25f;
-            out = (thump * 0.7f + crack * 0.8f + whoosh) * v->volume;
+            /* Aerodynamic club whoosh transitioning into explosive titanium face crack and sub-thump */
+            float whoosh = 0.0f;
+            if (t < 0.07f) {
+                float w_env = sinf((t / 0.07f) * (float)M_PI);
+                whoosh = audio_noise() * w_env * 0.75f;
+            }
+            float hit_t = (t >= 0.035f) ? (t - 0.035f) : 0.0f;
+            float hit_env = expf(-hit_t * 14.0f);
+            float freq = 175.0f * expf(-hit_t * 28.0f) + 42.0f;
+            float thump = sinf(2.0f * (float)M_PI * freq * hit_t) * hit_env * 0.95f;
+            float crack_env = (hit_t < 0.07f) ? expf(-hit_t * 35.0f) : 0.0f;
+            float crack = audio_noise() * crack_env * 1.35f;
+            out = (whoosh * 0.6f + thump * 0.85f + crack * 1.0f) * v->volume;
             break;
         }
         
         case SFX_SWING_IRON: {
-            /* Sharp metallic ping (880 Hz with 2640 Hz overtone) + tight impact pop */
-            float env = expf(-progress * 11.0f);
-            float ping = (sinf(2.0f * (float)M_PI * 880.0f * t) * 0.7f +
-                          sinf(2.0f * (float)M_PI * 2640.0f * t) * 0.3f) * env;
-            float pop_env = (t < 0.03f) ? (1.0f - t / 0.03f) : 0.0f;
-            float pop = audio_noise() * pop_env * 0.6f;
-            out = (ping * 0.75f + pop) * v->volume;
+            /* Club swoosh into crisp metallic steel ping (920 Hz & 2760 Hz) and firm impact snap */
+            float whoosh = 0.0f;
+            if (t < 0.05f) {
+                whoosh = audio_noise() * sinf((t / 0.05f) * (float)M_PI) * 0.55f;
+            }
+            float hit_t = (t >= 0.025f) ? (t - 0.025f) : 0.0f;
+            float hit_env = expf(-hit_t * 16.0f);
+            float ping = (sinf(2.0f * (float)M_PI * 920.0f * hit_t) * 0.75f +
+                          sinf(2.0f * (float)M_PI * 2760.0f * hit_t) * 0.35f) * hit_env;
+            float snap = audio_noise() * expf(-hit_t * 45.0f) * 1.0f;
+            out = (whoosh * 0.5f + ping * 0.85f + snap * 0.9f) * v->volume;
             break;
         }
         
         case SFX_SWING_WEDGE: {
-            /* Crisp turf slice + 220 Hz low thump */
-            float env = expf(-progress * 10.0f);
-            float thump = sinf(2.0f * (float)M_PI * 220.0f * t) * env;
-            float turf_env = (t < 0.08f) ? (1.0f - t / 0.08f) : 0.0f;
-            float turf = audio_noise() * turf_env * 0.8f;
-            out = (thump * 0.5f + turf * 0.75f) * v->volume;
+            /* Aerodynamic swish into crisp turf slice and firm 250 Hz ball strike */
+            float whoosh = 0.0f;
+            if (t < 0.05f) {
+                whoosh = audio_noise() * sinf((t / 0.05f) * (float)M_PI) * 0.6f;
+            }
+            float hit_t = (t >= 0.02f) ? (t - 0.02f) : 0.0f;
+            float thump = sinf(2.0f * (float)M_PI * 250.0f * hit_t) * expf(-hit_t * 18.0f) * 0.75f;
+            float turf = audio_noise() * expf(-hit_t * 32.0f) * 1.05f;
+            out = (whoosh * 0.5f + thump * 0.75f + turf * 0.85f) * v->volume;
             break;
         }
         
         case SFX_SWING_PUTTER: {
-            /* Soft hollow wooden "tock" */
-            float env = expf(-progress * 16.0f);
-            float tock = sinf(2.0f * (float)M_PI * 330.0f * t) * env;
-            float sub = sinf(2.0f * (float)M_PI * 165.0f * t) * env * 0.4f;
-            out = (tock + sub) * v->volume * 0.8f;
+            /* Putting stroke swoosh into rich hollow composite tock */
+            float whoosh = 0.0f;
+            if (t < 0.04f) {
+                whoosh = audio_noise() * sinf((t / 0.04f) * (float)M_PI) * 0.35f;
+            }
+            float hit_t = (t >= 0.015f) ? (t - 0.015f) : 0.0f;
+            float env = expf(-hit_t * 22.0f);
+            float tock = sinf(2.0f * (float)M_PI * 340.0f * hit_t) * env * 0.9f;
+            float sub = sinf(2.0f * (float)M_PI * 170.0f * hit_t) * env * 0.55f;
+            float tap = audio_noise() * expf(-hit_t * 40.0f) * 0.5f;
+            out = (whoosh * 0.4f + tock + sub + tap) * v->volume;
             break;
         }
         
@@ -181,20 +196,32 @@ static float synthesize_sfx_sample(SfxVoice *v) {
         }
         
         case SFX_CUP_SINK: {
-            /* Plop -> Cup rattle -> Settled */
+            /* Rich authentic golf cup sink: hollow plop -> plastic liner bounce -> pin flag rattle */
             if (t < 0.12f) {
-                float plop_env = expf(-t * 25.0f);
-                out = sinf(2.0f * (float)M_PI * 280.0f * t) * plop_env * 0.8f;
-            } else if (t < 0.30f) {
+                /* Initial hollow plop into plastic cup (resonant 320 Hz swept to 150 Hz + dull thud) */
+                float p_env = expf(-t * 22.0f);
+                float freq = 320.0f * expf(-t * 20.0f) + 150.0f;
+                float plop = sinf(2.0f * (float)M_PI * freq * t) * p_env * 1.1f;
+                float thud = audio_noise() * p_env * 0.45f;
+                out = (plop + thud);
+            } else if (t < 0.28f) {
+                /* Secondary plastic rim bounce inside bottom of cup */
                 float rel_t = t - 0.12f;
-                float rattle = sinf(2.0f * (float)M_PI * 680.0f * rel_t) * expf(-rel_t * 18.0f) * 0.6f;
-                float click = audio_noise() * expf(-rel_t * 30.0f) * 0.4f;
-                out = (rattle + click) * 0.8f;
+                float r_env = expf(-rel_t * 22.0f);
+                float clatter = (sinf(2.0f * (float)M_PI * 860.0f * rel_t) * 0.7f +
+                                 sinf(2.0f * (float)M_PI * 1440.0f * rel_t) * 0.45f) * r_env;
+                float tap = audio_noise() * r_env * 0.5f;
+                out = (clatter + tap) * 1.15f;
             } else {
-                float rel_t = t - 0.30f;
-                out = sinf(2.0f * (float)M_PI * 520.0f * rel_t) * expf(-rel_t * 22.0f) * 0.3f;
+                /* Settling rattle against metal cup liner and pin pole */
+                float rel_t = t - 0.28f;
+                float s_env = expf(-rel_t * 16.0f);
+                float rattle = (sinf(2.0f * (float)M_PI * 680.0f * rel_t) * 0.6f +
+                                sinf(2.0f * (float)M_PI * 1280.0f * rel_t) * 0.35f) * s_env;
+                float click = audio_noise() * s_env * 0.35f;
+                out = (rattle + click) * 0.9f;
             }
-            out *= v->volume;
+            out *= v->volume * 1.35f;
             break;
         }
         
@@ -358,7 +385,11 @@ void golf_audio_shutdown(void) {
 void golf_audio_play_sfx(GolfSfxType sfx) {
     if (!s_audio_ready) return;
     
-    SDL_LockAudio();
+    if (s_audio_device != 0) {
+        SDL_LockAudioDevice(s_audio_device);
+    } else {
+        SDL_LockAudio();
+    }
     
     /* Find free voice slot or oldest voice */
     int best_slot = -1;
@@ -384,24 +415,28 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
         v->pan = 0.0f;
         
         switch (sfx) {
-            case SFX_SWING_DRIVER: v->total_samples = AUDIO_SAMPLE_RATE * 35 / 100; v->volume = 1.1f; break;
-            case SFX_SWING_IRON:   v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 1.0f; break;
-            case SFX_SWING_WEDGE:  v->total_samples = AUDIO_SAMPLE_RATE * 22 / 100; v->volume = 0.95f; break;
-            case SFX_SWING_PUTTER: v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.85f; break;
-            case SFX_BALL_BOUNCE:  v->total_samples = AUDIO_SAMPLE_RATE * 10 / 100; v->volume = 0.70f; break;
-            case SFX_TREE_HIT:     v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 1.1f; break;
-            case SFX_ROCK_HIT:     v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.1f; break;
-            case SFX_WATER_SPLASH: v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.05f; break;
+            case SFX_SWING_DRIVER: v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.35f; break;
+            case SFX_SWING_IRON:   v->total_samples = AUDIO_SAMPLE_RATE * 30 / 100; v->volume = 1.25f; break;
+            case SFX_SWING_WEDGE:  v->total_samples = AUDIO_SAMPLE_RATE * 26 / 100; v->volume = 1.20f; break;
+            case SFX_SWING_PUTTER: v->total_samples = AUDIO_SAMPLE_RATE * 18 / 100; v->volume = 1.15f; break;
+            case SFX_BALL_BOUNCE:  v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.80f; break;
+            case SFX_TREE_HIT:     v->total_samples = AUDIO_SAMPLE_RATE * 42 / 100; v->volume = 1.25f; break;
+            case SFX_ROCK_HIT:     v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.25f; break;
+            case SFX_WATER_SPLASH: v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.20f; break;
             case SFX_FOOTSTEP_GRASS: v->total_samples = AUDIO_SAMPLE_RATE * 10 / 100; v->volume = 0.50f; break;
             case SFX_FOOTSTEP_SAND:  v->total_samples = AUDIO_SAMPLE_RATE * 13 / 100; v->volume = 0.55f; break;
             case SFX_FOOTSTEP_ROUGH: v->total_samples = AUDIO_SAMPLE_RATE * 15 / 100; v->volume = 0.55f; break;
-            case SFX_CUP_SINK:     v->total_samples = AUDIO_SAMPLE_RATE * 48 / 100; v->volume = 1.15f; break;
-            case SFX_SWEETSPOT:    v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 0.90f; break;
+            case SFX_CUP_SINK:     v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.45f; break;
+            case SFX_SWEETSPOT:    v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 0.95f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }
     
-    SDL_UnlockAudio();
+    if (s_audio_device != 0) {
+        SDL_UnlockAudioDevice(s_audio_device);
+    } else {
+        SDL_UnlockAudio();
+    }
 }
 
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) {

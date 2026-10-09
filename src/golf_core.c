@@ -97,8 +97,8 @@ static void core_srand(uint32_t seed) {
 #define WIND_FACTOR_FIXED        2   /* Realistic wind drift (~5 yds in 15 mph crosswind) */
 #define SLOPE_ACCEL_FIXED     300   /* Elevation slope acceleration */
 #define STOP_SPEED_THRESHOLD  800   /* Threshold to stop rolling */
-#define CUP_RADIUS_FIXED    22000   /* Cup capture radius (~0.33 tiles) */
-#define CUP_MAX_SPEED       18000   /* Maximum entry speed to sink */
+#define CUP_RADIUS_FIXED    28000   /* Cup capture radius (~0.42 tiles) */
+#define CUP_MAX_SPEED       26000   /* Maximum entry speed to sink */
 
 /* Elevation height step query */
 fixed golf_get_ground_z_fixed(const GolfState *gs, fixed fx, fixed fy) {
@@ -945,8 +945,6 @@ void golf_swing_click(GolfState *gs) {
 
 /* Physics and Simulation Tick */
 void golf_tick(GolfState *gs) {
-    gs->audio_event = AUDIO_EVT_NONE;
-    
     if (gs->banner_timer > 0) {
         gs->banner_timer--;
     }
@@ -1047,6 +1045,47 @@ void golf_tick(GolfState *gs) {
                 gs->audio_event = AUDIO_EVT_WATER_SPLASH;
                 set_banner(gs, "SPLASH! WATER HAZARD (+1 PENALTY)", 120);
                 return;
+            }
+            
+            /* Direct dunk / cup capture check */
+            if (gs->has_pin) {
+                fixed pin_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
+                fixed pin_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
+                fixed dx = pin_x - gs->ball.x;
+                fixed dy = pin_y - gs->ball.y;
+                fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+                if (dist < CUP_RADIUS_FIXED) {
+                    fixed speed = fixed_sqrt(FMUL(gs->ball.vx, gs->ball.vx) + FMUL(gs->ball.vy, gs->ball.vy));
+                    if (speed < CUP_MAX_SPEED) {
+                        /* Direct hole-in! */
+                        gs->ball.x = pin_x;
+                        gs->ball.y = pin_y;
+                        gs->ball.vx = 0;
+                        gs->ball.vy = 0;
+                        gs->ball.vz = 0;
+                        gs->ball.state = BALL_HOLED;
+                        gs->hole_completed = true;
+                        gs->audio_event = AUDIO_EVT_CUP_SINK;
+                        
+                        int32_t rel = gs->strokes - gs->par;
+                        if (gs->strokes == 1) {
+                            set_banner(gs, "*** HOLE IN ONE! LEGENDARY! ***", 300);
+                        } else if (rel <= -3) {
+                            set_banner(gs, "*** ALBATROSS! INCREDIBLE! ***", 300);
+                        } else if (rel == -2) {
+                            set_banner(gs, "*** EAGLE! MAGNIFICENT! ***", 300);
+                        } else if (rel == -1) {
+                            set_banner(gs, "** BIRDIE! EXCELLENT SHOT! **", 300);
+                        } else if (rel == 0) {
+                            set_banner(gs, "* PAR! SOLID GOLF! *", 240);
+                        } else if (rel == 1) {
+                            set_banner(gs, "BOGEY.", 240);
+                        } else {
+                            set_banner(gs, "DOUBLE BOGEY (+).", 240);
+                        }
+                        return;
+                    }
+                }
             }
             
             /* Ground Restitution & Friction */

@@ -43,10 +43,6 @@ static inline float audio_noise(void) {
 }
 
 /* Ambient System State */
-static float s_wind_target_vol = 0.08f;
-static float s_wind_current_vol = 0.08f;
-static float s_wind_filter = 0.0f;
-
 static float s_water_target_vol = 0.0f;
 static float s_water_current_vol = 0.0f;
 static float s_water_phase1 = 0.0f;
@@ -231,22 +227,21 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
     
     for (int i = 0; i < num_samples; ++i) {
         /* 1. Update smooth ambient volume transitions */
-        s_wind_current_vol += (s_wind_target_vol - s_wind_current_vol) * 0.0005f;
         s_water_current_vol += (s_water_target_vol - s_water_current_vol) * 0.0005f;
         
-        /* 2. Synthesize Wind Ambient (gentle filtered pink/white noise) */
-        float raw_noise = audio_noise();
-        s_wind_filter = s_wind_filter * 0.94f + raw_noise * 0.06f;
-        float wind_sample = s_wind_filter * s_wind_current_vol * 1.5f;
+        /* 2. Wind ambient removed per request (no helicopter flutter) */
+        float wind_sample = 0.0f;
         
-        /* 3. Synthesize Water Ambient (lapping stream/lake ripple) */
-        s_water_phase1 += 0.003f;
-        if (s_water_phase1 > 2.0f * (float)M_PI) s_water_phase1 -= 2.0f * (float)M_PI;
-        s_water_phase2 += 0.007f;
-        if (s_water_phase2 > 2.0f * (float)M_PI) s_water_phase2 -= 2.0f * (float)M_PI;
-        
-        float water_mod = (sinf(s_water_phase1) * 0.4f + sinf(s_water_phase2) * 0.3f + 0.7f);
-        float water_sample = s_wind_filter * water_mod * s_water_current_vol * 1.8f;
+        /* 3. Synthesize Water Ambient (gentle subtle ripple when near water) */
+        float water_sample = 0.0f;
+        if (s_water_current_vol > 0.001f) {
+            s_water_phase1 += 0.0035f;
+            if (s_water_phase1 > 2.0f * (float)M_PI) s_water_phase1 -= 2.0f * (float)M_PI;
+            s_water_phase2 += 0.008f;
+            if (s_water_phase2 > 2.0f * (float)M_PI) s_water_phase2 -= 2.0f * (float)M_PI;
+            float w_sine = (sinf(s_water_phase1) * 0.5f + sinf(s_water_phase2) * 0.3f);
+            water_sample = w_sine * s_water_current_vol * 0.35f;
+        }
         
         /* 4. Synthesize Procedural Bird Chirps */
         float bird_left = 0.0f;
@@ -411,19 +406,13 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
 
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) {
     if (!s_audio_ready) return;
+    (void)wind_speed;
     
-    /* Wind: speed 3..18 mph -> volume 0.05 to 0.22 */
-    float spd_mph = (float)FROM_FIXED(wind_speed);
-    if (spd_mph < 2.0f) spd_mph = 2.0f;
-    float w_vol = 0.04f + (spd_mph / 20.0f) * 0.18f;
-    if (w_vol > 0.25f) w_vol = 0.25f;
-    s_wind_target_vol = w_vol;
-    
-    /* Water proximity: 0..100% -> volume 0.0 to 0.25 */
+    /* Water proximity: 0..100% -> subtle lake ambient 0.0 to 0.15 */
     float prox = (float)water_proximity_percent / 100.0f;
     if (prox < 0.0f) prox = 0.0f;
     if (prox > 1.0f) prox = 1.0f;
-    s_water_target_vol = prox * 0.22f;
+    s_water_target_vol = prox * 0.15f;
 }
 
 #endif /* !USE_WIN32_GDI */

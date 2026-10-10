@@ -2089,13 +2089,13 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
         }
     }
     
-    /* 5. Rolling Emerald Fairway Turf & Hazards (y = 420..768) */
-    for (int y = 420; y < SCREEN_H; ++y) {
-        float t = (float)(y - 420) / (float)(SCREEN_H - 420);
+    /* 5. Rolling Emerald Fairway Turf & Course Landscape (y = 370..768) */
+    for (int y = 370; y < SCREEN_H; ++y) {
+        float t = (float)(y - 370) / (float)(SCREEN_H - 370);
         for (int x = 0; x < SCREEN_W; ++x) {
             /* Rolling contour hill curve */
-            int hill_offset = (int)(sinf((float)x * 0.006f) * 28.0f);
-            if (y < 420 + hill_offset) continue;
+            int hill_offset = (int)(sinf((float)x * 0.007f) * 20.0f + cosf((float)x * 0.016f) * 10.0f);
+            if (y < 395 + hill_offset) continue;
             
             /* Fairway stripes */
             int stripe = ((x + y) / 24) & 1;
@@ -2106,36 +2106,36 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
         }
     }
     
-    /* Water Hazard Lake on Left (x = 30..260, y = 460..540) */
-    for (int dy = -35; dy <= 35; ++dy) {
-        int py = 495 + dy;
+    /* 6. Grand Georgian Clubhouse on High Bluff (x = 173..303, y = 368..453 - 100% Dry Ground!) */
+    render_clubhouse(rc, 205, 420);
+    
+    /* Water Hazard Lake down on lower left (x = 20..170, y = 545..585 - nestled in valley) */
+    for (int dy = -20; dy <= 20; ++dy) {
+        int py = 565 + dy;
         if (py < 0 || py >= SCREEN_H) continue;
-        for (int dx = -110; dx <= 110; ++dx) {
-            int px = 145 + dx;
+        for (int dx = -75; dx <= 75; ++dx) {
+            int px = 95 + dx;
             if (px < 0 || px >= SCREEN_W) continue;
-            if (dx * dx * 2 + dy * dy * 18 <= 110 * 110 * 2) {
+            if (dx * dx * 2 + dy * dy * 18 <= 75 * 75 * 2) {
                 int wave = (int)(sinf((float)px * 0.1f + (float)tick_count * 0.08f) * 1.5f);
                 rc->framebuffer[(py + wave) * SCREEN_W + px] = COLOR_RGB(42, 95, 165);
             }
         }
     }
     
-    /* White Sand Bunker on Right (x = 690..790, y = 460..510) */
-    for (int dy = -22; dy <= 22; ++dy) {
-        int py = 485 + dy;
+    /* White Sand Bunker Guarding Putting Green (x = 765..835, y = 450..480) */
+    for (int dy = -16; dy <= 16; ++dy) {
+        int py = 465 + dy;
         if (py < 0 || py >= SCREEN_H) continue;
-        for (int dx = -50; dx <= 50; ++dx) {
-            int px = 740 + dx;
+        for (int dx = -36; dx <= 36; ++dx) {
+            int px = 800 + dx;
             if (px < 0 || px >= SCREEN_W) continue;
-            if (dx * dx + dy * dy * 5 <= 50 * 50) {
-                int shade = (dy < -12) ? -28 : 12;
+            if (dx * dx * 2 + dy * dy * 10 <= 36 * 36 * 2) {
+                int shade = (dy < -8) ? -28 : 12;
                 rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(225 + shade, 210 + shade, 160 + shade);
             }
         }
     }
-    
-    /* 6. Grand Clubhouse on the Bluff (x = 85..235, y = 370..445) */
-    render_clubhouse(rc, 160, 440);
     
     /* Flagstick on Putting Green (x = 840, y = 450) */
     draw_rect(rc, 840, 415, 2, 35, COLOR_RGB(230, 235, 240));
@@ -2143,28 +2143,32 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     
     /* Ponderosa Pines along ridge */
     blit_sprite_depth(rc, 40, 390, SPRITE_PINE_W, SPRITE_PINE_H, s_sprite_pine, 999999);
-    blit_sprite_depth(rc, 240, 400, SPRITE_OAK_W, SPRITE_OAK_H, s_sprite_oak, 999999);
+    blit_sprite_depth(rc, 280, 400, SPRITE_OAK_W, SPRITE_OAK_H, s_sprite_oak, 999999);
     blit_sprite_depth(rc, 910, 420, SPRITE_PALM_W, SPRITE_PALM_H, s_sprite_palm, 999999);
     blit_sprite_depth(rc, 870, 450, SPRITE_FLOWERING_W, SPRITE_FLOWERING_H, s_sprite_flowering, 999999);
     
-    /* 7. Foreground Golfer on Left (x = 240, y = 520) */
-    draw_drop_shadow(rc, 254, 555, 14, 6, 140);
-    blit_sprite_depth(rc, 240, 520, SPRITE_GOLFER_W, SPRITE_GOLFER_H, s_sprite_golfer, 999999);
-    draw_text(rc, 222, 563, "CHAMPION", COLOR_RGB(255, 235, 110), true);
+    /* 7. Foreground Golfer on Left (x = 270, y = 520) */
+    draw_drop_shadow(rc, 284, 555, 14, 6, 140);
+    blit_sprite_depth(rc, 270, 520, SPRITE_GOLFER_W, SPRITE_GOLFER_H, s_sprite_golfer, 999999);
+    draw_text(rc, 252, 563, "CHAMPION", COLOR_RGB(255, 235, 110), true);
     
-    /* 8. Foreground Beverage Cart Girl on Right (x = 680, y = 520) */
-    draw_drop_shadow(rc, 703, 556, 26, 10, 140);
-    blit_sprite_depth(rc, 680, 520, SPRITE_BEV_CART_W, SPRITE_BEV_CART_H, s_sprite_bev_cart, 999999);
+    /* 8. Foreground Beverage Cart Girl on Right (x = 710, y = 520) */
+    draw_drop_shadow(rc, 733, 556, 26, 10, 140);
+    blit_sprite_depth(rc, 710, 520, SPRITE_BEV_CART_W, SPRITE_BEV_CART_H, s_sprite_bev_cart, 999999);
     
     /* Floating Melodic Whistle Speech Bubble above Beverage Cart */
-    int bub_x = 645;
+    const char *bev_msg = "COLD DRINKS!";
+    int bub_w = 116;
+    int bub_h = 22;
+    int bub_x = 652;
     int bub_y = 485;
-    draw_rect(rc, bub_x, bub_y, 115, 22, COLOR_RGB(255, 255, 255));
-    draw_rect_border(rc, bub_x, bub_y, 115, 22, COLOR_RGB(35, 45, 55));
+    draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+    draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
     for (int dy = 0; dy < 6; ++dy) {
-        draw_rect(rc, bub_x + 55 + dy / 2, bub_y + 22 + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
+        draw_rect(rc, bub_x + 55 + dy / 2, bub_y + bub_h + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
     }
-    draw_text(rc, bub_x + 8, bub_y + 7, "♪ COLD DRINKS! ♪", COLOR_RGB(220, 20, 80), false);
+    int b_tx = bub_x + (bub_w - (int)strlen(bev_msg) * 8) / 2;
+    draw_text(rc, b_tx, bub_y + 7, bev_msg, COLOR_RGB(220, 20, 80), false);
     
     /* 9. Hero Title Logo: "DUFFER PRO" with 3D Embossing */
     int title_y = 65;
@@ -2205,40 +2209,11 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     int s_tx = SCREEN_W / 2 - (int)strlen(sub_text) * 8 / 2;
     draw_text(rc, s_tx, plq_y + plq_h + 10, sub_text, COLOR_RGB(255, 235, 145), true);
     
-    /* 10. Three Translucent Feature Cards (y = 575..630) */
-    int card_w = 270;
-    int card_h = 52;
-    int card_y = 575;
-    
-    /* Card 1: Terrain Sculpting */
-    int c1_x = 75;
-    draw_rect_alpha(rc, c1_x, card_y, card_w, card_h, COLOR_RGB(18, 28, 38), 215);
-    draw_rect_border(rc, c1_x, card_y, card_w, card_h, COLOR_RGB(75, 125, 165));
-    draw_text(rc, c1_x + 12, card_y + 8, "[ 6-TIER 3D SCULPTING ]", COLOR_RGB(255, 215, 75), true);
-    draw_text(rc, c1_x + 12, card_y + 24, "Raise, lower cliffs & autotile", COLOR_RGB(210, 225, 235), false);
-    draw_text(rc, c1_x + 12, card_y + 36, "bunkers, greens & water hazards", COLOR_RGB(165, 185, 205), false);
-    
-    /* Card 2: Living Resort */
-    int c2_x = 377;
-    draw_rect_alpha(rc, c2_x, card_y, card_w, card_h, COLOR_RGB(18, 28, 38), 215);
-    draw_rect_border(rc, c2_x, card_y, card_w, card_h, COLOR_RGB(75, 125, 165));
-    draw_text(rc, c2_x + 12, card_y + 8, "[ LIVING RESORT LIFE ]", COLOR_RGB(255, 215, 75), true);
-    draw_text(rc, c2_x + 12, card_y + 24, "Clubhouse, caddy, gallery crowd", COLOR_RGB(210, 225, 235), false);
-    draw_text(rc, c2_x + 12, card_y + 36, "cheers & country club funds", COLOR_RGB(165, 185, 205), false);
-    
-    /* Card 3: Beverage Cart */
-    int c3_x = 679;
-    draw_rect_alpha(rc, c3_x, card_y, card_w, card_h, COLOR_RGB(18, 28, 38), 215);
-    draw_rect_border(rc, c3_x, card_y, card_w, card_h, COLOR_RGB(75, 125, 165));
-    draw_text(rc, c3_x + 12, card_y + 8, "[ BEVERAGE CART SERVICE ]", COLOR_RGB(255, 215, 75), true);
-    draw_text(rc, c3_x + 12, card_y + 24, "Roving cart girl sells drinks &", COLOR_RGB(210, 225, 235), false);
-    draw_text(rc, c3_x + 12, card_y + 36, "whistles cheerful golf melodies", COLOR_RGB(165, 185, 205), false);
-    
-    /* 11. Prominent Interactive START BUTTON & Guidance (y = 646..735) */
+    /* 10. Prominent Interactive START BUTTON & Guidance (y = 636..735) */
     int btn_w = 440;
-    int btn_h = 44;
+    int btn_h = 46;
     int btn_x = SCREEN_W / 2 - btn_w / 2;
-    int btn_y = 646;
+    int btn_y = 636;
     
     /* Pulsing button glow */
     bool pulse = ((tick_count / 24) % 2 == 0);
@@ -2251,16 +2226,16 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     
     const char *btn_label = ">>  PRESS ENTER TO TEE OFF  <<";
     int btx = SCREEN_W / 2 - (int)strlen(btn_label) * 8 / 2;
-    draw_text(rc, btx, btn_y + 17, btn_label, COLOR_RGB(255, 250, 160), true);
+    draw_text(rc, btx, btn_y + 18, btn_label, COLOR_RGB(255, 250, 160), true);
     
     /* Explicit Clear Instruction */
     const char *note_text = "Press ENTER (or click button) to start  |  Spacebar is reserved for swings during play";
     int ntx = SCREEN_W / 2 - (int)strlen(note_text) * 8 / 2;
-    draw_text(rc, ntx, btn_y + 54, note_text, COLOR_RGB(255, 225, 130), true);
+    draw_text(rc, ntx, btn_y + 56, note_text, COLOR_RGB(255, 225, 130), true);
     
     const char *keys_hint = "Controls: TAB Switch Modes | Mouse Aim & Drag | Arrow Keys Pan Camera | C Change Club";
     int ktx = SCREEN_W / 2 - (int)strlen(keys_hint) * 8 / 2;
-    draw_text(rc, ktx, btn_y + 70, keys_hint, COLOR_RGB(155, 180, 200), false);
+    draw_text(rc, ktx, btn_y + 72, keys_hint, COLOR_RGB(155, 180, 200), false);
     
     /* Outer screen vignette border */
     draw_rect_border(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(35, 45, 55));

@@ -370,8 +370,8 @@ int main(int argc, char *argv[]) {
                         int btn_w = 440;
                         int btn_h = 44;
                         int btn_x = SCREEN_W / 2 - btn_w / 2;
-                        int btn_y = 646;
-                        if ((mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h) || my >= 640) {
+                        int btn_y = 636;
+                        if ((mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h) || my >= 630) {
                             golf_audio_stop_intro_music();
                             golf_set_mode(&s_game_state, MODE_PLAY);
                             s_game_state.swing.state = SWING_STATE_READY;

@@ -66,7 +66,7 @@ static SfxVoice s_voices[MAX_ACTIVE_VOICES];
 static SDL_AudioDeviceID s_audio_device = 0;
 static bool s_audio_ready = false;
 
-/* Procedural Intro Melody Synthesizer (114 BPM, 8-measure country club swing) */
+/* Procedural Intro Melody Synthesizer: Instrumental "I'm Alright (Theme from Caddyshack)" (128 BPM) */
 static bool s_intro_music_active = false;
 static float s_intro_music_vol = 0.0f;
 static float s_intro_music_target_vol = 0.0f;
@@ -74,41 +74,86 @@ static uint32_t s_music_sample_clock = 0;
 static float s_m_bass_phase = 0.0f;
 static float s_m_chord_phase[3] = { 0.0f, 0.0f, 0.0f };
 static float s_m_lead_phase = 0.0f;
+static float s_m_kick_phase = 0.0f;
 
-/* Chord notes (root, third, fifth) for 8 measures */
-static const float s_music_chords[8][3] = {
-    { 329.63f, 392.00f, 493.88f }, /* Cmaj7 (E4, G4, B4) */
-    { 261.63f, 329.63f, 392.00f }, /* Am7   (C4, E4, G4) */
-    { 349.23f, 440.00f, 523.25f }, /* Dm7   (F4, A4, C5) */
-    { 349.23f, 392.00f, 493.88f }, /* G7    (F4, G4, B4) */
-    { 392.00f, 493.88f, 587.33f }, /* Em7   (G4, B4, D5) */
-    { 392.00f, 440.00f, 554.37f }, /* A7    (G4, A4, C#5) */
-    { 349.23f, 440.00f, 523.25f }, /* Dm7   (F4, A4, C5) */
-    { 349.23f, 392.00f, 587.33f }  /* G7sus (F4, G4, D5) */
+/* Chord triads for 8 measures: Em, D, Em, C, D, Em, C, D */
+static const float s_caddy_chords[8][3] = {
+    { 329.63f, 392.00f, 493.88f }, /* 0: Em   (E4, G4, B4) */
+    { 293.66f, 369.99f, 440.00f }, /* 1: D    (D4, F#4, A4) */
+    { 329.63f, 392.00f, 493.88f }, /* 2: Em   (E4, G4, B4) */
+    { 261.63f, 329.63f, 392.00f }, /* 3: C    (C4, E4, G4) */
+    { 293.66f, 369.99f, 440.00f }, /* 4: D    (D4, F#4, A4) */
+    { 329.63f, 392.00f, 493.88f }, /* 5: Em   (E4, G4, B4) */
+    { 261.63f, 329.63f, 392.00f }, /* 6: C    (C4, E4, G4) */
+    { 293.66f, 369.99f, 440.00f }  /* 7: D    (D4, F#4, A4) */
 };
 
-/* Walking bass note frequencies (32 quarter notes = 4 per measure) */
-static const float s_music_bass[32] = {
-    130.81f, 196.00f, 220.00f, 246.94f, /* C3, G3, A3, B3 */
-    220.00f, 164.81f, 196.00f, 207.65f, /* A3, E3, G3, G#3 */
-    146.83f, 220.00f, 261.63f, 277.18f, /* D3, A3, C4, C#4 */
-    98.00f,  146.83f, 174.61f, 246.94f, /* G2, D3, F3, B3 */
-    164.81f, 246.94f, 293.66f, 164.81f, /* E3, B3, D4, E3 */
-    220.00f, 164.81f, 196.00f, 277.18f, /* A3, E3, G3, C#4 */
-    146.83f, 220.00f, 174.61f, 220.00f, /* D3, A3, F3, A3 */
-    98.00f,  146.83f, 196.00f, 246.94f  /* G2, D3, G3, B3 */
+/* 128-step chord stab trigger mask (stabs on syncopated 16th beats) */
+static const uint8_t s_caddy_chord_stabs[128] = {
+    /* Meas 1 */ 0,0,1,0, 0,0,1,0, 1,0,0,1, 0,0,1,0,
+    /* Meas 2 */ 0,0,1,0, 0,0,1,0, 1,0,0,1, 0,0,1,0,
+    /* Meas 3 */ 0,0,1,0, 0,0,1,0, 1,0,0,1, 0,0,1,0,
+    /* Meas 4 */ 0,0,1,0, 0,0,1,0, 1,0,0,1, 0,0,1,0,
+    /* Meas 5 */ 1,0,0,1, 0,0,1,0, 0,1,0,1, 0,0,1,0,
+    /* Meas 6 */ 1,0,0,1, 0,0,1,0, 0,1,0,1, 0,0,1,0,
+    /* Meas 7 */ 0,0,1,0, 0,0,1,0, 1,0,0,1, 0,0,1,0,
+    /* Meas 8 */ 0,0,1,0, 0,0,1,0, 1,0,1,0, 1,1,1,1
 };
 
-/* Catchy 64-step melody (8th notes) */
-static const float s_music_melody[64] = {
-    659.25f, 0.0f,    783.99f, 880.00f, 1046.50f, 0.0f,    987.77f, 783.99f,
-    659.25f, 0.0f,    587.33f, 0.0f,    659.25f, 783.99f, 880.00f, 0.0f,
-    698.46f, 0.0f,    880.00f, 1046.50f, 1174.66f, 0.0f,   987.77f, 783.99f,
-    880.00f, 0.0f,    987.77f, 0.0f,    783.99f, 0.0f,    0.0f,    0.0f,
-    783.99f, 0.0f,    987.77f, 1174.66f, 1318.51f, 0.0f,   1108.73f, 880.00f,
-    783.99f, 0.0f,    659.25f, 0.0f,    783.99f, 880.00f, 1046.50f, 0.0f,
-    698.46f, 0.0f,    880.00f, 1046.50f, 1318.51f, 0.0f,   1174.66f, 987.77f,
-    783.99f, 0.0f,    987.77f, 1174.66f, 1046.50f, 0.0f,   0.0f,    0.0f
+/* Driving 80s Slap/Synth Bassline in E minor (128 steps) */
+static const float s_caddy_bass[128] = {
+    /* Meas 1: E2 . E2 . E2 . D3 . E2 . G2 . A2 . E2 D2 */
+    82.41f, 0.0f, 82.41f, 0.0f,  82.41f, 0.0f, 146.83f, 0.0f,
+    82.41f, 0.0f, 98.00f, 0.0f, 110.00f, 0.0f, 82.41f, 146.83f,
+    /* Meas 2: E2 . E2 . E2 . D3 . B2 . A2 . G2 . E2 . */
+    82.41f, 0.0f, 82.41f, 0.0f,  82.41f, 0.0f, 146.83f, 0.0f,
+    123.47f,0.0f, 110.00f,0.0f,  98.00f, 0.0f, 82.41f, 0.0f,
+    /* Meas 3: E2 . E2 . E2 . D3 . E2 . G2 . A2 . E2 D2 */
+    82.41f, 0.0f, 82.41f, 0.0f,  82.41f, 0.0f, 146.83f, 0.0f,
+    82.41f, 0.0f, 98.00f, 0.0f, 110.00f, 0.0f, 82.41f, 146.83f,
+    /* Meas 4: C3 . C3 . C3 . C3 . D3 . D3 . D3 . B2 . */
+    130.81f,0.0f, 130.81f,0.0f, 130.81f,0.0f, 130.81f,0.0f,
+    146.83f,0.0f, 146.83f,0.0f, 146.83f,0.0f, 123.47f,0.0f,
+    /* Meas 5: E2 . E2 . E2 . E3 . G2 . A2 . B2 . D3 . (Chorus) */
+    82.41f, 0.0f, 82.41f, 0.0f,  82.41f, 0.0f, 164.81f, 0.0f,
+    98.00f, 0.0f, 110.00f,0.0f, 123.47f,0.0f, 146.83f, 0.0f,
+    /* Meas 6: E2 . E2 . E2 . E3 . B2 . A2 . G2 . E2 . */
+    82.41f, 0.0f, 82.41f, 0.0f,  82.41f, 0.0f, 164.81f, 0.0f,
+    123.47f,0.0f, 110.00f,0.0f,  98.00f, 0.0f, 82.41f, 0.0f,
+    /* Meas 7: C3 . C3 . C3 . C3 . D3 . D3 . D3 . D3 . */
+    130.81f,0.0f, 130.81f,0.0f, 130.81f,0.0f, 130.81f,0.0f,
+    146.83f,0.0f, 146.83f,0.0f, 146.83f,0.0f, 146.83f,0.0f,
+    /* Meas 8: E2 . E2 . G2 . A2 . B2 . A2 . G2 . D2 . (Turnaround) */
+    82.41f, 0.0f, 82.41f, 0.0f,  98.00f, 0.0f, 110.00f, 0.0f,
+    123.47f,0.0f, 110.00f,0.0f,  98.00f, 0.0f, 73.42f,  0.0f
+};
+
+/* Unmistakable Lead Synth Hook: "I'm Alright (Theme from Caddyshack)" (128 steps) */
+static const float s_caddy_lead[128] = {
+    /* Meas 1: "I'm alright... nobody worry 'bout me" */
+    493.88f, 0.0f, 493.88f, 0.0f,  493.88f, 0.0f, 440.00f, 0.0f,
+    392.00f, 0.0f, 329.63f, 0.0f,  0.0f,    0.0f, 0.0f,    0.0f,
+    /* Meas 2: "Nobody worry 'bout me..." */
+    0.0f,    0.0f, 329.63f, 0.0f,  392.00f, 0.0f, 440.00f, 0.0f,
+    392.00f, 0.0f, 329.63f, 0.0f,  0.0f,    0.0f, 0.0f,    0.0f,
+    /* Meas 3: "Why you got to give me a fight..." */
+    493.88f, 0.0f, 493.88f, 0.0f,  493.88f, 0.0f, 440.00f, 0.0f,
+    392.00f, 0.0f, 329.63f, 0.0f,  0.0f,    0.0f, 0.0f,    0.0f,
+    /* Meas 4: "Can't you just let it be..." */
+    329.63f, 0.0f, 392.00f, 0.0f,  440.00f, 0.0f, 493.88f, 0.0f,
+    440.00f, 0.0f, 392.00f, 0.0f,  329.63f, 0.0f, 0.0f,    0.0f,
+    /* Meas 5: "I'm al-right!" (Chorus Hook!) */
+    659.25f, 659.25f, 659.25f, 0.0f,  587.33f, 0.0f, 493.88f, 493.88f,
+    493.88f, 0.0f,    0.0f,    0.0f,  0.0f,    0.0f, 0.0f,    0.0f,
+    /* Meas 6: "I'm al-right!" */
+    659.25f, 659.25f, 659.25f, 0.0f,  587.33f, 0.0f, 493.88f, 493.88f,
+    493.88f, 0.0f,    0.0f,    0.0f,  0.0f,    0.0f, 0.0f,    0.0f,
+    /* Meas 7: "Nobody worry 'bout me..." */
+    440.00f, 0.0f, 392.00f, 0.0f,  440.00f, 0.0f, 493.88f, 0.0f,
+    392.00f, 0.0f, 329.63f, 0.0f,  293.66f, 0.0f, 329.63f, 0.0f,
+    /* Meas 8: Signature synth turnaround flourish! */
+    329.63f, 0.0f, 392.00f, 0.0f,  440.00f, 0.0f, 493.88f, 0.0f,
+    587.33f, 0.0f, 493.88f, 0.0f,  440.00f, 0.0f, 392.00f, 0.0f
 };
 
 /* Synthesis helper for single SFX sample */
@@ -377,53 +422,79 @@ static float synthesize_sfx_sample(SfxVoice *v) {
     return out;
 }
 
-/* Synthesize single music sample for Intro Melody */
+/* Synthesize single music sample for Intro Melody: "I'm Alright (Theme from Caddyshack)" (128 BPM) */
 static void synthesize_music_sample(uint32_t clock, float vol, float *out_l, float *out_r) {
-    uint32_t step_samples = 11605; /* 114 BPM 8th note at 44100 Hz */
-    uint32_t total_loop = step_samples * 64;
+    uint32_t step_samples = 5168; /* 128 BPM 16th note at 44100 Hz */
+    uint32_t total_loop = step_samples * 128;
     uint32_t loop_pos = clock % total_loop;
-    uint32_t step = loop_pos / step_samples;
+    uint32_t step = (loop_pos / step_samples) % 128;
     uint32_t step_pos = loop_pos % step_samples;
-    uint32_t beat_pos = loop_pos % (step_samples * 2);
     float t_step = (float)step_pos / (float)AUDIO_SAMPLE_RATE;
-    float t_beat = (float)beat_pos / (float)AUDIO_SAMPLE_RATE;
     
-    /* 1. Walking Bass (Plucked Upright Bass) */
-    uint32_t beat_idx = (loop_pos / (step_samples * 2)) % 32;
-    float b_freq = s_music_bass[beat_idx];
-    s_m_bass_phase += 2.0f * (float)M_PI * b_freq / (float)AUDIO_SAMPLE_RATE;
-    if (s_m_bass_phase > 2.0f * (float)M_PI) s_m_bass_phase -= 2.0f * (float)M_PI;
-    float b_env = expf(-t_beat * 5.5f);
-    float bass = (sinf(s_m_bass_phase) + 0.35f * sinf(s_m_bass_phase * 2.0f)) * b_env * 0.36f;
+    /* 1. Rhythm Section (Driving 80s Rock Drum Beat) */
+    float drum = 0.0f;
+    uint32_t meas_step = step % 16;
     
-    /* 2. Syncopated Electric Piano / Marimba Chords */
-    uint32_t meas = (step / 8) % 8;
+    /* Kick drum on beats 1, 2, 3, 4 and syncopated pickup */
+    bool is_kick = (meas_step == 0 || meas_step == 4 || meas_step == 8 || meas_step == 12 || meas_step == 10);
+    if (is_kick && t_step < 0.12f) {
+        float k_freq = 135.0f * expf(-t_step * 38.0f) + 42.0f;
+        s_m_kick_phase += 2.0f * (float)M_PI * k_freq / (float)AUDIO_SAMPLE_RATE;
+        if (s_m_kick_phase > 2.0f * (float)M_PI) s_m_kick_phase -= 2.0f * (float)M_PI;
+        drum += sinf(s_m_kick_phase) * expf(-t_step * 24.0f) * 0.45f;
+    }
+    
+    /* Snare on backbeats 2 and 4 (meas_step 4 and 12) + measure 8 fill */
+    bool is_snare = (meas_step == 4 || meas_step == 12 || (step >= 124 && step <= 127));
+    if (is_snare && t_step < 0.18f) {
+        float s_body = sinf(2.0f * (float)M_PI * 185.0f * t_step) * expf(-t_step * 26.0f);
+        float s_noise = audio_noise() * expf(-t_step * 18.0f);
+        drum += (s_body * 0.35f + s_noise * 0.65f) * 0.36f;
+    }
+    
+    /* Hi-hat on 8th notes */
+    if ((meas_step % 2) == 0 && t_step < 0.05f) {
+        drum += audio_noise() * expf(-t_step * 68.0f) * 0.10f;
+    }
+    
+    /* 2. Driving 80s Slap/Synth Bass ("I'm Alright" bassline) */
+    float bass = 0.0f;
+    float b_freq = s_caddy_bass[step];
+    if (b_freq > 0.0f) {
+        s_m_bass_phase += 2.0f * (float)M_PI * b_freq / (float)AUDIO_SAMPLE_RATE;
+        if (s_m_bass_phase > 2.0f * (float)M_PI) s_m_bass_phase -= 2.0f * (float)M_PI;
+        float b_env = expf(-t_step * 13.0f);
+        bass = (sinf(s_m_bass_phase) + 0.42f * sinf(s_m_bass_phase * 2.0f) + 0.15f * sinf(s_m_bass_phase * 3.0f)) * b_env * 0.38f;
+    }
+    
+    /* 3. Punchy 80s Synth Brass Stabs */
     float chord = 0.0f;
-    bool is_chord_step = ((step % 2) == 1); /* Off-beat swing */
-    if (is_chord_step) {
-        float c_env = expf(-t_step * 4.2f);
+    if (s_caddy_chord_stabs[step]) {
+        float c_env = expf(-t_step * 7.5f);
         for (int k = 0; k < 3; ++k) {
-            float cf = s_music_chords[meas][k];
+            float cf = s_caddy_chords[step / 16][k];
             s_m_chord_phase[k] += 2.0f * (float)M_PI * cf / (float)AUDIO_SAMPLE_RATE;
             if (s_m_chord_phase[k] > 2.0f * (float)M_PI) s_m_chord_phase[k] -= 2.0f * (float)M_PI;
-            chord += sinf(s_m_chord_phase[k]) * c_env * 0.09f;
+            float saw = sinf(s_m_chord_phase[k]) + 0.35f * sinf(s_m_chord_phase[k] * 2.0f) + 0.15f * sinf(s_m_chord_phase[k] * 3.0f);
+            chord += saw * c_env * 0.085f;
         }
     }
     
-    /* 3. Lead Country Club Melody (Vibraphone / Flute with Vibrato) */
+    /* 4. Lead Synthesizer ("I'm Alright" Theme Melody) */
     float lead = 0.0f;
-    float m_freq = s_music_melody[step];
+    float m_freq = s_caddy_lead[step];
     if (m_freq > 0.0f) {
-        float l_env = (t_step < 0.015f) ? (t_step / 0.015f) : expf(-t_step * 2.5f);
-        float vibrato = sinf(t_step * 38.0f) * 0.04f;
+        float l_env = (t_step < 0.012f) ? (t_step / 0.012f) : expf(-t_step * 2.8f);
+        float vibrato = (t_step > 0.06f) ? (sinf((t_step - 0.06f) * 36.0f) * 0.025f) : 0.0f;
         s_m_lead_phase += 2.0f * (float)M_PI * (m_freq * (1.0f + vibrato)) / (float)AUDIO_SAMPLE_RATE;
         if (s_m_lead_phase > 2.0f * (float)M_PI) s_m_lead_phase -= 2.0f * (float)M_PI;
-        lead = (sinf(s_m_lead_phase) + 0.15f * sinf(s_m_lead_phase * 2.0f)) * l_env * 0.28f;
+        float l_wave = sinf(s_m_lead_phase) + 0.28f * sinf(s_m_lead_phase * 2.0f) + 0.12f * sinf(s_m_lead_phase * 4.0f);
+        lead = l_wave * l_env * 0.35f;
     }
     
-    /* Stereo Mix: Bass Center, Chords slightly Left, Lead slightly Right */
-    *out_l = (bass * 0.5f + chord * 0.65f + lead * 0.45f) * vol;
-    *out_r = (bass * 0.5f + chord * 0.35f + lead * 0.55f) * vol;
+    /* Stereo Mix: Drums & Bass Center, Chords slightly Left, Lead slightly Right */
+    *out_l = (drum * 0.5f + bass * 0.5f + chord * 0.65f + lead * 0.45f) * vol;
+    *out_r = (drum * 0.5f + bass * 0.5f + chord * 0.35f + lead * 0.55f) * vol;
 }
 
 /* Audio Callback (Runs on audio thread) */

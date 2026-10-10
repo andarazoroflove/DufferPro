@@ -14,9 +14,6 @@ void gba_hw_init(void) {
     *REG_IE = 0;
     *REG_IF = 0xFFFF;
 
-    /* Safe 4-2 waitstates for SuperCard SDRAM / flashcart compatibility */
-    *REG_WAITCNT = 0x0000;
-
     /* Set Video Mode 3 (240x160 15-bit color bitmap) + BG2 layer enable */
     *REG_DISPCNT = 0x0403;
 
@@ -25,12 +22,10 @@ void gba_hw_init(void) {
     *REG_SOUNDCNT_L = 0x7777;
     *REG_SOUNDCNT_H = 0x0002;
 
-    /* Clear VRAM (volatile 32-bit stores prevent illegal 8-bit STRB) and Backbuffer */
-    volatile uint32_t *vram32 = (volatile uint32_t*)VRAM;
-    uint32_t *bb32 = (uint32_t*)s_backbuffer;
-    for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H) / 2; ++i) {
-        vram32[i] = 0;
-        bb32[i] = 0;
+    /* Clear VRAM and Backbuffer safely with native 16-bit stores */
+    for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H); ++i) {
+        VRAM[i] = 0;
+        s_backbuffer[i] = 0;
     }
 }
 

@@ -4,7 +4,7 @@
     .align 2
 
 _start:
-    b start_vector              @ 0x00: Branch to start of game code (offset 0xC0)
+    b rom_header_end            @ 0x00: Branch to start of game code (offset 0xC0)
     .space 156, 0               @ 0x04..0x9F: Nintendo logo (patched by gbafix)
     .ascii "DUFFER PRO  "       @ 0xA0..0xAB: Title (12 bytes)
     .ascii "ADFP"               @ 0xAC..0xAF: Game code (4 bytes)
@@ -17,27 +17,35 @@ _start:
     .byte 0x00                  @ 0xBD: Checksum (patched by gbafix)
     .space 2, 0                 @ 0xBE..0xBF: Reserved
 
-    .align 2
-start_vector:
-    b real_start
-    .byte 0                     @ 0xC4: boot method (ROM boot)
-    .byte 0                     @ 0xC5: slave number
-    .space 6, 0                 @ 0xC6..0xCB: reserved
+rom_header_end:
+    b start_vector              @ 0xC0: Branch to start_vector (offset 0xE0)
+
+    .global __boot_method, __slave_number
+__boot_method:
+    .byte 0                     @ 0xC4: boot method (0=ROM boot)
+__slave_number:
+    .byte 0                     @ 0xC5: slave #
+    .space 2, 0                 @ 0xC6..0xC7: reserved
+    .space 24, 0                @ 0xC8..0xDF: reserved (6 words)
 
     .align 2
-real_start:
-    @ Mask IRQ and FIQ interrupts (CPSR bits 7 & 6 = 1)
-    @ Set processor mode to IRQ and initialize IRQ stack
+    .global start_vector
+start_vector:
+    @ 1. Disable interrupts immediately via REG_IME (0x04000208)
+    mov r0, #0x04000000
+    str r0, [r0, #0x208]
+
+    @ 2. Initialize IRQ stack pointer
     mov r0, #0xD2               @ CPSR mode: IRQ (0x12) + I=1, F=1
     msr cpsr_c, r0
     ldr sp, =__sp_irq
 
-    @ Set processor mode to System/User with interrupts masked
+    @ 3. Initialize System stack pointer
     mov r0, #0xDF               @ CPSR mode: System (0x1F) + I=1, F=1
     msr cpsr_c, r0
     ldr sp, =__sp_usr
 
-    @ Copy .data from ROM (__data_load) to EWRAM (__data_start .. __data_end)
+    @ 4. Copy .data from ROM (__data_load) to EWRAM (__data_start .. __data_end)
     ldr r0, =__data_start
     ldr r1, =__data_end
     ldr r2, =__data_load
@@ -49,7 +57,7 @@ real_start:
     b .copy_data_loop
 .copy_data_done:
 
-    @ Zero .bss in EWRAM (__bss_start .. __bss_end)
+    @ 5. Zero .bss in EWRAM (__bss_start .. __bss_end)
     ldr r0, =__bss_start
     ldr r1, =__bss_end
     mov r2, #0
@@ -60,7 +68,7 @@ real_start:
     b .zero_bss_loop
 .zero_bss_done:
 
-    @ Call C main function with safe return to hang loop
+    @ 6. Call C main function with safe return to hang loop
     ldr r0, =main
     ldr lr, =.hang
     bx r0
@@ -68,4 +76,3 @@ real_start:
     @ Hang if main ever exits
 .hang:
     b .hang
-

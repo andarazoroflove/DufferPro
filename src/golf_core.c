@@ -1526,18 +1526,18 @@ void golf_tick(GolfState *gs) {
             gs->golfer.x += FMUL(walk_spd, fixed_cos(gs->golfer.facing_angle));
             gs->golfer.y += FMUL(walk_spd, fixed_sin(gs->golfer.facing_angle));
             gs->golfer.walk_ticks++;
-            gs->golfer.walk_anim_frame = (gs->golfer.walk_ticks / 10) % 4;
+            gs->golfer.walk_anim_frame = (gs->golfer.walk_ticks / 7) % 6;
             
             fixed target_gz = golf_get_ground_z_fixed(gs, gs->golfer.x, gs->golfer.y);
-            if (target_gz < TO_FIXED(HEIGHT_STEP_PX)) target_gz = TO_FIXED(HEIGHT_STEP_PX);
+            /* Responsive elevation tracking so feet stay firmly planted on turf */
             fixed z_diff = target_gz - gs->golfer.current_z;
-            fixed z_step = 22000;
+            fixed z_step = TO_FIXED(3); /* Responsive 3 px per tick */
             if (z_diff > z_step) gs->golfer.current_z += z_step;
             else if (z_diff < -z_step) gs->golfer.current_z -= z_step;
             else gs->golfer.current_z = target_gz;
             
             gs->golfer.step_timer++;
-            if (gs->golfer.step_timer >= 20) {
+            if (gs->golfer.step_timer >= 18) {
                 gs->golfer.step_timer = 0;
                 SurfaceType surf = golf_get_surface_at(gs, gs->golfer.x, gs->golfer.y);
                 if (surf == SURF_BRIDGE) gs->audio_event = AUDIO_EVT_FOOTSTEP_WOOD;
@@ -1562,12 +1562,17 @@ void golf_tick(GolfState *gs) {
                 gs->caddy.facing_angle = fixed_atan2(cdy, cdx);
                 gs->caddy.x += FMUL(c_spd, fixed_cos(gs->caddy.facing_angle));
                 gs->caddy.y += FMUL(c_spd, fixed_sin(gs->caddy.facing_angle));
-                gs->caddy.walk_anim_frame = (gs->golfer.walk_ticks / 10) % 4;
+                gs->caddy.walk_anim_frame = (gs->golfer.walk_ticks / 7) % 6;
             } else if (gs->golfer.state != GOLFER_STATE_WALKING) {
                 gs->caddy.state = CADDY_STATE_READY;
                 gs->caddy.facing_angle = gs->golfer.facing_angle;
             }
-            gs->caddy.current_z = golf_get_ground_z_fixed(gs, gs->caddy.x, gs->caddy.y);
+            fixed c_target_gz = golf_get_ground_z_fixed(gs, gs->caddy.x, gs->caddy.y);
+            fixed cz_diff = c_target_gz - gs->caddy.current_z;
+            fixed cz_step = TO_FIXED(3);
+            if (cz_diff > cz_step) gs->caddy.current_z += cz_step;
+            else if (cz_diff < -cz_step) gs->caddy.current_z -= cz_step;
+            else gs->caddy.current_z = c_target_gz;
         }
     }
     

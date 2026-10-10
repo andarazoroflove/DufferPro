@@ -50,3 +50,4 @@ SECTIONS {
         *(.ARM.attributes)
     }
 }
+

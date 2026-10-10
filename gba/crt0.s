@@ -3,8 +3,8 @@
     .global _start
     .align 2
 
-_header:
-    b _start                    @ 0x00: Branch to start of game code (offset 0xC0)
+_start:
+    b start_vector              @ 0x00: Branch to start of game code (offset 0xC0)
     .space 156, 0               @ 0x04..0x9F: Nintendo logo (patched by gbafix)
     .ascii "DUFFER PRO  "       @ 0xA0..0xAB: Title (12 bytes)
     .ascii "ADFP"               @ 0xAC..0xAF: Game code (4 bytes)
@@ -18,14 +18,22 @@ _header:
     .space 2, 0                 @ 0xBE..0xBF: Reserved
 
     .align 2
-_start:
+start_vector:
+    b real_start
+    .byte 0                     @ 0xC4: boot method (ROM boot)
+    .byte 0                     @ 0xC5: slave number
+    .space 6, 0                 @ 0xC6..0xCB: reserved
+
+    .align 2
+real_start:
+    @ Mask IRQ and FIQ interrupts (CPSR bits 7 & 6 = 1)
     @ Set processor mode to IRQ and initialize IRQ stack
-    mov r0, #0x12               @ CPSR mode: IRQ
+    mov r0, #0xD2               @ CPSR mode: IRQ (0x12) + I=1, F=1
     msr cpsr_c, r0
     ldr sp, =__sp_irq
 
-    @ Set processor mode to System/User and initialize User stack
-    mov r0, #0x1F               @ CPSR mode: System
+    @ Set processor mode to System/User with interrupts masked
+    mov r0, #0xDF               @ CPSR mode: System (0x1F) + I=1, F=1
     msr cpsr_c, r0
     ldr sp, =__sp_usr
 
@@ -52,11 +60,12 @@ _start:
     b .zero_bss_loop
 .zero_bss_done:
 
-    @ Call C main function
+    @ Call C main function with safe return to hang loop
     ldr r0, =main
-    mov lr, pc
+    ldr lr, =.hang
     bx r0
 
     @ Hang if main ever exits
 .hang:
     b .hang
+

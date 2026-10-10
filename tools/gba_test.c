@@ -127,7 +127,39 @@ int main(void) {
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_carl_hose.bmp", 3);
-    printf("[4/4] Saved screenshot_gba_carl_hose.bmp (720x480 GBA Carl Water Hose Flooding)\n");
+    printf("[4/6] Saved screenshot_gba_carl_hose.bmp (720x480 GBA Carl Water Hose Flooding)\n");
+
+    /* 5. GBA SELECT Button: Look / Course Scroll Mode */
+    gs.carl.active = false;
+    gs.gopher.visible = false;
+    grc.look_mode = true;
+    int32_t ball_gx = FROM_FIXED(gs.ball.x);
+    int32_t ball_gy = FROM_FIXED(gs.ball.y);
+    int32_t look_target_gx = ball_gx + 1;
+    int32_t look_target_gy = ball_gy - 12;
+    int32_t look_target_sx = (look_target_gx - look_target_gy) * GBA_TILE_HALF_W;
+    int32_t look_target_sy = (look_target_gx + look_target_gy) * GBA_TILE_HALF_H - (gs.grid[look_target_gx][look_target_gy].elevation * GBA_HEIGHT_STEP);
+    grc.look_cam_x = (GBA_SCREEN_W / 2) - look_target_sx;
+    grc.look_cam_y = (GBA_SCREEN_H / 2) - look_target_sy;
+    grc.cam_x = grc.look_cam_x;
+    grc.cam_y = grc.look_cam_y;
+    grc.tick_count = 10;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_look_mode.bmp", 3);
+    printf("[5/6] Saved screenshot_gba_look_mode.bmp (720x480 GBA SELECT Course Look Mode with Reticle)\n");
+
+    /* 6. GBA Return to Golfer with Aim Spot Locked (Ready to Swing) */
+    gs.aim_target_x = TO_FIXED(grc.look_center_gx) + FIXED_HALF;
+    gs.aim_target_y = TO_FIXED(grc.look_center_gy) + FIXED_HALF;
+    gs.has_custom_aim = true;
+    gs.aim_distance_yds = grc.look_dist_yds;
+    grc.look_mode = false;
+    grc.cam_x = 0;
+    grc.cam_y = 0;
+    grc.tick_count = 0;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_aim_set.bmp", 3);
+    printf("[6/6] Saved screenshot_gba_aim_set.bmp (720x480 GBA Golfer with Locked Aim Spot Ready to Swing)\n");
 
     printf("=== ALL GBA VERIFICATION TESTS PASSED ===\n");
     return 0;

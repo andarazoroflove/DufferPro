@@ -35,6 +35,10 @@
 #define REG_DISPSTAT    ((volatile uint16_t*)0x04000004)
 #define REG_VCOUNT      ((volatile uint16_t*)0x04000006)
 #define REG_KEYINPUT    ((volatile uint16_t*)0x04000130)
+#define REG_IE          ((volatile uint16_t*)0x04000200)
+#define REG_IF          ((volatile uint16_t*)0x04000202)
+#define REG_WAITCNT     ((volatile uint16_t*)0x04000204)
+#define REG_IME         ((volatile uint16_t*)0x04000208)
 
 /* GBA Sound Registers */
 #define REG_SOUND1CNT_L ((volatile uint16_t*)0x04000060)
@@ -84,5 +88,7 @@ void gba_sfx_gopher_gulp(void);
 void gba_sfx_carl_explosion(void);
 void gba_sfx_carl_hose(void);
 void gba_sfx_whistle(void);
+void gba_audio_tick_splash(int tick);
+void gba_audio_stop_music(void);
 
 #endif /* GBA_HW_H */

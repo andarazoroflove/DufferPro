@@ -16,6 +16,12 @@ typedef struct {
     int32_t target_cam_x;
     int32_t target_cam_y;
     int32_t tick_count;
+    bool look_mode;          /* True when player pressed SELECT to look around */
+    int32_t look_cam_x;      /* Target camera position in look mode */
+    int32_t look_cam_y;
+    int32_t look_center_gx;  /* Course tile at screen center */
+    int32_t look_center_gy;
+    int32_t look_dist_yds;   /* Distance from ball to center of screen */
 } GbaRenderContext;
 
 void gba_render_init(GbaRenderContext *grc);
@@ -27,3 +33,4 @@ void gba_draw_text(uint16_t *fb, int x, int y, const char *str, uint16_t color, 
 void gba_draw_rect(uint16_t *fb, int x, int y, int w, int h, uint16_t color);
 
 #endif /* GBA_RENDER_H */
+

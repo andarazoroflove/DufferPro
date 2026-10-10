@@ -260,17 +260,17 @@ static void set_banner(GolfState *gs, const char *msg, int32_t ticks) {
 void golf_generate_terrain(GolfState *gs, uint32_t seed) {
     core_srand(seed);
     
-    /* 1. Value noise height generation (0..5 tiers) */
-    int32_t noise[GRID_W][GRID_H];
+    /* 1. Value noise height generation (0..5 tiers) - static to preserve GBA IWRAM stack */
+    static int16_t s_noise[GRID_W][GRID_H];
+    static int16_t s_temp[GRID_W][GRID_H];
     for (int y = 0; y < GRID_H; ++y) {
         for (int x = 0; x < GRID_W; ++x) {
-            noise[x][y] = (int32_t)(core_rand() % 100);
+            s_noise[x][y] = (int16_t)(core_rand() % 100);
         }
     }
     
     /* 3 passes of 3x3 box smoothing */
     for (int pass = 0; pass < 3; ++pass) {
-        int32_t temp[GRID_W][GRID_H];
         for (int y = 0; y < GRID_H; ++y) {
             for (int x = 0; x < GRID_W; ++x) {
                 int32_t sum = 0;
@@ -280,21 +280,21 @@ void golf_generate_terrain(GolfState *gs, uint32_t seed) {
                         int nx = x + dx;
                         int ny = y + dy;
                         if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
-                            sum += noise[nx][ny];
+                            sum += s_noise[nx][ny];
                             count++;
                         }
                     }
                 }
-                temp[x][y] = sum / count;
+                s_temp[x][y] = (int16_t)(sum / count);
             }
         }
-        memcpy(noise, temp, sizeof(noise));
+        memcpy(s_noise, s_temp, sizeof(s_noise));
     }
     
     /* Map noise to discrete elevation tiers (0..4) */
     for (int y = 0; y < GRID_H; ++y) {
         for (int x = 0; x < GRID_W; ++x) {
-            int32_t v = noise[x][y];
+            int32_t v = s_noise[x][y];
             uint8_t elev;
             uint8_t surf;
             

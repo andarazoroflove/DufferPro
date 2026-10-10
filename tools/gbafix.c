@@ -73,7 +73,27 @@ int main(int argc, char **argv) {
     fseek(f, 0xBD, SEEK_SET);
     fwrite(&chk, 1, 1, f);
     
+    /* 7. Pad ROM to at least 512KB (524,288 bytes) with 0xFF for SuperCard / Flashcart compatibility */
+    fseek(f, 0, SEEK_END);
+    long cur_size = ftell(f);
+    long target_size = 524288; /* 512 KB standard flash block */
+    while (target_size < cur_size) {
+        target_size *= 2;
+    }
+    if (cur_size < target_size) {
+        long pad_bytes = target_size - cur_size;
+        uint8_t pad_buf[512];
+        memset(pad_buf, 0xFF, sizeof(pad_buf));
+        while (pad_bytes > 0) {
+            size_t chunk = (pad_bytes > (long)sizeof(pad_buf)) ? sizeof(pad_buf) : (size_t)pad_bytes;
+            fwrite(pad_buf, 1, chunk, f);
+            pad_bytes -= chunk;
+        }
+        printf("Padded ROM from %ld bytes to %ld bytes (512KB flashcart alignment)\n", cur_size, target_size);
+    }
+    
     fclose(f);
     printf("Successfully fixed GBA header for %s (Title: %s, Checksum: 0x%02X)\n", argv[1], title_buf, chk);
     return 0;
 }
+

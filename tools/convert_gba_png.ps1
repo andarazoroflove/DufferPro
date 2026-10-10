@@ -1,5 +1,5 @@
 Add-Type -AssemblyName System.Drawing
-$names = @("screenshot_gba_splash", "screenshot_gba_play", "screenshot_gba_carl_dynamite", "screenshot_gba_carl_hose")
+$names = @("screenshot_gba_splash", "screenshot_gba_play", "screenshot_gba_carl_dynamite", "screenshot_gba_carl_hose", "screenshot_gba_look_mode", "screenshot_gba_aim_set")
 $outDir = "C:\Users\adam\.gemini\antigravity\brain\1c635384-03d5-4087-b256-c838f707f215"
 foreach ($name in $names) {
     $src = "$name.bmp"
@@ -9,3 +9,4 @@ foreach ($name in $names) {
     $bmp.Dispose()
     Write-Host "Converted $src to $dst"
 }
+

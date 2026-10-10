@@ -52,6 +52,12 @@ void gba_render_init(GbaRenderContext *grc) {
     grc->target_cam_x = 0;
     grc->target_cam_y = 0;
     grc->tick_count = 0;
+    grc->look_mode = false;
+    grc->look_cam_x = 0;
+    grc->look_cam_y = 0;
+    grc->look_center_gx = 0;
+    grc->look_center_gy = 0;
+    grc->look_dist_yds = 0;
 }
 
 /* ========================================================================= */
@@ -417,14 +423,20 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     uint16_t *fb = gba_get_backbuffer();
     grc->tick_count++;
     
-    /* 1. Camera Tracking (Focus smoothly on ball or golfer) */
+    /* 1. Camera Tracking (Focus smoothly on ball or look-mode target) */
     int32_t ball_gx = FROM_FIXED(gs->ball.x);
     int32_t ball_gy = FROM_FIXED(gs->ball.y);
-    int32_t target_sx = (ball_gx - ball_gy) * GBA_TILE_HALF_W;
-    int32_t target_sy = (ball_gx + ball_gy) * GBA_TILE_HALF_H - (gs->grid[ball_gx][ball_gy].elevation * GBA_HEIGHT_STEP);
+    int32_t b_elev = gs->grid[ball_gx][ball_gy].elevation;
     
-    grc->target_cam_x = (GBA_SCREEN_W / 2) - target_sx;
-    grc->target_cam_y = (GBA_SCREEN_H / 2) - target_sy;
+    if (grc->look_mode) {
+        grc->target_cam_x = grc->look_cam_x;
+        grc->target_cam_y = grc->look_cam_y;
+    } else {
+        int32_t target_sx = (ball_gx - ball_gy) * GBA_TILE_HALF_W;
+        int32_t target_sy = (ball_gx + ball_gy) * GBA_TILE_HALF_H - (b_elev * GBA_HEIGHT_STEP);
+        grc->target_cam_x = (GBA_SCREEN_W / 2) - target_sx;
+        grc->target_cam_y = (GBA_SCREEN_H / 2) - target_sy;
+    }
     
     /* Smooth camera interpolation or instant snap on initial frame */
     if (grc->tick_count <= 1 || (grc->cam_x == 0 && grc->cam_y == 0)) {
@@ -433,6 +445,23 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     } else {
         grc->cam_x += (grc->target_cam_x - grc->cam_x) / 4;
         grc->cam_y += (grc->target_cam_y - grc->cam_y) / 4;
+    }
+
+    /* In Look Mode: Compute tile at screen center (120, 80) and yards from ball */
+    if (grc->look_mode) {
+        int32_t u = (104 - grc->cam_x) / 16;
+        int32_t v = (72 - grc->cam_y) / 8;
+        int32_t cgx = (u + v) / 2;
+        int32_t cgy = (v - u) / 2;
+        if (cgx < 0) cgx = 0; if (cgx >= GRID_W) cgx = GRID_W - 1;
+        if (cgy < 0) cgy = 0; if (cgy >= GRID_H) cgy = GRID_H - 1;
+        grc->look_center_gx = cgx;
+        grc->look_center_gy = cgy;
+        
+        int32_t dx = cgx - ball_gx;
+        int32_t dy = cgy - ball_gy;
+        grc->look_dist_yds = (int32_t)(fixed_sqrt(TO_FIXED(dx * dx + dy * dy)) / 65536 * YARDS_PER_TILE);
+        if (grc->look_dist_yds < 1) grc->look_dist_yds = 1;
     }
     
     /* Clear Screen with Fairway Green / Sky Gradient */
@@ -497,7 +526,6 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     add_drawable(GBA_ENT_CADDY, g_sx - 10, g_sy - 3, (golfer_gx + golfer_gy) * 32 + 15, 0);
     
     /* Ball */
-    int b_elev = gs->grid[ball_gx][ball_gy].elevation;
     int b_sx = (ball_gx - ball_gy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
     int b_sy = (ball_gx + ball_gy) * GBA_TILE_HALF_H - (b_elev * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
     int ball_z_px = FROM_FIXED(gs->ball.z - gs->ball.ground_z);
@@ -606,9 +634,51 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         }
     }
     
+    /* 5.5 Render Aim Reticle & Dotted Trajectory */
+    if (grc->look_mode) {
+        int cx = GBA_SCREEN_W / 2;
+        int cy = GBA_SCREEN_H / 2;
+        
+        /* Dotted flight line from ball to screen center */
+        for (int step = 0; step <= 16; ++step) {
+            if ((step & 1) == 0) {
+                int lx = b_sx + (step * (cx - b_sx)) / 16;
+                int ly = b_sy + (step * (cy - b_sy)) / 16;
+                if (lx >= 0 && lx < GBA_SCREEN_W && ly >= 14 && ly < 138) {
+                    fb[ly * GBA_SCREEN_W + lx] = GBA_GOLD;
+                }
+            }
+        }
+        
+        /* Pulsing Crosshair Reticle at Screen Center */
+        uint16_t reticle_col = (grc->tick_count & 8) ? GBA_YELLOW : GBA_WHITE;
+        gba_draw_rect(fb, cx - 6, cy, 4, 1, reticle_col);
+        gba_draw_rect(fb, cx + 3, cy, 4, 1, reticle_col);
+        gba_draw_rect(fb, cx, cy - 6, 1, 4, reticle_col);
+        gba_draw_rect(fb, cx, cy + 3, 1, 4, reticle_col);
+        fb[cy * GBA_SCREEN_W + cx] = GBA_RED;
+        fb[(cy - 3) * GBA_SCREEN_W + (cx - 3)] = reticle_col;
+        fb[(cy - 3) * GBA_SCREEN_W + (cx + 3)] = reticle_col;
+        fb[(cy + 3) * GBA_SCREEN_W + (cx - 3)] = reticle_col;
+        fb[(cy + 3) * GBA_SCREEN_W + (cx + 3)] = reticle_col;
+    } else if (gs->has_custom_aim) {
+        /* Draw locked aim ring on terrain */
+        int tgx = FROM_FIXED(gs->aim_target_x);
+        int tgy = FROM_FIXED(gs->aim_target_y);
+        if (tgx >= 0 && tgx < GRID_W && tgy >= 0 && tgy < GRID_H) {
+            int t_elev = gs->grid[tgx][tgy].elevation;
+            int tx = (tgx - tgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
+            int ty = (tgx + tgy) * GBA_TILE_HALF_H - (t_elev * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+            if (tx >= 4 && tx < GBA_SCREEN_W - 4 && ty >= 16 && ty < 136) {
+                gba_draw_rect(fb, tx - 3, ty, 7, 1, GBA_GOLD);
+                gba_draw_rect(fb, tx, ty - 3, 1, 7, GBA_GOLD);
+                fb[ty * GBA_SCREEN_W + tx] = GBA_RED;
+            }
+        }
+    }
+    
     /* 6. In-Game HUD: Top Status Bar (240x14) */
     gba_draw_rect(fb, 0, 0, GBA_SCREEN_W, 13, RGB15(2, 4, 10));
-    char buf[48];
     const char *club_name = "1W";
     if (gs->current_club == CLUB_3W) club_name = "3W";
     else if (gs->current_club == CLUB_5I) club_name = "5I";
@@ -616,21 +686,22 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     else if (gs->current_club == CLUB_PW) club_name = "PW";
     else if (gs->current_club == CLUB_PT) club_name = "PT";
     
-    /* Print Header Info */
-    int pin_dist = (int)(fixed_sqrt(FMUL(gs->ball.x - TO_FIXED(gs->pin_gx), gs->ball.x - TO_FIXED(gs->pin_gx)) +
-                                    FMUL(gs->ball.y - TO_FIXED(gs->pin_gy), gs->ball.y - TO_FIXED(gs->pin_gy))) / 65536 * 3);
-    if (pin_dist < 1) pin_dist = 1;
-    
-    /* Simple custom string formatting for GBA bare-metal */
-    buf[0] = 'H'; buf[1] = '1'; buf[2] = ' ';
-    buf[3] = 'P'; buf[4] = 'A'; buf[5] = 'R'; buf[6] = '4'; buf[7] = ' ';
-    buf[8] = '\0';
-    gba_draw_text(fb, 4, 3, buf, GBA_WHITE, false);
+    /* Header Mode / Hole Info */
+    if (grc->look_mode) {
+        gba_draw_text(fb, 4, 3, "LOOK", GBA_GOLD, false);
+    } else {
+        gba_draw_text(fb, 4, 3, "H1 PAR4", GBA_WHITE, false);
+    }
     
     /* Club */
     gba_draw_text(fb, 68, 3, club_name, GBA_GOLD, false);
     
-    /* Pin Distance */
+    /* Distance (Aim Target Distance in Look Mode, or Pin Distance) */
+    int pin_dist = grc->look_mode ? grc->look_dist_yds :
+        (int)(fixed_sqrt(FMUL(gs->ball.x - TO_FIXED(gs->pin_gx), gs->ball.x - TO_FIXED(gs->pin_gx)) +
+                         FMUL(gs->ball.y - TO_FIXED(gs->pin_gy), gs->ball.y - TO_FIXED(gs->pin_gy))) / 65536 * 3);
+    if (pin_dist < 1) pin_dist = 1;
+    
     char dist_str[16];
     dist_str[0] = '0' + (pin_dist / 100) % 10;
     dist_str[1] = '0' + (pin_dist / 10) % 10;
@@ -638,13 +709,27 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     dist_str[3] = 'Y'; dist_str[4] = 'D'; dist_str[5] = '\0';
     gba_draw_text(fb, 100, 3, dist_str, GBA_WHITE, false);
     
-    /* Wind indicator */
-    gba_draw_text(fb, 160, 3, "WIND 12M", GBA_SKY_BLUE, false);
+    /* Right indicator: Surface in Look mode, or Wind */
+    if (grc->look_mode) {
+        SurfaceType st = gs->grid[grc->look_center_gx][grc->look_center_gy].surface;
+        const char *st_name = "ROUGH  ";
+        uint16_t st_col = GBA_LIGHT_GREEN;
+        if (st == SURF_FAIRWAY) { st_name = "FAIRWAY"; st_col = GBA_GREEN; }
+        else if (st == SURF_GREEN) { st_name = "GREEN  "; st_col = GBA_LIGHT_GREEN; }
+        else if (st == SURF_SAND) { st_name = "SAND   "; st_col = GBA_SAND_YELLOW; }
+        else if (st == SURF_WATER) { st_name = "WATER  "; st_col = GBA_SKY_BLUE; }
+        gba_draw_text(fb, 160, 3, st_name, st_col, false);
+    } else {
+        gba_draw_text(fb, 160, 3, "WIND 12M", GBA_SKY_BLUE, false);
+    }
     
-    /* 7. Bottom Swing Meter HUD (240x22) */
+    /* 7. Bottom Swing Meter / Look HUD (240x22) */
     gba_draw_rect(fb, 0, 138, GBA_SCREEN_W, 22, RGB15(2, 4, 10));
     
-    if (gs->banner_timer > 0 && gs->banner_text[0]) {
+    if (grc->look_mode) {
+        gba_draw_text(fb, 10, 141, "[A] SET AIM   [D-PAD] MOVE", GBA_GOLD, false);
+        gba_draw_text(fb, 10, 151, "[SELECT] RETURN TO GOLFER", GBA_WHITE, false);
+    } else if (gs->banner_timer > 0 && gs->banner_text[0]) {
         /* Comic Event Banner (e.g. "CINDERELLA STORY!") */
         gba_draw_text(fb, 8, 145, gs->banner_text, GBA_YELLOW, true);
     } else {
@@ -675,7 +760,7 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         gba_draw_rect(fb, cur_x - 1, meter_y - 2, 3, meter_h + 4, GBA_WHITE);
         
         /* Key Prompts */
-        gba_draw_text(fb, 12, 152, "A:SWING  L/R:CLUB  D-PAD:AIM", GBA_GRAY, false);
+        gba_draw_text(fb, 12, 152, "[A]SWING  [SEL]LOOK  [L/R]CLUB", GBA_GRAY, false);
     }
 }
 

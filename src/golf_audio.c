@@ -411,6 +411,47 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             break;
         }
         
+        case SFX_GOPHER_CHUCKLE: {
+            /* Caddyshack mischievous gopher squeak/chuckle: 4 rapid high-pitched squeaks ("Heh-heh-heh-heh!") */
+            float chirp_dur = 0.085f;
+            float gap_dur = 0.035f;
+            float cycle = chirp_dur + gap_dur;
+            int chirp_idx = (int)(t / cycle);
+            float t_in_cycle = fmodf(t, cycle);
+            if (chirp_idx < 4 && t_in_cycle < chirp_dur) {
+                float progress = t_in_cycle / chirp_dur;
+                /* Pitch sweeps up 1400 Hz to 2400 Hz with playful vibrato */
+                float base_f = 1400.0f + (float)chirp_idx * 160.0f;
+                float g_freq = base_f + progress * 700.0f + sinf(progress * 42.0f) * 80.0f;
+                float g_env = sinf(progress * (float)M_PI);
+                float phase = 2.0f * (float)M_PI * g_freq * t;
+                float tone = sinf(phase) + 0.35f * sinf(phase * 2.0f) + 0.15f * sinf(phase * 3.0f);
+                out = tone * g_env * v->volume * 1.25f;
+            }
+            break;
+        }
+        
+        case SFX_GOPHER_GULP: {
+            /* Comical subterranean suction gulp ("FWUMP-bloop!") as ball vanishes down gopher hole */
+            if (t < 0.12f) {
+                /* Downward suction woosh/pop (540 Hz down to 90 Hz) */
+                float progress = t / 0.12f;
+                float f_drop = 540.0f * expf(-progress * 3.2f) + 90.0f;
+                float phase = 2.0f * (float)M_PI * f_drop * t;
+                float env = sinf(progress * (float)M_PI);
+                float air = audio_noise() * 0.25f * (1.0f - progress);
+                out = (sinf(phase) * 0.75f + air) * env * v->volume * 1.40f;
+            } else if (t < 0.32f) {
+                /* Subterranean resonant bubble bloop (180 Hz) */
+                float t2 = t - 0.12f;
+                float f_bloop = 220.0f * expf(-t2 * 14.0f) + 120.0f;
+                float phase = 2.0f * (float)M_PI * f_bloop * t2;
+                float env2 = expf(-t2 * 18.0f);
+                out = sinf(phase) * env2 * v->volume * 1.30f;
+            }
+            break;
+        }
+        
         default:
             break;
     }
@@ -700,6 +741,8 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
             case SFX_BUILD_PLACE:    v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.95f; break;
             case SFX_TERRAIN_SCULPT: v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 0.90f; break;
             case SFX_BEVERAGE_WHISTLE: v->total_samples = AUDIO_SAMPLE_RATE * 65 / 100; v->volume = 1.30f; break;
+            case SFX_GOPHER_CHUCKLE:   v->total_samples = AUDIO_SAMPLE_RATE * 50 / 100; v->volume = 1.30f; break;
+            case SFX_GOPHER_GULP:      v->total_samples = AUDIO_SAMPLE_RATE * 35 / 100; v->volume = 1.40f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }

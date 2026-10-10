@@ -257,6 +257,35 @@ typedef struct {
     bool active;
 } BeverageCartEntity;
 
+/* Gopher Entity & Hole Hazards (Caddyshack Style) */
+#define MAX_GOPHER_HOLES 16
+
+typedef enum {
+    GOPHER_STATE_HIDDEN = 0,    /* Underground waiting for timer */
+    GOPHER_STATE_POPPING_UP,   /* Rising from dirt mound (frames 0..1) */
+    GOPHER_STATE_TAUNTING,     /* Dancing / laughing / head bopping (frames 2..3) */
+    GOPHER_STATE_RETREATING    /* Ducking back down */
+} GopherState;
+
+typedef struct {
+    int32_t gx, gy;            /* Tile coordinates of gopher hole */
+    fixed current_z;           /* Ground elevation */
+    bool active;
+} GopherHole;
+
+typedef struct {
+    fixed x, y;                /* Continuous course position (16.16 fixed) */
+    fixed current_z;
+    int32_t gx, gy;            /* Current tile */
+    GopherState state;
+    int32_t anim_frame;        /* Frame index: 0..3 */
+    int32_t timer;             /* Ticks in current state */
+    int32_t pop_cooldown;      /* Ticks until next random pop-up */
+    bool visible;              /* True if gopher body is above ground */
+    GopherHole holes[MAX_GOPHER_HOLES];
+    int32_t hole_count;
+} GopherEntity;
+
 /* Audio Events Triggered by Physics & Actions */
 typedef enum {
     AUDIO_EVT_NONE = 0,
@@ -279,7 +308,9 @@ typedef enum {
     AUDIO_EVT_CROWD_OOH = 17,
     AUDIO_EVT_BUILD_PLACE = 18,
     AUDIO_EVT_TERRAIN_SCULPT = 19,
-    AUDIO_EVT_BEV_WHISTLE = 20
+    AUDIO_EVT_BEV_WHISTLE = 20,
+    AUDIO_EVT_GOPHER_CHUCKLE = 21,
+    AUDIO_EVT_GOPHER_GULP = 22
 } GolfAudioEvent;
 
 /* Wind system */
@@ -334,6 +365,7 @@ typedef struct {
     SpectatorEntity spectators[MAX_SPECTATORS];
     int32_t spectator_count;
     BeverageCartEntity bev_cart;
+    GopherEntity gopher;
     
     Wind wind;
     GolfAudioEvent audio_event; /* Audio event generated this tick */

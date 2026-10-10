@@ -85,6 +85,15 @@ static uint32_t s_sprite_caddy_celebrate[SPRITE_CADDY_W * SPRITE_CADDY_H];
 #define SPRITE_SPEC_H 30
 static uint32_t s_sprite_spec[5][4][SPRITE_SPEC_W * SPRITE_SPEC_H]; /* [attire][anim] */
 
+/* Gopher & Gopher Hole (Caddyshack Style) */
+#define SPRITE_GOPHER_HOLE_W 28
+#define SPRITE_GOPHER_HOLE_H 18
+static uint32_t s_sprite_gopher_hole[SPRITE_GOPHER_HOLE_W * SPRITE_GOPHER_HOLE_H];
+
+#define SPRITE_GOPHER_W 26
+#define SPRITE_GOPHER_H 28
+static uint32_t s_sprite_gopher[4][SPRITE_GOPHER_W * SPRITE_GOPHER_H]; /* [anim_frame] */
+
 /* Depth Buffer for screen-space occlusion (1024x768) */
 static int32_t s_depth_buffer[SCREEN_W * SCREEN_H];
 
@@ -958,6 +967,160 @@ static void generate_procedural_graphics(void) {
             }
         }
     }
+    
+    /* 24. Gopher Hole Dirt Mound (28x18, Caddyshack Burrow Hazard) */
+    memset(s_sprite_gopher_hole, 0, sizeof(s_sprite_gopher_hole));
+    for (int y = 0; y < SPRITE_GOPHER_HOLE_H; ++y) {
+        for (int x = 0; x < SPRITE_GOPHER_HOLE_W; ++x) {
+            int idx = y * SPRITE_GOPHER_HOLE_W + x;
+            int dx = x - 14;
+            int dy = y - 9;
+            
+            /* Elliptical Dirt Mound Rim */
+            if (dx * dx * 2 + dy * dy * 5 <= 13 * 13 * 2) {
+                /* Inner subterranean pit opening (dark shadow) */
+                if (dx * dx * 2 + dy * dy * 6 <= 6 * 6 * 2) {
+                    int pit_shade = (dy < 0) ? 8 : 0;
+                    s_sprite_gopher_hole[idx] = COLOR_RGB(16 + pit_shade, 10 + pit_shade, 6 + pit_shade);
+                } else {
+                    /* Mound excavated earth */
+                    int shade = -dx * 2 - dy * 3;
+                    int r = 115 + shade;
+                    int g = 75 + shade;
+                    int b = 42 + shade / 2;
+                    /* Crumbly dirt texture */
+                    if (((x * 5 + y * 11) % 7) == 0) { r += 20; g += 15; b += 8; }
+                    else if (((x * 9 + y * 7) % 5) == 0) { r -= 18; g -= 14; b -= 10; }
+                    if (r < 0) r = 0; if (r > 255) r = 255;
+                    if (g < 0) g = 0; if (g > 255) g = 255;
+                    if (b < 0) b = 0; if (b > 255) b = 255;
+                    s_sprite_gopher_hole[idx] = COLOR_RGB(r, g, b);
+                }
+            }
+        }
+    }
+    
+    /* 25. Caddyshack Gopher (26x28, 4 Animation Frames with Buck Teeth & Dancing Paws) */
+    for (int f = 0; f < 4; ++f) {
+        memset(s_sprite_gopher[f], 0, sizeof(s_sprite_gopher[f]));
+        for (int y = 0; y < SPRITE_GOPHER_H; ++y) {
+            for (int x = 0; x < SPRITE_GOPHER_W; ++x) {
+                int idx = y * SPRITE_GOPHER_W + x;
+                
+                int head_cx = 13;
+                int head_cy = 13;
+                int body_shift = 0;
+                
+                if (f == 0) {
+                    /* Frame 0: Peeking (only top of head & ears visible above rim) */
+                    if (y < 12 || y > 24) continue;
+                    head_cy = 18;
+                } else if (f == 1) {
+                    /* Frame 1: Alert / Rising (head & paws on mound) */
+                    if (y < 6 || y > 25) continue;
+                    head_cy = 13;
+                } else if (f == 2) {
+                    /* Frame 2: Dancing Left (tilted left, paws waving left) */
+                    body_shift = -2;
+                    head_cx = 11;
+                    head_cy = 11;
+                } else if (f == 3) {
+                    /* Frame 3: Dancing Right (tilted right, paws waving right) */
+                    body_shift = 2;
+                    head_cx = 15;
+                    head_cy = 11;
+                }
+                
+                int dx = x - head_cx;
+                int dy = y - head_cy;
+                
+                /* Round Ears with Pink Insides (dy = -7..-3, dx = -6..-3 and +3..+6) */
+                if (dy >= -7 && dy <= -3 && ((dx >= -6 && dx <= -3) || (dx >= 3 && dx <= 6))) {
+                    if (dy >= -6 && dy <= -4 && ((dx >= -5 && dx <= -4) || (dx >= 4 && dx <= 5))) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(245, 168, 175); /* Pink ear inside */
+                    } else {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(145, 85, 45);   /* Fur rim */
+                    }
+                    continue;
+                }
+                
+                /* Chubby Head & Cheeks */
+                if (dx * dx * 2 + dy * dy * 2 <= 7 * 7 * 2 && dy <= 5) {
+                    /* Beady Eyes with White Glint (dy = -1, dx = -3, +3) */
+                    if (dy == -1 && (dx == -3 || dx == 3)) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(20, 15, 15);
+                        continue;
+                    }
+                    if (dy == -2 && (dx == -3 || dx == 3)) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(255, 255, 255); /* Specular shine */
+                        continue;
+                    }
+                    
+                    /* Dark Brown Button Nose (dy = 1, dx = 0) */
+                    if (dy == 1 && dx == 0) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(45, 28, 22);
+                        continue;
+                    }
+                    
+                    /* Signature Prominent White Buck Teeth! (dy = 3..4, dx = -1..0) */
+                    if ((dy == 3 || dy == 4) && (dx == -1 || dx == 1)) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(255, 255, 255); /* Pure White Buck Teeth */
+                        continue;
+                    }
+                    if (dy == 3 && dx == 0) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(40, 20, 15); /* Cleft between teeth */
+                        continue;
+                    }
+                    
+                    /* Cream Muzzle / Upper Lip (dy = 1..3, dx = -3..3) */
+                    if (dy >= 1 && dy <= 3 && dx >= -3 && dx <= 3) {
+                        s_sprite_gopher[f][idx] = COLOR_RGB(242, 224, 188);
+                        continue;
+                    }
+                    
+                    /* Light Fur Texture */
+                    int shade = (dx < 0) ? 15 : -15;
+                    s_sprite_gopher[f][idx] = COLOR_RGB(180 + shade, 118 + shade, 62 + shade / 2);
+                    continue;
+                }
+                
+                /* Body & Dancing Paws (only visible when up: f >= 1) */
+                if (f >= 1) {
+                    /* Torso (y = 16..25) */
+                    int b_dx = x - (13 + body_shift);
+                    int b_dy = y - 19;
+                    if (b_dx * b_dx * 2 + b_dy * b_dy <= 6 * 6 * 2 && y <= 25) {
+                        /* Cream Belly */
+                        if (b_dx >= -2 && b_dx <= 2 && y >= 17) {
+                            s_sprite_gopher[f][idx] = COLOR_RGB(238, 220, 185);
+                        } else {
+                            s_sprite_gopher[f][idx] = COLOR_RGB(165, 105, 52);
+                        }
+                    }
+                    
+                    /* Dancing Paws / Waving Hands */
+                    if (f == 1) {
+                        /* Alert: paws resting on rim (y = 20..22, x = 7..9 and 17..19) */
+                        if (y >= 20 && y <= 22 && ((x >= 7 && x <= 9) || (x >= 17 && x <= 19))) {
+                            s_sprite_gopher[f][idx] = COLOR_RGB(230, 185, 140);
+                        }
+                    } else if (f == 2) {
+                        /* Dance Left: Left paw high in air (x = 4..7, y = 7..10), right paw (x = 17..20, y = 14..17) */
+                        if ((x >= 4 && x <= 7 && y >= 7 && y <= 10) ||
+                            (x >= 17 && x <= 20 && y >= 14 && y <= 17)) {
+                            s_sprite_gopher[f][idx] = COLOR_RGB(230, 185, 140);
+                        }
+                    } else if (f == 3) {
+                        /* Dance Right: Right paw high in air (x = 19..22, y = 7..10), left paw (x = 6..9, y = 14..17) */
+                        if ((x >= 19 && x <= 22 && y >= 7 && y <= 10) ||
+                            (x >= 6 && x <= 9 && y >= 14 && y <= 17)) {
+                            s_sprite_gopher[f][idx] = COLOR_RGB(230, 185, 140);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /* Initialization */
@@ -1281,7 +1444,9 @@ typedef enum {
     DRAWABLE_CADDY,
     DRAWABLE_GOLFER,
     DRAWABLE_BALL,
-    DRAWABLE_BEV_CART
+    DRAWABLE_BEV_CART,
+    DRAWABLE_GOPHER_HOLE,
+    DRAWABLE_GOPHER
 } DrawableType;
 
 typedef struct {
@@ -1588,6 +1753,35 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         item->foot_sy = FROM_FIXED(FMUL(gs->bev_cart.x + gs->bev_cart.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->bev_cart.current_z) + rc->camera_y + TILE_HALF_H;
     }
     
+    /* 8. Gopher Holes (Caddyshack Hazards) */
+    for (int i = 0; i < gs->gopher.hole_count; ++i) {
+        if (!gs->gopher.holes[i].active) continue;
+        if (s_drawable_count < MAX_DRAWABLES) {
+            DrawableItem *item = &s_drawables[s_drawable_count++];
+            item->type = DRAWABLE_GOPHER_HOLE;
+            item->gx = gs->gopher.holes[i].gx;
+            item->gy = gs->gopher.holes[i].gy;
+            item->data = i;
+            item->sort_key = (item->gx + item->gy) * 32 + 8;
+            grid_to_screen(item->gx, item->gy, gs->grid[item->gx][item->gy].elevation,
+                           rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
+            item->foot_sx += TILE_HALF_W;
+            item->foot_sy += TILE_HALF_H;
+        }
+    }
+    
+    /* 9. Active Caddyshack Gopher */
+    if (gs->mode == MODE_PLAY && gs->gopher.visible && s_drawable_count < MAX_DRAWABLES) {
+        DrawableItem *item = &s_drawables[s_drawable_count++];
+        item->type = DRAWABLE_GOPHER;
+        item->gx = gs->gopher.gx;
+        item->gy = gs->gopher.gy;
+        item->data = gs->gopher.anim_frame;
+        item->sort_key = FROM_FIXED(FMUL(gs->gopher.x + gs->gopher.y, TO_FIXED(32))) + 12;
+        item->foot_sx = FROM_FIXED(FMUL(gs->gopher.x - gs->gopher.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        item->foot_sy = FROM_FIXED(FMUL(gs->gopher.x + gs->gopher.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->gopher.current_z) + rc->camera_y + TILE_HALF_H;
+    }
+    
     /* Sort all drawables back-to-front by sort_key */
     qsort(s_drawables, s_drawable_count, sizeof(DrawableItem), compare_drawables);
     
@@ -1736,6 +1930,27 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                         draw_rect(rc, fx - 2 + dy / 2, bub_y + bub_h + dy, 5 - dy, 1, COLOR_RGB(255, 255, 255));
                     }
                     draw_text(rc, bub_x + 6, bub_y + 6, "♪ COLD DRINKS! ♪", COLOR_RGB(220, 20, 70), false);
+                }
+                break;
+            }
+            case DRAWABLE_GOPHER_HOLE: {
+                int fx = item->foot_sx;
+                int fy = item->foot_sy;
+                blit_sprite_depth(rc, fx - SPRITE_GOPHER_HOLE_W / 2, fy - SPRITE_GOPHER_HOLE_H / 2,
+                                  SPRITE_GOPHER_HOLE_W, SPRITE_GOPHER_HOLE_H, s_sprite_gopher_hole, item->sort_key);
+                break;
+            }
+            case DRAWABLE_GOPHER: {
+                int fx = item->foot_sx;
+                int fy = item->foot_sy;
+                int anim_f = item->data % 4;
+                blit_sprite_depth(rc, fx - SPRITE_GOPHER_W / 2, fy - SPRITE_GOPHER_H + 4,
+                                  SPRITE_GOPHER_W, SPRITE_GOPHER_H, s_sprite_gopher[anim_f], item->sort_key);
+                
+                /* If dancing/taunting, draw speech bubble / chuckle above him */
+                if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
+                    int note_y = fy - SPRITE_GOPHER_H - 4 - (int)((rc->tick_count / 10) % 4);
+                    draw_text(rc, fx - 24, note_y, "HEE HEE!", COLOR_RGB(255, 235, 95), true);
                 }
                 break;
             }
@@ -2169,6 +2384,33 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     }
     int b_tx = bub_x + (bub_w - (int)strlen(bev_msg) * 8) / 2;
     draw_text(rc, b_tx, bub_y + 7, bev_msg, COLOR_RGB(220, 20, 80), false);
+    
+    /* 8b. Foreground Caddyshack Gopher Dancing in Center (x = 490, y = 525) */
+    int goph_x = 490;
+    int goph_y = 525;
+    
+    /* Gopher hole dirt mound */
+    draw_drop_shadow(rc, goph_x + 14, goph_y + 24, 20, 8, 150);
+    blit_sprite_depth(rc, goph_x, goph_y + 16, SPRITE_GOPHER_HOLE_W, SPRITE_GOPHER_HOLE_H, s_sprite_gopher_hole, 999999);
+    
+    /* Dancing Caddyshack Gopher (grooving left/right to "I'm Alright" beat!) */
+    int g_dance_frame = 2 + ((tick_count / 14) % 2);
+    blit_sprite_depth(rc, goph_x + 1, goph_y, SPRITE_GOPHER_W, SPRITE_GOPHER_H, s_sprite_gopher[g_dance_frame], 999999);
+    draw_text(rc, goph_x - 10, goph_y + 38, "CADDY GOPHER", COLOR_RGB(255, 235, 110), true);
+    
+    /* Floating Caddyshack Groove Speech Bubble above Gopher */
+    const char *goph_msg = "I'M ALRIGHT!";
+    int gbub_w = 110;
+    int gbub_h = 22;
+    int gbub_x = goph_x - 38;
+    int gbub_y = goph_y - 32;
+    draw_rect(rc, gbub_x, gbub_y, gbub_w, gbub_h, COLOR_RGB(255, 255, 255));
+    draw_rect_border(rc, gbub_x, gbub_y, gbub_w, gbub_h, COLOR_RGB(35, 45, 55));
+    for (int dy = 0; dy < 6; ++dy) {
+        draw_rect(rc, gbub_x + 50 + dy / 2, gbub_y + gbub_h + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
+    }
+    int gbtx = gbub_x + (gbub_w - (int)strlen(goph_msg) * 8) / 2;
+    draw_text(rc, gbtx, gbub_y + 7, goph_msg, COLOR_RGB(220, 120, 20), false);
     
     /* 9. Hero Title Logo: "DUFFER PRO" with 3D Embossing */
     int title_y = 65;

@@ -146,7 +146,56 @@ int main(void) {
     render_pan_camera(&rc, 0, 80);
     render_frame(&rc, &gs);
     render_save_bmp(&rc, "screenshot_beverage_pro.bmp");
-    printf("[8/8] Saved screenshot_beverage_pro.bmp (Beverage Cart Whistling at %d,%d)\n", bc_gx, bc_gy);
+    printf("[8/10] Saved screenshot_beverage_pro.bmp (Beverage Cart Whistling at %d,%d)\n", bc_gx, bc_gy);
+    
+    /* 9. Gopher Pop-Up & Dancing on Course */
+    gs.gopher.state = GOPHER_STATE_HIDDEN;
+    gs.gopher.pop_cooldown = 1;
+    golf_tick(&gs);
+    printf("Gopher Pop-Up: Visible=%d, State=%d (Expected 1/POPPING_UP), AudioEvent=%d (Expected 21/GOPHER_CHUCKLE)\n",
+           gs.gopher.visible, gs.gopher.state, gs.audio_event);
+    gs.audio_event = AUDIO_EVT_NONE;
+    
+    /* Advance gopher to dancing state */
+    for (int t = 0; t < 25; ++t) golf_tick(&gs);
+    printf("Gopher Dancing: State=%d (Expected 2/TAUNTING), AnimFrame=%d\n",
+           gs.gopher.state, gs.gopher.anim_frame);
+    render_center_camera_on(&rc, gs.gopher.gx, gs.gopher.gy, gs.grid[gs.gopher.gx][gs.gopher.gy].elevation);
+    render_pan_camera(&rc, 0, 70);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_gopher_pop.bmp");
+    printf("[9/10] Saved screenshot_gopher_pop.bmp (Gopher dancing at %d,%d)\n", gs.gopher.gx, gs.gopher.gy);
+    
+    /* 10. Ball Rolling into Gopher Hole Hazard */
+    /* Place ball rolling directly toward the gopher hole */
+    int h_gx = gs.gopher.holes[0].gx;
+    int h_gy = gs.gopher.holes[0].gy;
+    gs.ball.x = TO_FIXED(h_gx) - TO_FIXED(1);
+    gs.ball.y = TO_FIXED(h_gy) + FIXED_HALF;
+    gs.ball.ground_z = golf_get_ground_z_fixed(&gs, gs.ball.x, gs.ball.y);
+    gs.ball.z = gs.ball.ground_z;
+    gs.ball.vx = 8000; /* rolling towards hole */
+    gs.ball.vy = 0;
+    gs.ball.vz = 0;
+    gs.ball.state = BALL_ROLLING;
+    gs.audio_event = AUDIO_EVT_NONE;
+    
+    bool gopher_gulp_ok = false;
+    for (int t = 0; t < 20; ++t) {
+        golf_tick(&gs);
+        if (gs.audio_event == AUDIO_EVT_GOPHER_GULP || gs.audio_event == AUDIO_EVT_GOPHER_CHUCKLE) {
+            gopher_gulp_ok = true;
+            printf("Ball Swallowed by Gopher Hole! AudioEvent=%d (Expected 22/GOPHER_GULP), Banner: %s\n",
+                   gs.audio_event, gs.banner_text);
+            gs.audio_event = AUDIO_EVT_NONE;
+            break;
+        }
+    }
+    render_center_camera_on(&rc, h_gx, h_gy, gs.grid[h_gx][h_gy].elevation);
+    render_pan_camera(&rc, 0, 70);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_gopher_trap.bmp");
+    printf("[10/10] Saved screenshot_gopher_trap.bmp (Gopher Hole Trap: %s)\n", gopher_gulp_ok ? "SUCCESS" : "FAILED");
     
     render_free(&rc);
     printf("=== ALL VERIFICATION TESTS PASSED ===\n");

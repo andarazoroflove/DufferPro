@@ -508,6 +508,34 @@ void golf_place_default_routing(GolfState *gs) {
     gs->bev_cart.speech_timer = 0;
     gs->bev_cart.wait_timer = 0;
     
+    /* 10. Setup Gopher Entity & Initial Holes */
+    gs->gopher.state = GOPHER_STATE_HIDDEN;
+    gs->gopher.timer = 0;
+    gs->gopher.anim_frame = 0;
+    gs->gopher.pop_cooldown = 180 + (core_rand() % 180); /* Pops up early in play */
+    gs->gopher.visible = false;
+    gs->gopher.hole_count = 0;
+    
+    /* Pre-seed 2 gopher hole hazards along the corridor */
+    int32_t mid_gx = (gs->tee_gx + gs->pin_gx) / 2;
+    int32_t mid_gy = (gs->tee_gy + gs->pin_gy) / 2;
+    if (mid_gx >= 2 && mid_gx < GRID_W - 2 && mid_gy >= 2 && mid_gy < GRID_H - 2) {
+        GopherHole *h1 = &gs->gopher.holes[gs->gopher.hole_count++];
+        h1->gx = mid_gx + 1;
+        h1->gy = mid_gy;
+        h1->current_z = golf_get_ground_z_fixed(gs, TO_FIXED(h1->gx) + FIXED_HALF, TO_FIXED(h1->gy) + FIXED_HALF);
+        h1->active = true;
+    }
+    int32_t near_green_gx = gs->pin_gx - 2;
+    int32_t near_green_gy = gs->pin_gy + 3;
+    if (near_green_gx >= 2 && near_green_gx < GRID_W - 2 && near_green_gy >= 2 && near_green_gy < GRID_H - 2) {
+        GopherHole *h2 = &gs->gopher.holes[gs->gopher.hole_count++];
+        h2->gx = near_green_gx;
+        h2->gy = near_green_gy;
+        h2->current_z = golf_get_ground_z_fixed(gs, TO_FIXED(h2->gx) + FIXED_HALF, TO_FIXED(h2->gy) + FIXED_HALF);
+        h2->active = true;
+    }
+    
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
@@ -1210,6 +1238,108 @@ void golf_swing_click(GolfState *gs) {
     }
 }
 
+/* Check ball collision with active gopher or gopher holes */
+static bool check_gopher_collision(GolfState *gs) {
+    if (gs->mode != MODE_PLAY) return false;
+    
+    int hit_gx = -1;
+    int hit_gy = -1;
+    bool direct_gopher_hit = false;
+    
+    /* 1. Direct hit on visible Gopher */
+    if (gs->gopher.visible) {
+        fixed dx = gs->ball.x - gs->gopher.x;
+        fixed dy = gs->ball.y - gs->gopher.y;
+        fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+        if (dist < TO_FIXED(1) * 75 / 100) {
+            hit_gx = gs->gopher.gx;
+            hit_gy = gs->gopher.gy;
+            direct_gopher_hit = true;
+        }
+    }
+    
+    /* 2. Ball rolling or landing into any active Gopher Hole */
+    if (hit_gx == -1) {
+        for (int i = 0; i < gs->gopher.hole_count; ++i) {
+            if (!gs->gopher.holes[i].active) continue;
+            fixed hx = TO_FIXED(gs->gopher.holes[i].gx) + FIXED_HALF;
+            fixed hy = TO_FIXED(gs->gopher.holes[i].gy) + FIXED_HALF;
+            fixed dx = gs->ball.x - hx;
+            fixed dy = gs->ball.y - hy;
+            fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+            if (dist < TO_FIXED(1) * 60 / 100) {
+                hit_gx = gs->gopher.holes[i].gx;
+                hit_gy = gs->gopher.holes[i].gy;
+                break;
+            }
+        }
+    }
+    
+    if (hit_gx != -1) {
+        /* Ball vanishes into subterranean gopher burrow! */
+        gs->ball.vx = 0;
+        gs->ball.vy = 0;
+        gs->ball.vz = 0;
+        gs->audio_event = direct_gopher_hit ? AUDIO_EVT_GOPHER_CHUCKLE : AUDIO_EVT_GOPHER_GULP;
+        
+        /* Gopher pops up right at this burrow to dance and taunt! */
+        gs->gopher.gx = hit_gx;
+        gs->gopher.gy = hit_gy;
+        gs->gopher.x = TO_FIXED(hit_gx) + FIXED_HALF;
+        gs->gopher.y = TO_FIXED(hit_gy) + FIXED_HALF;
+        gs->gopher.current_z = golf_get_ground_z_fixed(gs, gs->gopher.x, gs->gopher.y);
+        gs->gopher.state = GOPHER_STATE_TAUNTING;
+        gs->gopher.visible = true;
+        gs->gopher.timer = 0;
+        
+        /* Drop ball at lip of burrow on safe ground */
+        gs->ball.x = TO_FIXED(hit_gx) + FIXED_HALF + 24000;
+        gs->ball.y = TO_FIXED(hit_gy) + FIXED_HALF + 24000;
+        gs->ball.ground_z = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
+        gs->ball.z = gs->ball.ground_z;
+        gs->ball.state = BALL_IDLE;
+        gs->ball.current_surf = SURF_ROUGH;
+        
+        if (direct_gopher_hit) {
+            set_banner(gs, "DIRECT HIT ON GOPHER! Ball vanished down burrow lol", 220);
+        } else {
+            set_banner(gs, "GOPHER HOLE! Ball swallowed! Free relief at burrow lip lol", 220);
+        }
+        
+        /* Golfer walks to drop location */
+        fixed gdx = gs->ball.x - gs->golfer.x;
+        fixed gdy = gs->ball.y - gs->golfer.y;
+        fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
+        if (gdist > TO_FIXED(1) / 2) {
+            gs->golfer.state = GOLFER_STATE_WALKING;
+            gs->golfer.target_x = gs->ball.x;
+            gs->golfer.target_y = gs->ball.y;
+            gs->golfer.facing_angle = fixed_atan2(gdy, gdx);
+            gs->golfer.walk_ticks = 0;
+            gs->golfer.step_timer = 0;
+            gs->caddy.state = CADDY_STATE_FOLLOWING;
+        } else {
+            golf_golfer_arrive_at_ball(gs);
+        }
+        
+        gs->swing.state = SWING_STATE_READY;
+        gs->swing.cursor_pos = gs->swing.sweetspot_center;
+        
+        if (gs->has_pin) {
+            gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
+            gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
+            fixed adx = gs->aim_target_x - gs->ball.x;
+            fixed ady = gs->aim_target_y - gs->ball.y;
+            gs->aim_angle = fixed_atan2(ady, adx);
+            fixed dist_tiles = fixed_sqrt(FMUL(adx, adx) + FMUL(ady, ady));
+            gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
+            gs->has_custom_aim = false;
+        }
+        return true;
+    }
+    return false;
+}
+
 /* Physics and Simulation Tick (60 Hz) */
 void golf_tick(GolfState *gs) {
     if (gs->banner_timer > 0) {
@@ -1344,6 +1474,9 @@ void golf_tick(GolfState *gs) {
                 }
             }
             
+            /* Check if ball landed on gopher or into gopher hole */
+            if (check_gopher_collision(gs)) return;
+            
             /* Ground Restitution & Friction */
             fixed rest = 26214;   /* ~0.40 Fairway */
             fixed fric = 60293;   /* ~0.92 Fairway */
@@ -1403,6 +1536,9 @@ void golf_tick(GolfState *gs) {
         
         gs->ball.x += gs->ball.vx;
         gs->ball.y += gs->ball.vy;
+        
+        /* Check if ball rolled into gopher hole or hit gopher */
+        if (check_gopher_collision(gs)) return;
         
         if (gs->ball.x < 0 || gs->ball.x >= TO_FIXED(GRID_W) ||
             gs->ball.y < 0 || gs->ball.y >= TO_FIXED(GRID_H)) {
@@ -1704,6 +1840,96 @@ void golf_tick(GolfState *gs) {
                     gs->bev_cart.target_y = TO_FIXED(dest_gy) + FIXED_HALF;
                     gs->bev_cart.state = BEV_STATE_DRIVING;
                 }
+            }
+        }
+    }
+    
+    /* 7. Gopher Entity Simulation (Caddyshack Hole Hazards) */
+    if (gs->mode == MODE_PLAY) {
+        if (gs->gopher.state == GOPHER_STATE_HIDDEN) {
+            if (gs->gopher.pop_cooldown > 0) {
+                gs->gopher.pop_cooldown--;
+            }
+            if (gs->gopher.pop_cooldown <= 0) {
+                /* Find a suitable turf tile along the course corridor */
+                int gx = 0, gy = 0;
+                bool found = false;
+                for (int attempts = 0; attempts < 30; ++attempts) {
+                    int t_step = core_rand() % 100;
+                    int cand_gx = gs->tee_gx + ((gs->pin_gx - gs->tee_gx) * t_step) / 100 + ((int)(core_rand() % 9) - 4);
+                    int cand_gy = gs->tee_gy + ((gs->pin_gy - gs->tee_gy) * t_step) / 100 + ((int)(core_rand() % 9) - 4);
+                    
+                    if (cand_gx >= 2 && cand_gx < GRID_W - 2 && cand_gy >= 2 && cand_gy < GRID_H - 2) {
+                        SurfaceType s = gs->grid[cand_gx][cand_gy].surface;
+                        FeatureType f = gs->grid[cand_gx][cand_gy].feature;
+                        if ((s == SURF_FAIRWAY || s == SURF_ROUGH || s == SURF_GREEN) &&
+                            f != FEAT_CLUBHOUSE && f != FEAT_ROCK && gs->grid[cand_gx][cand_gy].elevation > 0) {
+                            gx = cand_gx;
+                            gy = cand_gy;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (found) {
+                    gs->gopher.gx = gx;
+                    gs->gopher.gy = gy;
+                    gs->gopher.x = TO_FIXED(gx) + FIXED_HALF;
+                    gs->gopher.y = TO_FIXED(gy) + FIXED_HALF;
+                    gs->gopher.current_z = golf_get_ground_z_fixed(gs, gs->gopher.x, gs->gopher.y);
+                    gs->gopher.state = GOPHER_STATE_POPPING_UP;
+                    gs->gopher.visible = true;
+                    gs->gopher.anim_frame = 0;
+                    gs->gopher.timer = 0;
+                    gs->audio_event = AUDIO_EVT_GOPHER_CHUCKLE;
+                    
+                    /* Leave a permanent gopher hole hazard at this spot */
+                    bool already_has_hole = false;
+                    for (int i = 0; i < gs->gopher.hole_count; ++i) {
+                        if (gs->gopher.holes[i].gx == gx && gs->gopher.holes[i].gy == gy) {
+                            already_has_hole = true;
+                            break;
+                        }
+                    }
+                    if (!already_has_hole) {
+                        int h_idx = gs->gopher.hole_count;
+                        if (h_idx >= MAX_GOPHER_HOLES) {
+                            h_idx = core_rand() % MAX_GOPHER_HOLES;
+                        } else {
+                            gs->gopher.hole_count++;
+                        }
+                        gs->gopher.holes[h_idx].gx = gx;
+                        gs->gopher.holes[h_idx].gy = gy;
+                        gs->gopher.holes[h_idx].current_z = gs->gopher.current_z;
+                        gs->gopher.holes[h_idx].active = true;
+                    }
+                } else {
+                    gs->gopher.pop_cooldown = 120;
+                }
+            }
+        } else if (gs->gopher.state == GOPHER_STATE_POPPING_UP) {
+            gs->gopher.timer++;
+            gs->gopher.anim_frame = (gs->gopher.timer / 10);
+            if (gs->gopher.timer >= 20) {
+                gs->gopher.state = GOPHER_STATE_TAUNTING;
+                gs->gopher.timer = 0;
+            }
+        } else if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
+            gs->gopher.timer++;
+            gs->gopher.anim_frame = 2 + ((gs->gopher.timer / 14) % 2); /* Dance left/right */
+            if (gs->gopher.timer >= 180) { /* 3 seconds of dancing/chuckle */
+                gs->gopher.state = GOPHER_STATE_RETREATING;
+                gs->gopher.timer = 0;
+            }
+        } else if (gs->gopher.state == GOPHER_STATE_RETREATING) {
+            gs->gopher.timer++;
+            gs->gopher.anim_frame = 1 - (gs->gopher.timer / 10);
+            if (gs->gopher.timer >= 20) {
+                gs->gopher.state = GOPHER_STATE_HIDDEN;
+                gs->gopher.visible = false;
+                gs->gopher.timer = 0;
+                gs->gopher.pop_cooldown = 420 + (core_rand() % 480); /* 7..15 seconds cooldown */
             }
         }
     }

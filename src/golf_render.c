@@ -1918,18 +1918,20 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                 
                 /* Floating speech bubble when whistling or selling drinks */
                 if (gs->bev_cart.speech_timer > 0) {
-                    int bub_w = 110;
-                    int bub_h = 20;
+                    const char *bmsg = "COLD DRINKS!";
+                    int bub_w = 124;
+                    int bub_h = 22;
                     int bub_x = fx - bub_w / 2;
-                    int bub_y = fy - SPRITE_BEV_CART_H - 24;
+                    int bub_y = fy - SPRITE_BEV_CART_H - 26;
                     /* White speech bubble with dark border */
                     draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
                     draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
-                    /* Speech pointer */
+                    /* Speech pointer downward to cart */
                     for (int dy = 0; dy < 5; ++dy) {
                         draw_rect(rc, fx - 2 + dy / 2, bub_y + bub_h + dy, 5 - dy, 1, COLOR_RGB(255, 255, 255));
                     }
-                    draw_text(rc, bub_x + 6, bub_y + 6, "♪ COLD DRINKS! ♪", COLOR_RGB(220, 20, 70), false);
+                    int b_tx = bub_x + (bub_w - (int)strlen(bmsg) * 8) / 2;
+                    draw_text(rc, b_tx, bub_y + 7, bmsg, COLOR_RGB(220, 20, 70), false);
                 }
                 break;
             }
@@ -2373,14 +2375,14 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     
     /* Floating Melodic Whistle Speech Bubble above Beverage Cart */
     const char *bev_msg = "COLD DRINKS!";
-    int bub_w = 116;
+    int bub_w = 126;
     int bub_h = 22;
-    int bub_x = 652;
+    int bub_x = 647;
     int bub_y = 485;
     draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
     draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
     for (int dy = 0; dy < 6; ++dy) {
-        draw_rect(rc, bub_x + 55 + dy / 2, bub_y + bub_h + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
+        draw_rect(rc, bub_x + 60 + dy / 2, bub_y + bub_h + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
     }
     int b_tx = bub_x + (bub_w - (int)strlen(bev_msg) * 8) / 2;
     draw_text(rc, b_tx, bub_y + 7, bev_msg, COLOR_RGB(220, 20, 80), false);
@@ -2400,84 +2402,61 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     
     /* Floating Caddyshack Groove Speech Bubble above Gopher */
     const char *goph_msg = "I'M ALRIGHT!";
-    int gbub_w = 110;
+    int gbub_w = 120;
     int gbub_h = 22;
-    int gbub_x = goph_x - 38;
+    int gbub_x = goph_x - 44;
     int gbub_y = goph_y - 32;
     draw_rect(rc, gbub_x, gbub_y, gbub_w, gbub_h, COLOR_RGB(255, 255, 255));
     draw_rect_border(rc, gbub_x, gbub_y, gbub_w, gbub_h, COLOR_RGB(35, 45, 55));
     for (int dy = 0; dy < 6; ++dy) {
-        draw_rect(rc, gbub_x + 50 + dy / 2, gbub_y + gbub_h + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
+        draw_rect(rc, gbub_x + 55 + dy / 2, gbub_y + gbub_h + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
     }
     int gbtx = gbub_x + (gbub_w - (int)strlen(goph_msg) * 8) / 2;
     draw_text(rc, gbtx, gbub_y + 7, goph_msg, COLOR_RGB(220, 120, 20), false);
     
-    /* 9. Hero Title Logo: "DUFFER PRO" with 3D Embossing */
+    /* 9. Hero Title Logo: "DUFFER PRO" with 3D Embossing (All 3 framing boxes removed!) */
     int title_y = 65;
     const char *title_text = "DUFFER PRO";
     int title_scale = 4;
     int title_w = (int)strlen(title_text) * 8 * title_scale;
     int title_x = SCREEN_W / 2 - title_w / 2;
     
-    /* Title Backing Plaque (Translucent Smoked Glass with Gold Filigree) */
-    int plq_w = 640;
-    int plq_h = 100;
-    int plq_x = SCREEN_W / 2 - plq_w / 2;
-    int plq_y = title_y - 12;
-    draw_rect_alpha(rc, plq_x, plq_y, plq_w, plq_h, COLOR_RGB(16, 24, 32), 225);
-    draw_rect_border(rc, plq_x, plq_y, plq_w, plq_h, COLOR_RGB(255, 215, 75));
-    draw_rect_border(rc, plq_x + 3, plq_y + 3, plq_w - 6, plq_h - 6, COLOR_RGB(165, 125, 35));
-    
-    /* 3D Drop Shadow */
-    draw_text_scaled(rc, title_x + 4, title_y + 4, title_text, COLOR_RGB(35, 20, 10), title_scale, false);
+    /* 3D Drop Shadows */
+    draw_text_scaled(rc, title_x + 4, title_y + 4, title_text, COLOR_RGB(20, 15, 10), title_scale, false);
+    draw_text_scaled(rc, title_x + 2, title_y + 2, title_text, COLOR_RGB(45, 30, 15), title_scale, false);
     /* Specular Bevel Top Highlight */
     draw_text_scaled(rc, title_x - 1, title_y - 1, title_text, COLOR_RGB(255, 255, 235), title_scale, false);
     /* Metallic Gold Face */
     draw_text_scaled(rc, title_x, title_y, title_text, COLOR_RGB(255, 215, 65), title_scale, false);
     
-    /* PGA Championship Ribbon Banner at y = 125 */
-    int ban_w = 460;
-    int ban_h = 24;
-    int ban_x = SCREEN_W / 2 - ban_w / 2;
-    int ban_y = title_y + 42;
-    draw_rect(rc, ban_x, ban_y, ban_w, ban_h, COLOR_RGB(24, 75, 42));
-    draw_rect_border(rc, ban_x, ban_y, ban_w, ban_h, COLOR_RGB(245, 215, 75));
+    /* Subtitle Banner (Clean Text, no enclosing box) */
     const char *ribbon_text = "★  CHAMPIONSHIP RESORT GOLF  ★";
     int r_tx = SCREEN_W / 2 - (int)strlen(ribbon_text) * 8 / 2;
-    draw_text(rc, r_tx, ban_y + 8, ribbon_text, COLOR_RGB(255, 245, 140), true);
+    draw_text(rc, r_tx, title_y + 42, ribbon_text, COLOR_RGB(255, 240, 140), true);
     
-    /* Subtitle */
+    /* Tagline */
     const char *sub_text = "The Definitive Isometric Country Club Simulation";
     int s_tx = SCREEN_W / 2 - (int)strlen(sub_text) * 8 / 2;
-    draw_text(rc, s_tx, plq_y + plq_h + 10, sub_text, COLOR_RGB(255, 235, 145), true);
+    draw_text(rc, s_tx, title_y + 58, sub_text, COLOR_RGB(255, 225, 145), true);
     
-    /* 10. Prominent Interactive START BUTTON & Guidance (y = 636..735) */
-    int btn_w = 440;
-    int btn_h = 46;
-    int btn_x = SCREEN_W / 2 - btn_w / 2;
-    int btn_y = 636;
-    
-    /* Pulsing button glow */
+    /* 10. Prominent Interactive START PROMPT & Guidance (Clean, no enclosing button box!) */
+    int btn_y = 642;
     bool pulse = ((tick_count / 24) % 2 == 0);
-    uint32_t btn_bg = pulse ? COLOR_RGB(34, 105, 58) : COLOR_RGB(24, 82, 45);
-    uint32_t btn_border = pulse ? COLOR_RGB(255, 235, 95) : COLOR_RGB(225, 185, 55);
-    
-    draw_rect(rc, btn_x, btn_y, btn_w, btn_h, btn_bg);
-    draw_rect_border(rc, btn_x, btn_y, btn_w, btn_h, btn_border);
-    draw_rect_border(rc, btn_x + 2, btn_y + 2, btn_w - 4, btn_h - 4, btn_border);
+    uint32_t prompt_col = pulse ? COLOR_RGB(255, 255, 160) : COLOR_RGB(255, 220, 75);
     
     const char *btn_label = ">>  PRESS ENTER TO TEE OFF  <<";
-    int btx = SCREEN_W / 2 - (int)strlen(btn_label) * 8 / 2;
-    draw_text(rc, btx, btn_y + 18, btn_label, COLOR_RGB(255, 250, 160), true);
+    int b_char_w = 16;
+    int btx = SCREEN_W / 2 - ((int)strlen(btn_label) * b_char_w) / 2;
+    draw_text_2x(rc, btx, btn_y, btn_label, prompt_col, true);
     
     /* Explicit Clear Instruction */
-    const char *note_text = "Press ENTER (or click button) to start  |  Spacebar is reserved for swings during play";
+    const char *note_text = "Press ENTER (or click) to start  |  Spacebar is reserved for swings during play";
     int ntx = SCREEN_W / 2 - (int)strlen(note_text) * 8 / 2;
-    draw_text(rc, ntx, btn_y + 56, note_text, COLOR_RGB(255, 225, 130), true);
+    draw_text(rc, ntx, btn_y + 36, note_text, COLOR_RGB(255, 225, 130), true);
     
     const char *keys_hint = "Controls: TAB Switch Modes | Mouse Aim & Drag | Arrow Keys Pan Camera | C Change Club";
     int ktx = SCREEN_W / 2 - (int)strlen(keys_hint) * 8 / 2;
-    draw_text(rc, ktx, btn_y + 72, keys_hint, COLOR_RGB(155, 180, 200), false);
+    draw_text(rc, ktx, btn_y + 54, keys_hint, COLOR_RGB(165, 195, 215), false);
     
     /* Outer screen vignette border */
     draw_rect_border(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(35, 45, 55));

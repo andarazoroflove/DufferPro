@@ -5,6 +5,17 @@
 #include <stdbool.h>
 #include "fixed_math.h"
 
+/* Version Identification
+ * Versioning Protocol:
+ * - Current Release: 0.75-noonan (SemVer base: 0.7.5)
+ * - Step Changes: Increment 0.0.xx for each step (0.7.5 -> 0.7.6 -> 0.7.7...)
+ * - Rollover: When reaching x.x.99, increment middle step (e.g., 0.7.99 -> 0.8.0)
+ * - Formal Releases: Published strictly on multiples of 5 (0.7.5, 0.7.10, 0.7.15...)
+ */
+#define DUFFER_VERSION      "0.75-noonan"
+#define DUFFER_VERSION_NAME "0.75-noonan"
+#define DUFFER_SEMVER       "0.7.5"
+
 /* Grid Dimensions */
 #define GRID_W              32
 #define GRID_H              64
@@ -68,9 +79,18 @@ typedef struct {
     uint8_t variant;        /* Subtle aesthetic variation (0..3) */
 } GolfTile;
 
+/* Course Themes / Color Schemes */
+typedef enum {
+    THEME_BUSHWOOD = 0,     /* Classic country club greens & whites */
+    THEME_LA_PLAYA,         /* Desert beige, cactus, tumbleweeds, Burning Man */
+    THEME_NOCTURNAL_GREEN,  /* Transylvania purples & greys, fall leaves, coffins, zombies */
+    THEME_COUNT
+} CourseTheme;
+
 /* Game Modes */
 typedef enum {
     MODE_SPLASH = 0,
+    MODE_SETUP,
     MODE_PLAY,
     MODE_BUILD
 } GameMode;
@@ -342,8 +362,56 @@ typedef enum {
     AUDIO_EVT_GOPHER_CHUCKLE = 21,
     AUDIO_EVT_GOPHER_GULP = 22,
     AUDIO_EVT_CARL_EXPLOSION = 23,
-    AUDIO_EVT_CARL_HOSE = 24
+    AUDIO_EVT_CARL_HOSE = 24,
+    AUDIO_EVT_SIREN = 25,
+    AUDIO_EVT_SHOTGUN = 26,
+    AUDIO_EVT_CHAINSAW = 27,
+    AUDIO_EVT_ZOMBIE = 28,
+    AUDIO_EVT_SEAMONSTER = 29
 } GolfAudioEvent;
+
+/* Tumbleweeds for La Playa Desert Theme */
+#define MAX_TUMBLEWEEDS 8
+typedef struct {
+    fixed x, y;
+    fixed vx, vy;
+    fixed current_z;
+    int32_t rotation;
+    bool active;
+    bool stuck;
+} TumbleweedEntity;
+
+/* Sea Monster for Nocturnal Green Theme */
+typedef struct {
+    fixed x, y;
+    fixed current_z;
+    int32_t state;       /* 0: hidden, 1: eyes/head peeking, 2: tentacle swiping ball */
+    int32_t timer;
+    int32_t anim_frame;
+    bool active;
+} SeaMonsterEntity;
+
+/* Course Ranger Entity for Sneak On Mode */
+typedef enum {
+    RANGER_STATE_INACTIVE = 0,
+    RANGER_STATE_PATROLLING,
+    RANGER_STATE_CHASING,
+    RANGER_STATE_SCOLDING
+} RangerState;
+
+typedef struct {
+    fixed x, y;
+    fixed current_z;
+    fixed target_x, target_y;
+    RangerState state;
+    uint8_t facing_angle;
+    fixed speed;
+    int32_t timer;
+    int32_t speech_timer;
+    int32_t cooldown;
+    char speech_msg[64];
+    bool active;
+} RangerEntity;
 
 /* Wind system */
 typedef struct {
@@ -377,6 +445,22 @@ typedef struct {
     int32_t difficulty_rating; /* 1..10 */
     int32_t club_funds;     /* Dollars */
     
+    /* Course Theme & Generation Scales (1..5) */
+    CourseTheme theme;
+    int32_t tree_scale;     /* 1..5, default 3 */
+    int32_t bush_scale;     /* 1..5, default 3 */
+    int32_t rock_scale;     /* 1..5, default 3 */
+    int32_t water_scale;    /* 1..5, default 3 */
+    bool is_sneak_on;       /* True if sneak-on mode */
+    uint32_t current_seed;
+
+    /* Replay Hole Snapshot */
+    GolfTile initial_grid[GRID_W][GRID_H];
+    int32_t initial_tee_gx, initial_tee_gy;
+    int32_t initial_pin_gx, initial_pin_gy;
+    int32_t initial_ch_gx, initial_ch_gy;
+    bool initial_has_ch;
+
     /* Game State */
     GameMode mode;
     BuildCategory build_category;
@@ -390,6 +474,8 @@ typedef struct {
     fixed aim_target_y;
     int32_t aim_distance_yds; /* Distance in yards to aim target */
     bool has_custom_aim;    /* True if player explicitly placed aim spot */
+    int32_t shot_origin_gx; /* Launch tile coordinates to allow hitting out of obstacles */
+    int32_t shot_origin_gy;
     SwingGauge swing;
     BallEntity ball;
     GolferEntity golfer;
@@ -401,6 +487,14 @@ typedef struct {
     CarlEntity carl;
     int32_t gopher_encounter_count;
     int32_t carl_cooldown;
+
+    /* Theme Entities & Event Timers */
+    TumbleweedEntity tumbleweeds[MAX_TUMBLEWEEDS];
+    SeaMonsterEntity sea_monster;
+    RangerEntity ranger;
+    bool caddy_eaten;
+    int32_t caddy_eaten_timer;
+    int32_t raver_passed_out_timer;
     
     Wind wind;
     GolfAudioEvent audio_event; /* Audio event generated this tick */
@@ -416,8 +510,12 @@ typedef struct {
 /* Core Function Prototypes */
 void golf_init(GolfState *gs);
 void golf_generate_terrain(GolfState *gs, uint32_t seed);
+void golf_generate_terrain_scaled(GolfState *gs, uint32_t seed, int trees, int bushes, int rocks, int water);
 void golf_place_default_routing(GolfState *gs);
 void golf_randomize_hole(GolfState *gs, uint32_t seed);
+void golf_replay_hole(GolfState *gs);
+void golf_start_sneak_on(GolfState *gs);
+void golf_set_theme(GolfState *gs, CourseTheme theme);
 void golf_update_autotile_masks(GolfState *gs);
 void golf_recalc_hole_stats(GolfState *gs);
 void golf_recalc_course_rating(GolfState *gs);

@@ -32,6 +32,11 @@ typedef enum {
     SFX_GOPHER_GULP = 22,
     SFX_CARL_EXPLOSION = 23,
     SFX_CARL_HOSE = 24,
+    SFX_SIREN = 25,
+    SFX_SHOTGUN = 26,
+    SFX_CHAINSAW = 27,
+    SFX_ZOMBIE = 28,
+    SFX_SEAMONSTER = 29,
     SFX_COUNT
 } GolfSfxType;
 

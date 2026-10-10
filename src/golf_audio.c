@@ -478,7 +478,73 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             out = (hiss * flow + gurgle) * env * v->volume * 1.10f;
             break;
         }
-        
+
+        case SFX_SIREN: {
+            /* Police Cart Siren: Wailing electronic siren sweeping 650 Hz to 950 Hz */
+            float lfo = sinf(2.0f * (float)M_PI * 2.2f * t);
+            float f_siren = 780.0f + lfo * 160.0f;
+            float phase = 2.0f * (float)M_PI * f_siren * t;
+            float tone = sinf(phase) + 0.35f * sinf(phase * 2.0f) + 0.15f * sinf(phase * 3.0f);
+            float env = (t < 0.05f) ? (t / 0.05f) : ((progress > 0.85f) ? (1.0f - progress) / 0.15f : 1.0f);
+            out = tone * env * v->volume * 1.05f;
+            break;
+        }
+
+        case SFX_SHOTGUN: {
+            /* Ash Williams 12-Gauge Double Barrel Shotgun: Thunderous blast + metallic pump */
+            if (t < 0.30f) {
+                float blast_t = t;
+                float low_f = 160.0f * expf(-blast_t * 18.0f) + 32.0f;
+                float thump = sinf(2.0f * (float)M_PI * low_f * blast_t) * expf(-blast_t * 12.0f);
+                float crack = audio_noise() * expf(-blast_t * 9.0f) * 1.4f;
+                out = (thump * 0.9f + crack * 1.1f) * v->volume * 1.4f;
+            } else if (t >= 0.35f && t < 0.65f) {
+                /* Pump action metal clack */
+                float pt = t - 0.35f;
+                float clack_t = (pt < 0.15f) ? pt : (pt - 0.15f);
+                float clack_env = expf(-clack_t * 45.0f);
+                float clack_tone = sinf(2.0f * (float)M_PI * 1850.0f * clack_t) * 0.6f +
+                                   sinf(2.0f * (float)M_PI * 3400.0f * clack_t) * 0.4f;
+                out = (clack_tone + audio_noise() * 0.35f) * clack_env * v->volume * 0.85f;
+            }
+            break;
+        }
+
+        case SFX_CHAINSAW: {
+            /* Ash Williams Chainsaw: Gritty 2-stroke engine revving and tearing teeth */
+            float rev = 110.0f + 55.0f * sinf(2.0f * (float)M_PI * 3.5f * t) + 15.0f * sinf(t * 40.0f);
+            float saw_phase = 2.0f * (float)M_PI * rev * t;
+            float saw = (fmodf(saw_phase, 2.0f * (float)M_PI) / (float)M_PI) - 1.0f;
+            float sub = sinf(saw_phase * 0.5f) * 0.4f;
+            float grit = audio_noise() * 0.35f;
+            float env = (t < 0.08f) ? (t / 0.08f) : ((progress > 0.88f) ? (1.0f - progress) / 0.12f : 1.0f);
+            out = (saw * 0.7f + sub + grit) * env * v->volume * 1.15f;
+            break;
+        }
+
+        case SFX_ZOMBIE: {
+            /* Undead Groan: Low guttural formant slide ("Braaaains...") */
+            float z_freq = 85.0f * expf(-t * 0.45f) + 45.0f + sinf(t * 14.0f) * 6.0f;
+            float z_phase = 2.0f * (float)M_PI * z_freq * t;
+            float z_pulse = (sinf(z_phase) > 0.1f) ? 0.7f : -0.7f;
+            float z_formant = sinf(z_phase * 4.2f) * 0.4f + sinf(z_phase * 7.5f) * 0.25f;
+            float rasp = audio_noise() * 0.25f;
+            float env = sinf(progress * (float)M_PI);
+            out = (z_pulse * 0.5f + z_formant + rasp) * env * v->volume * 1.25f;
+            break;
+        }
+
+        case SFX_SEAMONSTER: {
+            /* Sea Monster Eruption & Leviathan Roar: Huge surge splash + cavernous growl */
+            float water_surge = audio_noise() * expf(-t * 2.2f) * 0.75f;
+            float roar_freq = 62.0f + sinf(t * 12.0f) * 16.0f;
+            float roar_phase = 2.0f * (float)M_PI * roar_freq * t;
+            float roar = (sinf(roar_phase) + 0.45f * sinf(roar_phase * 2.0f) + 0.2f * sinf(roar_phase * 3.0f));
+            float env = sinf(progress * (float)M_PI);
+            out = (water_surge * 0.6f + roar * 0.8f) * env * v->volume * 1.35f;
+            break;
+        }
+
         default:
             break;
     }
@@ -493,9 +559,12 @@ static float synthesize_sfx_sample(SfxVoice *v) {
 /* Synthesize single music sample for Intro Melody: "I'm Alright (Theme from Caddyshack)" (128 BPM) */
 static void synthesize_music_sample(uint32_t clock, float vol, float *out_l, float *out_r) {
     uint32_t step_samples = 5168; /* 128 BPM 16th note at 44100 Hz */
-    uint32_t total_loop = step_samples * 128;
+    /* Start 2 bars before chorus (Bar 3, step 32) and loop 2 bars after chorus (through Bar 8, step 127).
+     * Total loop = 6 bars = 96 steps. */
+    uint32_t loop_steps = 96;
+    uint32_t total_loop = step_samples * loop_steps;
     uint32_t loop_pos = clock % total_loop;
-    uint32_t step = (loop_pos / step_samples) % 128;
+    uint32_t step = 32 + ((loop_pos / step_samples) % loop_steps);
     uint32_t step_pos = loop_pos % step_samples;
     float t_step = (float)step_pos / (float)AUDIO_SAMPLE_RATE;
     
@@ -772,6 +841,11 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
             case SFX_GOPHER_GULP:      v->total_samples = AUDIO_SAMPLE_RATE * 35 / 100; v->volume = 1.40f; break;
             case SFX_CARL_EXPLOSION:   v->total_samples = AUDIO_SAMPLE_RATE * 180 / 100; v->volume = 1.60f; break;
             case SFX_CARL_HOSE:        v->total_samples = AUDIO_SAMPLE_RATE * 140 / 100; v->volume = 1.25f; break;
+            case SFX_SIREN:            v->total_samples = AUDIO_SAMPLE_RATE * 120 / 100; v->volume = 1.20f; break;
+            case SFX_SHOTGUN:          v->total_samples = AUDIO_SAMPLE_RATE * 80 / 100;  v->volume = 1.60f; break;
+            case SFX_CHAINSAW:         v->total_samples = AUDIO_SAMPLE_RATE * 100 / 100; v->volume = 1.30f; break;
+            case SFX_ZOMBIE:           v->total_samples = AUDIO_SAMPLE_RATE * 120 / 100; v->volume = 1.35f; break;
+            case SFX_SEAMONSTER:       v->total_samples = AUDIO_SAMPLE_RATE * 150 / 100; v->volume = 1.45f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }

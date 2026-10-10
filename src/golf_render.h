@@ -34,6 +34,7 @@ void render_free(RenderContext *rc);
 
 /* Isometric coordinate conversions */
 void grid_to_screen(int32_t gx, int32_t gy, int32_t elevation, int32_t cam_x, int32_t cam_y, int32_t *sx, int32_t *sy);
+void world_to_screen_fixed(fixed fx, fixed fy, fixed gz, int32_t cam_x, int32_t cam_y, int32_t *sx, int32_t *sy);
 bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, int32_t *out_gx, int32_t *out_gy);
 bool screen_to_world_fixed(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, fixed *out_fx, fixed *out_fy);
 
@@ -53,7 +54,8 @@ void draw_rect_border(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_
 /* Screenshot helper (saves 1024x768 BMP) */
 bool render_save_bmp(const RenderContext *rc, const char *filename);
 
-/* Splash Screen Renderer */
+/* Splash & Setup Screen Renderers */
 void render_splash_screen(RenderContext *rc, uint32_t tick_count);
+void render_setup_screen(RenderContext *rc, const GolfState *gs, uint32_t tick_count);
 
 #endif /* GOLF_RENDER_H */

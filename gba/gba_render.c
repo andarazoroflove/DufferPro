@@ -802,4 +802,5 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick) {
     if ((anim_tick / 20) & 1) {
         gba_draw_text(fb, 36, 138, ">> PRESS START OR A <<", GBA_WHITE, true);
     }
+    gba_draw_text(fb, 144, 148, "v0.75-noonan", RGB15(12, 16, 12), false);
 }

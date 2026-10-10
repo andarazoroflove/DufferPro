@@ -1,113 +1,115 @@
 # Duffer Pro ⛳
 
-> **A High-Definition 2.5D Isometric Golf Simulation & Course Architect**  
-> Inspired by mid-2000s classics (*Sid Meier's SimGolf*, *RollerCoaster Tycoon 3*, *Diablo II*).
+> **High-Definition 2.5D Isometric Golf Simulation & Course Architect**  
+> *Version `0.75-noonan`* (SemVer: `v0.7.5`) — Pure ANSI C99 · Windows · macOS Sonoma · Game Boy Advance
 
 ![Duffer Pro Title Screen](docs/screenshots/screenshot_splash.png)
 
 ---
 
-## 🌟 Highlights & Architectural Pillars
+## 🌟 Overview
 
-- **Pure ANSI C (C99):** Built from scratch without C++, OOP bloat, external math libraries, or GPU shader dependencies.
-- **High-Definition 1024×768 Canvas:** Crisp, modern isometric rendering with 2:1 projection ($64\times 32$ px diamond tiles).
-- **Two-Pass Screen-Space Depth Pipeline:** 
-  - **Pass 1:** Renders the terrain grid in diagonal scan order ($d = 0 .. 126$), writing surface and cliff wall depth keys into a screen-space depth buffer.
-  - **Pass 2:** Back-to-front depth-sorted drawables (scenery, characters, props, ball) with soft elliptical alpha drop shadows and depth occlusion against foreground terrain.
-- **7-Tier Elevation & Real-Time Sculpting:** Sculpt terrain live with **Raise (+)** and **Lower (-)** brush tools across 7 elevation tiers (Water $\to$ Peak) with dynamic cliff skirts and layered sedimentary rock strata.
-- **Stately Country Club Estate:** Multi-tier Georgian neoclassical clubhouse featuring pitched slate roof with dormers, twin brick chimneys with terracotta flue pots, white colonnade portico, leaded mullion windows, stone veranda with café tables, striped patio umbrella, and red geranium flower boxes.
-- **Dynamic Caddy & Spectator Gallery:**
-  - **Caddy Companion:** Follows the golfer carrying a heavy leather tour staff bag with pom-pom wood headcovers and chrome irons, pacing behind shots, stepping smoothly across terrain, and celebrating holed putts.
-  - **Spectator Gallery:** Up to 24 gallery spectators with 5 distinct country club attire variations (Panama hats, rugby polos, visors, sunglasses). They track ball flight, clap politely on fairway drives, cheer on birdies/eagles, and gasp at hazard landings.
-- **SimGolf Economy & Fun Rating:** Real-time course rating (0–100%, 0–5 stars), difficulty scoring, and club treasury funds ($150,000 baseline) with construction fees and tournament purse winnings.
-- **Rich Procedural Soundscape:** 100% procedural synthesized audio with golf applause, roaring crowd cheers, gasp/oohs, wood footstep echoes on bridges, driver whack / sweet-spot cracks, sand trap thuds, cup sink rattle, and dynamic clubhouse patio murmur that swells as you approach the estate.
-- **Expanded Build Palette:** Cartpaths, wooden bridges, Scots pines, English oaks, royal palms, flowering cherry trees, azalea bushes, wildflower beds, granite boulders, park benches, and golf carts.
-- **Deterministic 16.16 Fixed-Point Math:** `fixed_math.h` implements complete 16.16 arithmetic, integer square root, and 256-angle sine/cosine LUT. Zero floating-point calculations in physics or vector updates.
+- **Classic Retro Heritage:** Inspired by mid-2000s isometric gems (*Sid Meier's SimGolf*, *RollerCoaster Tycoon 3*) and *Caddyshack*.
+- **Pure ANSI C99:** Built completely from scratch with zero OOP bloat, external math libraries, or GPU shader requirements.
+- **Deterministic 16.16 Physics:** Zero floating-point drift in physics, wind, elevation vectors, or swing execution.
+- **Three Environmental Themes:**
+  - **Bushwood:** Georgian neoclassical clubhouse, caddyshack crew, and Carl Spackler vs. the Gopher.
+  - **La Playa:** Desert plateau, giant cacti, tumbleweeds, rapids, Burning Man effigy, and dancing raver vs. police cart.
+  - **Nocturnal Green:** Gothic Transylvanian castle, autumn foliage, coffin rock piles, dark monster lagoons, zombies, and Ash with his boomstick.
+- **Multi-Platform Native Support:** Windows PC, macOS Sonoma (Universal 2: Apple Silicon + Intel), and bare-metal Game Boy Advance.
+- **Full User Manual:** Detailed gameplay rules, club breakdowns, and course architect guides are in the [📖 Official User Manual](wiki/User-Manual.md).
 
 ---
 
-## 📸 In-Game Screenshots
+## 📸 Screenshots
 
-| Title Splash Screen | Hole 1 Tee & Country Club |
+| Hole 1 Fairway & Bushwood Estate | Course Setup & Density Tuning |
 | :---: | :---: |
-| ![Title Splash](docs/screenshots/screenshot_splash.png) | ![Play Mode](docs/screenshots/screenshot_play.png) |
+| ![Hole 1 Gameplay](docs/screenshots/screenshot_play.png) | ![Course Setup](docs/screenshots/screenshot_setup.png) |
 
-| Design & Scenery Palette | Real-Time Terrain Sculpting |
+| La Playa Desert & Burning Man | Game Boy Advance Edition |
 | :---: | :---: |
-| ![Design Mode](docs/screenshots/screenshot_design.png) | ![Terrain Sculpting](docs/screenshots/screenshot_sculpt.png) |
-
-| Smooth Walking Movement | Holed Putt & Celebration |
-| :---: | :---: |
-| ![Walking](docs/screenshots/screenshot_walking.png) | ![Holed Putt](docs/screenshots/screenshot_holed.png) |
+| ![La Playa Desert](docs/screenshots/screenshot_la_playa.png) | ![Game Boy Advance](docs/screenshots/screenshot_gba.png) |
 
 ---
 
-## 🎮 Controls & Hotkeys
+## 🎮 Key Features
 
-| Action | Control | Description |
+- **3-Click Swing Gauge:**
+  - Click 1: Start backswing.
+  - Click 2: Lock power (with auto-bounce at 100%).
+  - Click 3: Lock accuracy in the sweet spot (or shape hooks and slices).
+- **Sub-Tile Mouse Aiming:**
+  - Click or drag anywhere to place the reticle ring.
+  - Continuous coordinate inversion matches mouse pointer with sub-pixel precision.
+  - Automatic club selection calibrated to target distance.
+  - Complete launch immunity when hitting out of tree, bush, or boulder tiles.
+- **Sneak On Mode:**
+  - Quick rounds with randomized obstacle density and themes.
+  - Watch out for the patrol ranger in his golf cart!
+- **Play a Hole Mode:**
+  - Full customization dashboard with 1–5 sliders for Trees, Bushes, Rocks, and Water.
+  - Strict 70% natural obstacle safety clamp ensures playable fairway routing.
+- **Replay Hole:**
+  - Instant one-click restart (`R` key or UI button) for the exact same layout.
+- **Live Course Architect (Design Mode):**
+  - Sculpt 7 discrete elevation tiers with dynamic sedimentary cliff walls.
+  - Paint fairways, greens, sand traps, cart paths, and bridges in real time.
+- **Synthesized Audio Soundscape:**
+  - 100% procedural audio: driver cracks, sweet-spot chimes, cup rattles, gallery cheers, and ambient clubhouse murmur.
+
+---
+
+## ⌨️ Controls
+
+- **`Tab`:** Toggle between Play Mode and Course Architect (Design Mode)
+- **`Left Click`:** Set aiming reticle / click ball or screen to swing
+- **`Space`:** Universal 3-click swing trigger (Start $\to$ Power $\to$ Accuracy)
+- **`R`:** Replay current hole layout
+- **`C`:** Cycle clubs forward (Driver $\to$ 3W $\to$ 5I $\to$ 9I $\to$ PW $\to$ Putter)
+- **`Arrow Keys` / `Right-Click Drag`:** Smooth isometric camera panning
+- **`1`, `2`, `3`:** Design mode tool tabs (Terrain, Surfaces, Scenery)
+- **`B`:** Toggle brush size (1×1 tile vs. 3×3 broad)
+- **`Esc`:** Return to title screen / cancel tool
+
+---
+
+## 📦 Downloads & Releases (`v0.75-noonan`)
+
+| Package | Format | Details |
 | :--- | :--- | :--- |
-| **Switch Modes** | `Tab` or UI Button | Toggle between **Play Mode** and **Design Mode** |
-| **Aim Shot** | `Left Click` on Map | Sets target landing spot; auto-selects ideal club |
-| **Swing (3-Click)** | `Space` or `Click Ball` | Click 1: Start backswing; Click 2: Power; Click 3: Accuracy snap |
-| **Cycle Clubs** | `C` key | Switch between Driver (1W), Wood (3W), Irons (4I..9I), Wedges, Putter |
-| **Pan Camera** | `Right Click + Drag` / Mouse Edge / Arrows | Smooth isometric camera scrolling |
-| **Design Category** | `1`, `2`, `3` | Switch tabs: 1: Terrain, 2: Course, 3: Scenery |
-| **Toggle Brush** | `B` key | Toggle between 1×1 tile and 3×3 brush |
-| **Sculpt / Paint** | `Left Click / Drag` | Raise/lower terrain, paint surfaces, or place scenery |
-| **Randomize Hole** | `R` key or UI Button | Generates a brand-new championship layout |
+| **[All-in-One Release Bundle](release/Duffer_Pro_v0.75-noonan.zip)** | `.zip` (4.7 MB) | Contains Windows, macOS Sonoma, and GBA builds |
+| **Windows PC** | `release/windows/` | `duffer_pro.exe` + `SDL2.dll` (no installer required) |
+| **macOS Sonoma** | `release/macos/` | Universal 2 `Duffer Pro.app` (Apple Silicon & Intel) |
+| **Game Boy Advance** | `release/gba/` | `duffer_pro.gba` (real hardware / SuperCard ready) |
 
 ---
 
-## 🏗️ Directory Structure
+## 🛠️ Building from Source
 
-```
-Duffer/
-├── Makefile                   # Multiplatform GCC Makefile (Windows/Linux/macOS)
-├── .gitignore                 # Git ignore rules
-├── README.md                  # Comprehensive engine documentation
-├── build/                     # Runnable executable output directory
-│   ├── duffer.exe             # Primary Duffer Pro binary
-│   ├── duffer_pro.exe         # Convenience alias binary
-│   └── SDL2.dll               # SDL2 32-bit runtime (MinGW)
-├── docs/
-│   └── screenshots/           # In-engine 1024x768 screenshots
-│       ├── screenshot_splash.png
-│       ├── screenshot_play.png
-│       ├── screenshot_design.png
-│       ├── screenshot_walking.png
-│       ├── screenshot_sculpt.png
-│       └── screenshot_holed.png
-├── src/
-│   ├── fixed_math.h           # Deterministic 16.16 fixed-point math & LUT trig
-│   ├── font8x8.h              # Razor-sharp retro 8x8 bitmap font
-│   ├── golf_audio.h           # Procedural synthesized audio engine interface
-│   ├── golf_audio.c           # Dynamic soundscape, crowd reactions, patio murmur
-│   ├── golf_core.h            # Headless simulation API, entities, course ratings
-│   ├── golf_core.c            # Procedural terrain, 16-mask autotiler, physics, economy
-│   ├── golf_render.h          # Software isometric blitter interface (1024x768)
-│   ├── golf_render.c          # Depth buffer, drop shadows, procedural pixel art, HUD
-│   ├── splash_art.h           # Procedural splash art rasterizer & 3D logo
-│   └── main.c                 # SDL2 frontend, camera tracking, event loop
-├── tools/
-│   └── capture_test.c         # Headless verification & screenshot capture tool
-└── vendor/
-    └── SDL2/                  # Vendored 32-bit MinGW development library
+```bash
+# Windows (MinGW)
+mingw32-make clean && mingw32-make
+
+# macOS Sonoma (Universal 2 via cross-toolchain or native clang)
+mingw32-make mac
+
+# Game Boy Advance (Bare-Metal ARM GCC)
+mingw32-make gba
 ```
 
 ---
 
-## 🚀 Building & Running
+## 📚 Documentation & Guides
 
-### Requirements
-- **Windows:** MinGW GCC with 32-bit SDL2 (vendored in `vendor/SDL2/`)
-- **Linux:** `gcc`, `libsdl2-dev`, `make`
-- **macOS:** `clang`, `sdl2` via Homebrew, `make`
+- [📖 Official User Manual](wiki/User-Manual.md) — Comprehensive player manual and strategy guide.
+- [🏛️ Wiki Home](wiki/Home.md) — Documentation index and release notes.
 
-### Compile & Launch
-```powershell
-# Build both duffer.exe and duffer_pro.exe:
-mingw32-make clean; mingw32-make
+---
 
-# Run the game:
-.\build\duffer.exe
-```
+## 🏷️ Versioning Scheme
+
+- **Step Changes:** Incremented by `0.0.xx` on each step build (`0.7.5` $\to$ `0.7.6` $\to$ `0.7.7`...).
+- **Milestone Rollover:** Increment the middle digit at `x.x.99` (`0.7.99` $\to$ `0.8.0`).
+- **Published Releases:** Formal public releases are tagged and published strictly on ending multiples of 5 (e.g., `0.7.5`, `0.7.10`, `0.7.15`, ...).
+

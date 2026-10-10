@@ -209,7 +209,7 @@ static void draw_drop_shadow(RenderContext *rc, int32_t cx, int32_t cy, int32_t 
 }
 
 /* Procedural Texture Generation for Duffer-Pro (Mid-2000s Quality) */
-static void generate_procedural_graphics(void) {
+static void generate_procedural_graphics_themed(CourseTheme theme) {
     s_tex_rand = 54321;
     
     /* 1. Rough Grass with Multi-Tone Tufting */
@@ -223,12 +223,26 @@ static void generate_procedural_graphics(void) {
                 }
                 int noise = (trand() % 14) - 7;
                 int tuft = ((px * 7 + py * 13 + v * 19) % 11 == 0) ? 14 : 0;
-                int r = 52 + noise - (tuft / 2);
-                int g = 108 + noise * 2 + tuft;
-                int b = 38 + noise / 2;
-                if (r < 25) r = 25; if (r > 80) r = 80;
-                if (g < 70) g = 70; if (g > 150) g = 150;
-                if (b < 15) b = 15; if (b > 60) b = 60;
+                int r, g, b;
+                if (theme == THEME_LA_PLAYA) {
+                    /* Desert Beige */
+                    r = 230 + noise - tuft / 3;
+                    g = 215 + noise * 2 / 3;
+                    b = 178 + noise / 2;
+                } else if (theme == THEME_NOCTURNAL_GREEN) {
+                    /* Transylvania Purple-Grey */
+                    r = 68 + noise;
+                    g = 58 + noise / 2;
+                    b = 82 + noise;
+                } else {
+                    /* Bushwood Green */
+                    r = 52 + noise - (tuft / 2);
+                    g = 108 + noise * 2 + tuft;
+                    b = 38 + noise / 2;
+                }
+                if (r < 0) r = 0; if (r > 255) r = 255;
+                if (g < 0) g = 0; if (g > 255) g = 255;
+                if (b < 0) b = 0; if (b > 255) b = 255;
                 s_tile_rough[v][idx] = COLOR_RGB(r, g, b);
             }
         }
@@ -246,9 +260,26 @@ static void generate_procedural_graphics(void) {
                 }
                 int stripe = ((px + py * 2) / 6) & 1;
                 int noise = (trand() % 8) - 4;
-                int r = stripe ? (102 + noise) : (84 + noise);
-                int g = stripe ? (186 + noise * 2) : (158 + noise * 2);
-                int b = stripe ? (46 + noise) : (38 + noise);
+                int r, g, b;
+                if (theme == THEME_LA_PLAYA) {
+                    /* Darker beige than background desert rough */
+                    r = stripe ? (198 + noise) : (180 + noise);
+                    g = stripe ? (174 + noise) : (158 + noise);
+                    b = stripe ? (132 + noise) : (120 + noise);
+                } else if (theme == THEME_NOCTURNAL_GREEN) {
+                    /* Deep twilight violet grass */
+                    r = stripe ? (92 + noise) : (78 + noise);
+                    g = stripe ? (72 + noise) : (62 + noise);
+                    b = stripe ? (128 + noise) : (112 + noise);
+                } else {
+                    /* Bushwood Emerald */
+                    r = stripe ? (102 + noise) : (84 + noise);
+                    g = stripe ? (186 + noise * 2) : (158 + noise * 2);
+                    b = stripe ? (46 + noise) : (38 + noise);
+                }
+                if (r < 0) r = 0; if (r > 255) r = 255;
+                if (g < 0) g = 0; if (g > 255) g = 255;
+                if (b < 0) b = 0; if (b > 255) b = 255;
                 uint32_t fw_col = COLOR_RGB(r, g, b);
                 
                 if (dist_edge < 6) {
@@ -278,7 +309,13 @@ static void generate_procedural_graphics(void) {
                     continue;
                 }
                 int grain = ((px * 3 + py * 7) & 3) - 1;
-                uint32_t gr_col = COLOR_RGB(110 + grain, 216 + grain * 2, 66 + grain);
+                uint32_t gr_col;
+                if (theme == THEME_NOCTURNAL_GREEN) {
+                    gr_col = COLOR_RGB(48 + grain, 148 + grain * 2, 92 + grain);
+                } else {
+                    /* Green and tees are green on Bushwood and La Playa */
+                    gr_col = COLOR_RGB(110 + grain, 216 + grain * 2, 66 + grain);
+                }
                 if (dist_edge < 6) {
                     bool edge_rough = false;
                     if (py < 16 && px < 32 && !(m & MASK_NW)) edge_rough = true;
@@ -295,7 +332,7 @@ static void generate_procedural_graphics(void) {
         }
     }
     
-    /* 4. Sand Bunkers (Raked Sand Waves & Shaded Lip) */
+    /* 4. Sand Bunkers */
     for (int m = 0; m < 16; ++m) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -307,17 +344,24 @@ static void generate_procedural_graphics(void) {
                 }
                 int wave = (int)(sinf((float)px * 0.45f) * 4.0f);
                 int noise = (trand() % 8) - 4;
-                uint32_t sand_col = COLOR_RGB(232 + wave + noise, 214 + wave + noise, 152 + wave / 2);
+                uint32_t sand_col;
+                if (theme == THEME_LA_PLAYA) {
+                    sand_col = COLOR_RGB(246 + noise, 240 + noise, 222 + wave / 2);
+                } else if (theme == THEME_NOCTURNAL_GREEN) {
+                    sand_col = COLOR_RGB(125 + noise, 118 + noise, 134 + wave / 2);
+                } else {
+                    sand_col = COLOR_RGB(232 + wave + noise, 214 + wave + noise, 152 + wave / 2);
+                }
                 if (dist_edge < 5) {
                     int t256 = (dist_edge * 256) / 5;
-                    sand_col = blend_color(COLOR_RGB(135, 110, 68), sand_col, t256);
+                    sand_col = blend_color(COLOR_RGB(110, 95, 60), sand_col, t256);
                 }
                 s_tile_sand[m][idx] = sand_col;
             }
         }
     }
     
-    /* 5. Animated Water (Turquoise-to-Deep-Blue Gradient & Sparkles) */
+    /* 5. Animated Water */
     for (int v = 0; v < 4; ++v) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -329,28 +373,47 @@ static void generate_procedural_graphics(void) {
                 }
                 float wave = sinf((float)px * 0.22f + (float)v * 1.57f) * 6.0f +
                              cosf((float)py * 0.35f - (float)v * 1.57f) * 4.0f;
-                int r = 36 + (int)wave;
-                int g = 120 + (int)(wave * 1.5f);
-                int b = 196 + (int)(wave * 2.0f);
-                
-                /* Shallows near shore */
-                if (dist_edge < 6) {
-                    r += (6 - dist_edge) * 6;
-                    g += (6 - dist_edge) * 10;
-                    b += (6 - dist_edge) * 4;
+                int r, g, b;
+                if (theme == THEME_LA_PLAYA) {
+                    /* Creek with foaming rapids! */
+                    int creek_mid = 16 + (int)(sinf((float)px * 0.25f + (float)v) * 3.0f);
+                    int d_mid = abs(py - creek_mid);
+                    if (d_mid <= 3) {
+                        r = 240; g = 248; b = 255; /* White foam rapids */
+                    } else if (d_mid <= 6) {
+                        r = 180 + (int)wave * 2; g = 225 + (int)wave; b = 245;
+                    } else {
+                        r = 48 + (int)wave; g = 145 + (int)(wave * 1.5f); b = 175 + (int)(wave * 2.0f);
+                    }
+                } else if (theme == THEME_NOCTURNAL_GREEN) {
+                    /* Very dark abyssal blue, still blue */
+                    r = 14 + (int)(wave * 0.5f);
+                    g = 26 + (int)(wave * 0.8f);
+                    b = 64 + (int)(wave * 1.2f);
+                    if (dist_edge < 4) { r += 6; g += 10; b += 18; }
+                } else {
+                    /* Bushwood Sapphire Blue */
+                    r = 36 + (int)wave;
+                    g = 120 + (int)(wave * 1.5f);
+                    b = 196 + (int)(wave * 2.0f);
+                    if (dist_edge < 6) {
+                        r += (6 - dist_edge) * 6;
+                        g += (6 - dist_edge) * 10;
+                        b += (6 - dist_edge) * 4;
+                    }
+                    if ((px * 13 + py * 17 + v * 31) % 43 == 0) {
+                        r = 230; g = 245; b = 255;
+                    }
                 }
-                
-                /* Specular sunlight glint sparkles */
-                if ((px * 13 + py * 17 + v * 31) % 43 == 0) {
-                    r = 230; g = 245; b = 255;
-                }
-                if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+                if (r > 255) r = 255; if (r < 0) r = 0;
+                if (g > 255) g = 255; if (g < 0) g = 0;
+                if (b > 255) b = 255; if (b < 0) b = 0;
                 s_tile_water[v][idx] = COLOR_RGB(r, g, b);
             }
         }
     }
     
-    /* 6. Cart Path (Macadam with Worn Wheel Tracks) */
+    /* 6. Cart Path */
     for (int m = 0; m < 16; ++m) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -361,12 +424,13 @@ static void generate_procedural_graphics(void) {
                     continue;
                 }
                 int noise = (trand() % 10) - 5;
-                int r = 165 + noise, g = 162 + noise, b = 158 + noise;
-                /* Wheel tracks */
-                int track_d1 = abs(px - 22);
-                int track_d2 = abs(px - 42);
-                if (track_d1 <= 2 || track_d2 <= 2) {
-                    r -= 14; g -= 14; b -= 14;
+                int r, g, b;
+                if (theme == THEME_LA_PLAYA) {
+                    r = 205 + noise; g = 188 + noise; b = 155 + noise;
+                } else if (theme == THEME_NOCTURNAL_GREEN) {
+                    r = 75 + noise; g = 70 + noise; b = 80 + noise;
+                } else {
+                    r = 165 + noise; g = 162 + noise; b = 158 + noise;
                 }
                 uint32_t col = COLOR_RGB(r, g, b);
                 if (dist_edge < 4) {
@@ -377,7 +441,7 @@ static void generate_procedural_graphics(void) {
         }
     }
     
-    /* 7. Wooden Bridge (Stained Planks with Brass Bolts) */
+    /* 7. Wooden Bridge */
     for (int v = 0; v < 4; ++v) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -390,12 +454,11 @@ static void generate_procedural_graphics(void) {
                 int r = plank_idx ? 142 : 128;
                 int g = plank_idx ? 94 : 84;
                 int b = plank_idx ? 56 : 48;
-                if ((py % 3) == 0) { r -= 35; g -= 28; b -= 20; } /* gap */
-                /* Side railings & brass bolts */
+                if ((py % 3) == 0) { r -= 35; g -= 28; b -= 20; }
                 if (px <= 4 || px >= TILE_W - 5) {
                     r += 30; g += 20; b += 14;
                     if ((py % 6) == 2 && (px == 2 || px == TILE_W - 3)) {
-                        r = 230; g = 195; b = 50; /* Brass bolt */
+                        r = 230; g = 195; b = 50;
                     }
                 }
                 s_tile_bridge[v][idx] = COLOR_RGB(r, g, b);
@@ -412,37 +475,50 @@ static void generate_procedural_graphics(void) {
                 continue;
             }
             int dither = ((px ^ py) & 1) ? 3 : -3;
-            s_tile_tee[idx] = COLOR_RGB(94 + dither, 172 + dither, 46);
+            if (theme == THEME_NOCTURNAL_GREEN) {
+                s_tile_tee[idx] = COLOR_RGB(52 + dither, 120 + dither, 88);
+            } else {
+                s_tile_tee[idx] = COLOR_RGB(94 + dither, 172 + dither, 46);
+            }
         }
     }
     
-    /* 9. Stratified Sedimentary Cliff Skirts */
+    /* 9. Stratified Cliff Skirts */
     for (int y = 0; y < 72; ++y) {
         for (int x = 0; x < 64; ++x) {
             int idx = y * 64 + x;
             int layer = (y / 6) % 4;
             int r_sw, g_sw, b_sw;
-            if (layer == 0) { r_sw = 112; g_sw = 104; b_sw = 88; }      /* Sandstone */
-            else if (layer == 1) { r_sw = 90; g_sw = 98; b_sw = 110; }   /* Slate */
-            else if (layer == 2) { r_sw = 126; g_sw = 120; b_sw = 100; } /* Limestone */
-            else { r_sw = 75; g_sw = 78; b_sw = 82; }                   /* Shale */
-            
+            if (theme == THEME_LA_PLAYA) {
+                if (layer == 0) { r_sw = 195; g_sw = 125; b_sw = 82; }
+                else if (layer == 1) { r_sw = 175; g_sw = 105; b_sw = 68; }
+                else if (layer == 2) { r_sw = 210; g_sw = 140; b_sw = 95; }
+                else { r_sw = 155; g_sw = 90; b_sw = 56; }
+            } else if (theme == THEME_NOCTURNAL_GREEN) {
+                if (layer == 0) { r_sw = 52; g_sw = 46; b_sw = 60; }
+                else if (layer == 1) { r_sw = 42; g_sw = 36; b_sw = 50; }
+                else if (layer == 2) { r_sw = 58; g_sw = 52; b_sw = 66; }
+                else { r_sw = 36; g_sw = 32; b_sw = 44; }
+            } else {
+                if (layer == 0) { r_sw = 112; g_sw = 104; b_sw = 88; }
+                else if (layer == 1) { r_sw = 90; g_sw = 98; b_sw = 110; }
+                else if (layer == 2) { r_sw = 126; g_sw = 120; b_sw = 100; }
+                else { r_sw = 75; g_sw = 78; b_sw = 82; }
+            }
             int noise = (trand() % 12) - 6;
             r_sw += noise; g_sw += noise; b_sw += noise;
-            /* Vertical strata fissure lines */
             if ((x * 19 + y * 7) % 29 == 0) {
                 r_sw -= 25; g_sw -= 25; b_sw -= 25;
             }
-            if (y < 4) { r_sw -= 25; g_sw += 28; b_sw -= 20; } /* Hanging moss */
+            if (y < 4) { r_sw -= 25; g_sw += 28; b_sw -= 20; }
             s_cliff_sw[idx] = COLOR_RGB(r_sw, g_sw, b_sw);
-            
-            /* SE Face in directional hill shadow */
-            int r_se = (r_sw * 66) / 100;
-            int g_se = (g_sw * 66) / 100;
-            int b_se = (b_sw * 72) / 100;
-            s_cliff_se[idx] = COLOR_RGB(r_se, g_se, b_se);
+            s_cliff_se[idx] = COLOR_RGB((r_sw * 66) / 100, (g_sw * 66) / 100, (b_sw * 72) / 100);
         }
     }
+}
+
+static void generate_procedural_graphics(void) {
+    generate_procedural_graphics_themed(THEME_BUSHWOOD);
     
     /* 10. Scots Pine Sprite (44x64, Volumetric Layered Boughs) */
     memset(s_sprite_pine, 0, sizeof(s_sprite_pine));
@@ -1359,41 +1435,51 @@ void grid_to_screen(int32_t gx, int32_t gy, int32_t elevation, int32_t cam_x, in
     *sy = (gx + gy) * TILE_HALF_H - (elevation * HEIGHT_STEP_PX) + cam_y;
 }
 
-bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, int32_t *out_gx, int32_t *out_gy) {
+void world_to_screen_fixed(fixed fx, fixed fy, fixed gz, int32_t cam_x, int32_t cam_y, int32_t *sx, int32_t *sy) {
+    *sx = FROM_FIXED(FMUL(fx - fy, TO_FIXED(TILE_HALF_W))) + cam_x + TILE_HALF_W;
+    *sy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + cam_y;
+}
+
+bool screen_to_world_fixed(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, fixed *out_fx, fixed *out_fy) {
     for (int elev = MAX_ELEVATION_TIER; elev >= 0; --elev) {
-        int32_t adj_sy = sy + (elev * HEIGHT_STEP_PX) - cam_y;
-        int32_t adj_sx = sx - cam_x;
+        int32_t u = sx - cam_x - TILE_HALF_W;
+        int32_t v = sy - cam_y + (elev * HEIGHT_STEP_PX);
         
-        int32_t gx = (adj_sx / TILE_HALF_W + adj_sy / TILE_HALF_H) / 2;
-        int32_t gy = (adj_sy / TILE_HALF_H - adj_sx / TILE_HALF_W) / 2;
+        fixed fx = (fixed)((u + 2 * v) * 1024);
+        fixed fy = (fixed)((2 * v - u) * 1024);
+        
+        int32_t gx = FROM_FIXED(fx);
+        int32_t gy = FROM_FIXED(fy);
         
         if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
             if (gs->grid[gx][gy].elevation == elev) {
-                *out_gx = gx;
-                *out_gy = gy;
+                *out_fx = fx;
+                *out_fy = fy;
                 return true;
             }
         }
     }
     
     /* Fallback at elevation 0 */
-    int32_t adj_sy = sy - cam_y;
-    int32_t adj_sx = sx - cam_x;
-    int32_t gx = (adj_sx / TILE_HALF_W + adj_sy / TILE_HALF_H) / 2;
-    int32_t gy = (adj_sy / TILE_HALF_H - adj_sx / TILE_HALF_W) / 2;
+    int32_t u = sx - cam_x - TILE_HALF_W;
+    int32_t v = sy - cam_y;
+    fixed fx = (fixed)((u + 2 * v) * 1024);
+    fixed fy = (fixed)((2 * v - u) * 1024);
+    int32_t gx = FROM_FIXED(fx);
+    int32_t gy = FROM_FIXED(fy);
     if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
-        *out_gx = gx;
-        *out_gy = gy;
+        *out_fx = fx;
+        *out_fy = fy;
         return true;
     }
     return false;
 }
 
-bool screen_to_world_fixed(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, fixed *out_fx, fixed *out_fy) {
-    int32_t gx, gy;
-    if (screen_to_grid(gs, sx, sy, cam_x, cam_y, &gx, &gy)) {
-        *out_fx = TO_FIXED(gx) + FIXED_HALF;
-        *out_fy = TO_FIXED(gy) + FIXED_HALF;
+bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, int32_t *out_gx, int32_t *out_gy) {
+    fixed fx, fy;
+    if (screen_to_world_fixed(gs, sx, sy, cam_x, cam_y, &fx, &fy)) {
+        *out_gx = FROM_FIXED(fx);
+        *out_gy = FROM_FIXED(fy);
         return true;
     }
     return false;
@@ -1659,7 +1745,10 @@ typedef enum {
     DRAWABLE_GOPHER_HOLE,
     DRAWABLE_GOPHER,
     DRAWABLE_CARL,
-    DRAWABLE_TNT_BOX
+    DRAWABLE_TNT_BOX,
+    DRAWABLE_TUMBLEWEED,
+    DRAWABLE_SEA_MONSTER,
+    DRAWABLE_RANGER
 } DrawableType;
 
 typedef struct {
@@ -1705,6 +1794,648 @@ static void blit_sprite_depth(RenderContext *rc, int32_t sp_x, int32_t sp_y, int
 }
 
 /* ========================================================================= */
+/* THEMED ENTITIES & SCENERY RENDERERS                                       */
+/* ========================================================================= */
+
+static void render_cactus(RenderContext *rc, int32_t sx, int32_t sy, int32_t depth) {
+    int w = 38, h = 56;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 4;
+    draw_drop_shadow(rc, sx, sy, 18, 8, 130);
+    
+    for (int y = 0; y < h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 0; x < w; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            bool inside = false;
+            int rib = 0;
+            
+            /* Central Trunk (x = 14..23, y = 4..55) */
+            if (x >= 14 && x <= 23 && y >= 4 && y <= 55) {
+                if (y >= 6 || (x >= 16 && x <= 21)) {
+                    inside = true;
+                    rib = (x % 3 == 0) ? -24 : 12;
+                }
+            }
+            /* Left Arm: branches at y = 30..36, goes left to x = 4..14, then up to y = 14..36 */
+            if ((y >= 30 && y <= 36 && x >= 4 && x <= 14) ||
+                (y >= 14 && y <= 35 && x >= 4 && x <= 10)) {
+                if (y >= 16 || (x >= 5 && x <= 9)) {
+                    inside = true;
+                    rib = (x % 2 == 0) ? -20 : 10;
+                }
+            }
+            /* Right Arm: branches at y = 24..30, goes right to x = 23..33, then up to y = 8..30 */
+            if ((y >= 24 && y <= 30 && x >= 23 && x <= 33) ||
+                (y >= 8 && y <= 29 && x >= 27 && x <= 33)) {
+                if (y >= 10 || (x >= 28 && x <= 32)) {
+                    inside = true;
+                    rib = (x % 2 == 0) ? -20 : 10;
+                }
+            }
+            
+            if (inside) {
+                int r = 58 + rib;
+                int g = 118 + rib * 2;
+                int b = 48 + rib / 2;
+                if (((x * 5 + y * 7) % 11 == 0)) {
+                    r = 240; g = 235; b = 180;
+                }
+                int idx = py * SCREEN_W + px;
+                if (depth >= s_depth_buffer[idx] - 12) {
+                    rc->framebuffer[idx] = COLOR_RGB(r, g, b);
+                }
+            }
+        }
+    }
+}
+
+static void render_desert_monolith_rock(RenderContext *rc, int32_t sx, int32_t sy, int32_t depth) {
+    int w = 46, h = 34;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 4;
+    draw_drop_shadow(rc, sx, sy, 22, 10, 140);
+    
+    for (int y = 0; y < h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 0; x < w; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            int dx = x - w / 2;
+            if (y >= 4 && abs(dx) <= (w / 2 - 2 - (34 - y) / 6)) {
+                int layer = (y / 5) % 4;
+                int r, g, b;
+                if (layer == 0) { r = 215; g = 115; b = 65; }
+                else if (layer == 1) { r = 185; g = 90; b = 50; }
+                else if (layer == 2) { r = 230; g = 140; b = 80; }
+                else { r = 165; g = 75; b = 42; }
+                
+                int shade = (dx < -4) ? 22 : ((dx > 6) ? -28 : 0);
+                r += shade; g += shade; b += shade;
+                if (x == 17 || x == 31) { r -= 30; g -= 20; b -= 15; }
+                
+                if (r > 255) r = 255; if (r < 0) r = 0;
+                if (g > 255) g = 255; if (g < 0) g = 0;
+                if (b > 255) b = 255; if (b < 0) b = 0;
+                
+                int idx = py * SCREEN_W + px;
+                if (depth >= s_depth_buffer[idx] - 12) {
+                    rc->framebuffer[idx] = COLOR_RGB(r, g, b);
+                }
+            }
+        }
+    }
+}
+
+static void render_tumbleweed(RenderContext *rc, int32_t sx, int32_t sy, int rot, int32_t depth) {
+    int rad = 11;
+    draw_drop_shadow(rc, sx, sy, 10, 5, 110);
+    
+    for (int dy = -rad; dy <= rad; ++dy) {
+        int py = sy - rad + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int dx = -rad; dx <= rad; ++dx) {
+            int px = sx + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            int d2 = dx * dx + dy * dy;
+            if (d2 <= rad * rad) {
+                float rad_ang = (float)rot * 0.01745f;
+                int rx = (int)(cosf(rad_ang) * dx - sinf(rad_ang) * dy);
+                int ry = (int)(sinf(rad_ang) * dx + cosf(rad_ang) * dy);
+                
+                bool is_twig = ((abs(rx * 7 + ry * 13) % 9) <= 2) || (d2 >= (rad - 2) * (rad - 2));
+                if (is_twig) {
+                    int light = (dy < -2) ? 18 : ((dy > 3) ? -18 : 0);
+                    int r = 195 + light;
+                    int g = 160 + light;
+                    int b = 105 + light;
+                    int idx = py * SCREEN_W + px;
+                    if (depth >= s_depth_buffer[idx] - 12) {
+                        rc->framebuffer[idx] = COLOR_RGB(r, g, b);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void render_autumn_tree(RenderContext *rc, int32_t sx, int32_t sy, int feat, int32_t depth) {
+    (void)feat;
+    int w = 52, h = 60;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 6;
+    draw_drop_shadow(rc, sx, sy, 22, 11, 140);
+    
+    for (int y = 38; y < h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 22; x <= 29; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            int idx = py * SCREEN_W + px;
+            if (depth >= s_depth_buffer[idx] - 12) {
+                rc->framebuffer[idx] = COLOR_RGB(55, 38, 28);
+            }
+        }
+    }
+    
+    int clusters[5][4] = {
+        { 26, 16, 15, 0 },
+        { 14, 24, 13, 1 },
+        { 38, 23, 14, 2 },
+        { 20, 32, 14, 0 },
+        { 33, 33, 14, 1 }
+    };
+    for (int c = 0; c < 5; ++c) {
+        int ccx = base_x + clusters[c][0];
+        int ccy = base_y + clusters[c][1];
+        int rad = clusters[c][2];
+        int pal = clusters[c][3];
+        
+        for (int dy = -rad; dy <= rad; ++dy) {
+            int py = ccy + dy;
+            if (py < 0 || py >= SCREEN_H) continue;
+            for (int dx = -rad; dx <= rad; ++dx) {
+                int px = ccx + dx;
+                if (px < 0 || px >= SCREEN_W) continue;
+                if (dx * dx + dy * dy <= rad * rad) {
+                    int light = (dy < -2 && dx < 2) ? 25 : ((dy > 4) ? -22 : 0);
+                    int r, g, b;
+                    if (pal == 0) {
+                        r = 235 + light; g = 105 + light / 2; b = 25;
+                    } else if (pal == 1) {
+                        r = 215 + light; g = 38 + light / 2; b = 32;
+                    } else {
+                        r = 245 + light; g = 185 + light / 2; b = 35;
+                    }
+                    if (r > 255) r = 255; if (r < 0) r = 0;
+                    if (g > 255) g = 255; if (g < 0) g = 0;
+                    if (b > 255) b = 255; if (b < 0) b = 0;
+                    
+                    int idx = py * SCREEN_W + px;
+                    if (depth >= s_depth_buffer[idx] - 12) {
+                        rc->framebuffer[idx] = COLOR_RGB(r, g, b);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void render_sickly_bush(RenderContext *rc, int32_t sx, int32_t sy, int32_t depth) {
+    int w = 32, h = 24;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 2;
+    draw_drop_shadow(rc, sx, sy, 14, 6, 120);
+    
+    for (int y = 0; y < h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 0; x < w; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            int dx = x - 16;
+            int dy = y - 13;
+            if (dx * dx * 2 + dy * dy * 4 <= 190) {
+                int light = (dy < 0) ? 18 : -16;
+                int r = 162 + light;
+                int g = 158 + light;
+                int b = 45;
+                if ((x * 7 + y * 13) % 9 == 0) {
+                    r = 65; g = 55; b = 30;
+                }
+                int idx = py * SCREEN_W + px;
+                if (depth >= s_depth_buffer[idx] - 12) {
+                    rc->framebuffer[idx] = COLOR_RGB(r, g, b);
+                }
+            }
+        }
+    }
+}
+
+static void render_coffin_pile(RenderContext *rc, int32_t sx, int32_t sy, int32_t depth) {
+    int w = 40, h = 26;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 2;
+    draw_drop_shadow(rc, sx, sy, 18, 8, 140);
+    
+    for (int c = 0; c < 2; ++c) {
+        int ox = (c == 0) ? 0 : 8;
+        int oy = (c == 0) ? 6 : 0;
+        for (int y = 0; y < 14; ++y) {
+            int py = base_y + oy + y;
+            if (py < 0 || py >= SCREEN_H) continue;
+            for (int x = 0; x < 28; ++x) {
+                int px = base_x + ox + x;
+                if (px < 0 || px >= SCREEN_W) continue;
+                
+                int max_dx = (x < 6) ? x * 2 : ((x > 22) ? (27 - x) * 2 : 12);
+                int dy = abs(y - 7);
+                if (dy <= max_dx / 2) {
+                    int r = 68, g = 44, b = 28;
+                    if (y == 0 || y == 13 || x == 0 || x == 27) {
+                        r = 42; g = 26; b = 16;
+                    }
+                    if ((x >= 12 && x <= 16 && y == 7) || (x == 14 && y >= 5 && y <= 9) ||
+                        (y == 2 && (x == 8 || x == 20)) || (y == 11 && (x == 8 || x == 20))) {
+                        r = 195; g = 200; b = 210;
+                    }
+                    int idx = py * SCREEN_W + px;
+                    if (depth >= s_depth_buffer[idx] - 12) {
+                        rc->framebuffer[idx] = COLOR_RGB(r, g, b);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void render_burning_man_effigy(RenderContext *rc, int32_t sx, int32_t sy, uint32_t tick_count) {
+    int base_y = sy - 65;
+    draw_drop_shadow(rc, sx, sy, 42, 18, 140);
+    
+    for (int y = 45; y < 65; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        int half_w = 16 + (y - 45);
+        for (int dx = -half_w; dx <= half_w; ++dx) {
+            int px = sx + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            int timber = ((dx ^ y) & 3) ? 14 : -14;
+            int r = 160 + timber, g = 115 + timber, b = 65 + timber;
+            rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(r, g, b);
+        }
+    }
+    
+    int pulse = (tick_count / 12) % 3;
+    uint32_t neon_col = (pulse == 0) ? COLOR_RGB(0, 255, 230) : ((pulse == 1) ? COLOR_RGB(255, 20, 160) : COLOR_RGB(255, 235, 40));
+    
+    for (int dy = -4; dy <= 4; ++dy) {
+        for (int dx = -3; dx <= 3; ++dx) {
+            if (abs(dx) + abs(dy) <= 4) {
+                int px = sx + dx, py = base_y + 6 + dy;
+                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                    rc->framebuffer[py * SCREEN_W + px] = (abs(dx) + abs(dy) >= 3) ? neon_col : COLOR_RGB(210, 155, 80);
+                }
+            }
+        }
+    }
+    
+    for (int y = 11; y <= 28; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int dx = -2; dx <= 2; ++dx) {
+            int px = sx + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            rc->framebuffer[py * SCREEN_W + px] = (dx == -2 || dx == 2) ? neon_col : COLOR_RGB(195, 140, 75);
+        }
+    }
+    
+    for (int i = 0; i <= 14; ++i) {
+        int ly = base_y + 18 - i;
+        int lx1 = sx - 3 - i;
+        int lx2 = sx + 3 + i;
+        if (ly >= 0 && ly < SCREEN_H) {
+            if (lx1 >= 0 && lx1 < SCREEN_W) rc->framebuffer[ly * SCREEN_W + lx1] = neon_col;
+            if (lx2 >= 0 && lx2 < SCREEN_W) rc->framebuffer[ly * SCREEN_W + lx2] = neon_col;
+        }
+    }
+    
+    for (int i = 0; i <= 16; ++i) {
+        int ly = base_y + 29 + i;
+        int lx1 = sx - 1 - i * 8 / 16;
+        int lx2 = sx + 1 + i * 8 / 16;
+        if (ly >= 0 && ly < SCREEN_H) {
+            if (lx1 >= 0 && lx1 < SCREEN_W) rc->framebuffer[ly * SCREEN_W + lx1] = neon_col;
+            if (lx2 >= 0 && lx2 < SCREEN_W) rc->framebuffer[ly * SCREEN_W + lx2] = neon_col;
+        }
+    }
+    
+    uint32_t burner_cols[4] = { COLOR_RGB(255, 60, 120), COLOR_RGB(50, 220, 255), COLOR_RGB(255, 230, 40), COLOR_RGB(180, 50, 255) };
+    for (int b = 0; b < 4; ++b) {
+        int bx = sx - 35 + b * 24;
+        int by = sy - 4 + ((b % 2) ? 6 : -4);
+        int jump = ((tick_count / 8 + b * 3) % 2) ? -3 : 0;
+        uint32_t bcol = burner_cols[b];
+        
+        draw_rect(rc, bx - 1, by - 12 + jump, 3, 3, COLOR_RGB(245, 205, 175));
+        draw_rect(rc, bx - 2, by - 9 + jump, 5, 6, bcol);
+        draw_rect(rc, bx - 4, by - 11 + jump, 2, 3, bcol);
+        draw_rect(rc, bx + 3, by - 11 + jump, 2, 3, bcol);
+        draw_rect(rc, bx - 2, by - 3, 2, 4, COLOR_RGB(45, 45, 55));
+        draw_rect(rc, bx + 1, by - 3, 2, 4, COLOR_RGB(45, 45, 55));
+    }
+    
+    draw_text(rc, sx - 44, sy + 14, "THE MAN BURNS!", COLOR_RGB(255, 215, 65), true);
+}
+
+static void render_transylvania_castle(RenderContext *rc, int32_t sx, int32_t sy) {
+    int b_w = 120, b_h = 80;
+    int base_x = sx - b_w / 2;
+    int base_y = sy - b_h + 10;
+    draw_drop_shadow(rc, sx, sy, 55, 22, 150);
+    
+    for (int y = 0; y < b_h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 0; x < b_w; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            uint32_t col = 0;
+            if ((x >= 10 && x <= 30) || (x >= 90 && x <= 110)) {
+                int cx = (x < 50) ? 20 : 100;
+                if (y < 28) {
+                    if (abs(x - cx) <= (y + 1) * 10 / 28) {
+                        col = COLOR_RGB(78, 48, 98);
+                    }
+                } else if (y <= 70) {
+                    int brick = ((x ^ y) & 2) ? 10 : -10;
+                    col = COLOR_RGB(56 + brick, 52 + brick, 66 + brick);
+                    if (y >= 40 && y <= 50 && abs(x - cx) <= 2) {
+                        col = COLOR_RGB(235, 42, 42);
+                    }
+                }
+            }
+            if (x >= 30 && x <= 90 && y >= 25 && y <= 72) {
+                int brick = ((x ^ y) & 2) ? 10 : -10;
+                col = COLOR_RGB(52 + brick, 48 + brick, 62 + brick);
+                if (y >= 25 && y <= 30 && ((x / 8) % 2 == 1)) {
+                    col = 0;
+                }
+                if (y >= 38 && y <= 54 && abs(x - 60) <= 6) {
+                    col = COLOR_RGB(220, 35, 35);
+                    if (x == 60 || y == 46) col = COLOR_RGB(30, 25, 35);
+                }
+                if (y >= 58 && y <= 72 && abs(x - 60) <= 8) {
+                    col = (x % 3 == 0 || y % 3 == 0) ? COLOR_RGB(25, 20, 28) : COLOR_RGB(165, 45, 45);
+                }
+            }
+            
+            if (col != 0) {
+                rc->framebuffer[py * SCREEN_W + px] = col;
+            }
+        }
+    }
+    draw_text(rc, sx - 42, sy + 14, "CASTLE DRACULA", COLOR_RGB(195, 175, 225), true);
+}
+
+static void render_raver(RenderContext *rc, int32_t sx, int32_t sy, int32_t pass_out_timer, uint32_t tick_count, int32_t depth) {
+    (void)depth;
+    if (pass_out_timer > 0) {
+        draw_drop_shadow(rc, sx, sy, 14, 6, 120);
+        for (int dx = -10; dx <= 10; ++dx) {
+            for (int dy = -4; dy <= 2; ++dy) {
+                int px = sx + dx, py = sy + dy;
+                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                    uint32_t c = (dx < -4) ? COLOR_RGB(255, 60, 180) : ((dx < 4) ? COLOR_RGB(40, 230, 255) : COLOR_RGB(45, 45, 55));
+                    rc->framebuffer[py * SCREEN_W + px] = c;
+                }
+            }
+        }
+        draw_rect(rc, sx - 13, sy - 5, 4, 4, COLOR_RGB(255, 230, 40));
+        int z_float = (tick_count / 14) % 4;
+        draw_text(rc, sx + 4 + z_float, sy - 16 - z_float * 2, "Zzz...", COLOR_RGB(255, 255, 180), true);
+        return;
+    }
+    
+    draw_drop_shadow(rc, sx, sy, 10, 5, 120);
+    int step = (tick_count / 10) % 2;
+    int arm_y = step ? -3 : 2;
+    
+    draw_rect(rc, sx - 6, sy - 28, 12, 3, COLOR_RGB(255, 235, 40));
+    draw_rect(rc, sx - 7, sy - 27, 3, 6, COLOR_RGB(255, 235, 40));
+    draw_rect(rc, sx + 5, sy - 27, 3, 6, COLOR_RGB(255, 235, 40));
+    
+    draw_rect(rc, sx - 4, sy - 25, 8, 7, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, sx - 4, sy - 23, 8, 2, COLOR_RGB(20, 20, 25));
+    
+    draw_rect(rc, sx - 9, sy - 18 + arm_y, 4, 3, COLOR_RGB(0, 255, 220));
+    draw_rect(rc, sx + 6, sy - 18 - arm_y, 4, 3, COLOR_RGB(255, 40, 180));
+    
+    uint32_t shirt_col = (step == 0) ? COLOR_RGB(255, 40, 180) : COLOR_RGB(40, 240, 220);
+    draw_rect(rc, sx - 4, sy - 18, 9, 10, shirt_col);
+    
+    draw_rect(rc, sx - 4, sy - 8, 4, 5, COLOR_RGB(45, 55, 65));
+    draw_rect(rc, sx + 1, sy - 8, 4, 5, COLOR_RGB(45, 55, 65));
+    draw_rect(rc, sx - 5, sy - 3, 4, 3, COLOR_RGB(255, 255, 255));
+    draw_rect(rc, sx + 2, sy - 3, 4, 3, COLOR_RGB(255, 255, 255));
+    
+    const char *rmsg = "UNCE UNCE!";
+    int bub_w = 92, bub_h = 18;
+    int bub_x = sx - bub_w / 2;
+    int bub_y = sy - 46;
+    draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+    draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(40, 40, 45));
+    draw_text(rc, bub_x + 6, bub_y + 5, rmsg, COLOR_RGB(220, 20, 140), false);
+}
+
+static void render_police_cart(RenderContext *rc, int32_t sx, int32_t sy, uint32_t tick_count, int32_t depth) {
+    int w = 44, h = 36;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 4;
+    draw_drop_shadow(rc, sx, sy, 22, 10, 140);
+    
+    for (int y = 0; y < h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 0; x < w; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            uint32_t col = 0;
+            if (y >= 26 && ((x >= 6 && x <= 12) || (x >= 28 && x <= 34))) {
+                col = (y == 29 && (x == 9 || x == 31)) ? COLOR_RGB(180, 185, 190) : COLOR_RGB(30, 32, 35);
+            }
+            else if (y >= 18 && y <= 27 && x >= 4 && x <= 36) {
+                col = (x >= 14 && x <= 26) ? COLOR_RGB(245, 248, 252) : COLOR_RGB(28, 56, 138);
+                if (x == 5 && y >= 20 && y <= 22) col = COLOR_RGB(255, 235, 140);
+            }
+            else if (y >= 6 && y <= 9 && x >= 8 && x <= 34) {
+                col = COLOR_RGB(240, 245, 250);
+            }
+            else if ((x == 10 || x == 32) && y >= 9 && y <= 18) {
+                col = COLOR_RGB(60, 65, 70);
+            }
+            else if (y >= 2 && y <= 5 && x >= 17 && x <= 25) {
+                bool strobe = ((tick_count / 8) % 2 == 0);
+                if (x <= 20) col = strobe ? COLOR_RGB(255, 30, 30) : COLOR_RGB(80, 10, 10);
+                else col = strobe ? COLOR_RGB(10, 30, 90) : COLOR_RGB(30, 120, 255);
+            }
+            
+            if (col != 0) {
+                int idx = py * SCREEN_W + px;
+                if (depth >= s_depth_buffer[idx] - 12) {
+                    rc->framebuffer[idx] = col;
+                }
+            }
+        }
+    }
+    
+    draw_rect(rc, sx - 2, sy - 24, 6, 6, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, sx - 3, sy - 26, 8, 3, COLOR_RGB(22, 45, 110));
+    draw_rect(rc, sx, sy - 25, 2, 2, COLOR_RGB(255, 215, 60));
+    draw_text(rc, sx - 16, sy + 7, "POLICE", COLOR_RGB(255, 225, 90), true);
+}
+
+static void render_zombie(RenderContext *rc, int32_t sx, int32_t sy, int anim_f, int32_t depth) {
+    (void)depth;
+    draw_drop_shadow(rc, sx, sy, 12, 5, 130);
+    int step = (anim_f % 2);
+    
+    draw_rect(rc, sx - 4, sy - 26, 8, 8, COLOR_RGB(95, 138, 85));
+    draw_rect(rc, sx - 3, sy - 24, 2, 2, COLOR_RGB(255, 245, 60));
+    draw_rect(rc, sx + 1, sy - 24, 2, 2, COLOR_RGB(255, 245, 60));
+    draw_rect(rc, sx - 2, sy - 20, 4, 1, COLOR_RGB(45, 25, 25));
+    
+    draw_rect(rc, sx - 8, sy - 18, 5, 3, COLOR_RGB(95, 138, 85));
+    draw_rect(rc, sx + 4, sy - 18, 5, 3, COLOR_RGB(95, 138, 85));
+    
+    draw_rect(rc, sx - 4, sy - 18, 9, 10, COLOR_RGB(52, 42, 60));
+    
+    draw_rect(rc, sx - 4, sy - 8, 3, step ? 6 : 4, COLOR_RGB(38, 32, 44));
+    draw_rect(rc, sx + 1, sy - 8, 3, step ? 4 : 6, COLOR_RGB(38, 32, 44));
+    
+    draw_text(rc, sx - 20, sy - 36, "BRAAAINS!", COLOR_RGB(165, 225, 140), true);
+}
+
+static void render_ash_williams(RenderContext *rc, int32_t sx, int32_t sy, CarlState state, uint32_t tick_count, int32_t depth) {
+    (void)depth;
+    draw_drop_shadow(rc, sx, sy, 14, 6, 140);
+    
+    draw_rect(rc, sx - 4, sy - 28, 8, 4, COLOR_RGB(65, 45, 30));
+    draw_rect(rc, sx - 4, sy - 24, 8, 7, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, sx + 1, sy - 22, 2, 3, COLOR_RGB(185, 30, 30));
+    
+    draw_rect(rc, sx - 5, sy - 17, 10, 10, COLOR_RGB(45, 95, 165));
+    draw_rect(rc, sx - 4, sy - 16, 2, 8, COLOR_RGB(115, 65, 35));
+    draw_rect(rc, sx + 2, sy - 16, 2, 8, COLOR_RGB(115, 65, 35));
+    
+    draw_rect(rc, sx - 5, sy - 7, 4, 6, COLOR_RGB(95, 75, 50));
+    draw_rect(rc, sx + 1, sy - 7, 4, 6, COLOR_RGB(95, 75, 50));
+    draw_rect(rc, sx - 6, sy - 1, 5, 3, COLOR_RGB(40, 30, 22));
+    draw_rect(rc, sx + 1, sy - 1, 5, 3, COLOR_RGB(40, 30, 22));
+    
+    draw_rect(rc, sx + 5, sy - 16, 8, 5, COLOR_RGB(215, 35, 30));
+    draw_rect(rc, sx + 13, sy - 15, 9, 3, COLOR_RGB(180, 185, 195));
+    if ((tick_count / 3) % 2 == 0) {
+        draw_rect(rc, sx + 15, sy - 17, 3, 2, COLOR_RGB(255, 235, 120));
+    }
+    
+    draw_rect(rc, sx - 9, sy - 14, 5, 3, COLOR_RGB(115, 65, 35));
+    draw_rect(rc, sx - 15, sy - 13, 7, 2, COLOR_RGB(60, 65, 70));
+    
+    const char *ash_msg = "THIS IS MY BOOMSTICK!";
+    if (state == CARL_STATE_CELEBRATING) ash_msg = "GROOVY! LOL";
+    int bub_w = (int)strlen(ash_msg) * 8 + 16;
+    int bub_h = 20;
+    int bub_x = sx - bub_w / 2;
+    int bub_y = sy - 56;
+    draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+    draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
+    draw_text(rc, bub_x + 8, bub_y + 6, ash_msg, COLOR_RGB(30, 45, 75), false);
+}
+
+static void render_sea_monster(RenderContext *rc, int32_t sx, int32_t sy, int state, uint32_t tick_count, int32_t depth) {
+    (void)depth;
+    if (state == 1) {
+        for (int r = 8; r <= 16; r += 4) {
+            int wave = (int)(sinf((float)tick_count * 0.15f) * 2.0f);
+            draw_rect_alpha(rc, sx - r - wave, sy - r / 2, (r + wave) * 2, r, COLOR_RGB(70, 110, 160), 120);
+        }
+        draw_rect(rc, sx - 6, sy - 8, 12, 6, COLOR_RGB(25, 75, 65));
+        draw_rect(rc, sx - 3, sy - 12, 6, 4, COLOR_RGB(20, 65, 55));
+        draw_rect(rc, sx - 4, sy - 7, 2, 2, COLOR_RGB(255, 245, 50));
+        draw_rect(rc, sx + 2, sy - 7, 2, 2, COLOR_RGB(255, 245, 50));
+    } else if (state == 2) {
+        int th = 42;
+        for (int y = 0; y < th; ++y) {
+            int py = sy - y;
+            if (py < 0 || py >= SCREEN_H) continue;
+            int curve_x = (int)(sinf((float)y * 0.12f) * 9.0f);
+            int half_w = 6 - (y * 4 / th);
+            if (half_w < 2) half_w = 2;
+            for (int dx = -half_w; dx <= half_w; ++dx) {
+                int px = sx + curve_x + dx;
+                if (px < 0 || px >= SCREEN_W) continue;
+                uint32_t col = (dx == half_w) ? COLOR_RGB(240, 220, 200) : COLOR_RGB(75, 35, 95);
+                rc->framebuffer[py * SCREEN_W + px] = col;
+            }
+        }
+        for (int i = 0; i < 8; ++i) {
+            int sp_x = sx - 12 + (i * 3);
+            int sp_y = sy - 2 + (i % 3);
+            if (sp_x >= 0 && sp_x < SCREEN_W && sp_y >= 0 && sp_y < SCREEN_H) {
+                rc->framebuffer[sp_y * SCREEN_W + sp_x] = COLOR_RGB(240, 248, 255);
+            }
+        }
+        draw_text(rc, sx - 35, sy - th - 14, "LEVIATHAN SWIPE!", COLOR_RGB(165, 225, 255), true);
+    }
+}
+
+static void render_ranger(RenderContext *rc, const GolfState *gs, int32_t sx, int32_t sy, int32_t depth) {
+    int w = 44, h = 36;
+    int base_x = sx - w / 2;
+    int base_y = sy - h + 4;
+    draw_drop_shadow(rc, sx, sy, 22, 10, 140);
+    
+    for (int y = 0; y < h; ++y) {
+        int py = base_y + y;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int x = 0; x < w; ++x) {
+            int px = base_x + x;
+            if (px < 0 || px >= SCREEN_W) continue;
+            
+            uint32_t col = 0;
+            if (y >= 26 && ((x >= 6 && x <= 12) || (x >= 28 && x <= 34))) {
+                col = (y == 29 && (x == 9 || x == 31)) ? COLOR_RGB(180, 185, 190) : COLOR_RGB(30, 32, 35);
+            }
+            else if (y >= 18 && y <= 27 && x >= 4 && x <= 36) {
+                col = COLOR_RGB(185, 160, 120);
+                if (x == 5 && y >= 20 && y <= 22) col = COLOR_RGB(255, 235, 140);
+            }
+            else if (y >= 6 && y <= 9 && x >= 8 && x <= 34) {
+                col = COLOR_RGB(45, 75, 45);
+            }
+            else if ((x == 10 || x == 32) && y >= 9 && y <= 18) {
+                col = COLOR_RGB(60, 65, 70);
+            }
+            
+            if (col != 0) {
+                int idx = py * SCREEN_W + px;
+                if (depth >= s_depth_buffer[idx] - 12) {
+                    rc->framebuffer[idx] = col;
+                }
+            }
+        }
+    }
+    
+    draw_rect(rc, sx - 2, sy - 24, 6, 6, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, sx - 5, sy - 27, 12, 3, COLOR_RGB(145, 115, 75));
+    draw_rect(rc, sx - 3, sy - 30, 8, 4, COLOR_RGB(130, 100, 60));
+    draw_rect(rc, sx - 3, sy - 18, 8, 7, COLOR_RGB(175, 145, 105));
+    
+    draw_text(rc, sx - 18, sy + 7, "RANGER", COLOR_RGB(255, 235, 90), true);
+    
+    if (gs->ranger.speech_timer > 0) {
+        int bub_w = (int)strlen(gs->ranger.speech_msg) * 8 + 16;
+        int bub_h = 22;
+        int bub_x = sx - bub_w / 2;
+        int bub_y = sy - 52;
+        draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+        draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
+        draw_text(rc, bub_x + 8, bub_y + 7, gs->ranger.speech_msg, COLOR_RGB(180, 30, 30), false);
+    }
+}
+
+/* ========================================================================= */
 /* MAIN RENDER FRAME                                                         */
 /* ========================================================================= */
 
@@ -1715,9 +2446,22 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         render_splash_screen(rc, rc->tick_count);
         return;
     }
+    if (gs->mode == MODE_SETUP) {
+        render_setup_screen(rc, gs, rc->tick_count);
+        return;
+    }
+    
+    static CourseTheme s_last_rendered_theme = (CourseTheme)-1;
+    if (gs->theme != s_last_rendered_theme) {
+        generate_procedural_graphics_themed(gs->theme);
+        s_last_rendered_theme = gs->theme;
+    }
     
     /* 1. Clear Framebuffer to Sky Backdrop & Depth Buffer */
-    uint32_t sky_col = COLOR_RGB(34, 46, 58);
+    uint32_t sky_col;
+    if (gs->theme == THEME_LA_PLAYA) sky_col = COLOR_RGB(82, 68, 54);
+    else if (gs->theme == THEME_NOCTURNAL_GREEN) sky_col = COLOR_RGB(22, 18, 30);
+    else sky_col = COLOR_RGB(34, 46, 58);
     for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
         rc->framebuffer[i] = sky_col;
         s_depth_buffer[i] = -999999;
@@ -1935,8 +2679,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         DrawableItem *item = &s_drawables[s_drawable_count++];
         item->type = DRAWABLE_CADDY;
         item->sort_key = FROM_FIXED(FMUL(gs->caddy.x + gs->caddy.y, TO_FIXED(32)));
-        item->foot_sx = FROM_FIXED(FMUL(gs->caddy.x - gs->caddy.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->caddy.x + gs->caddy.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->caddy.current_z) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->caddy.x, gs->caddy.y, gs->caddy.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* 5. Golfer */
@@ -1944,8 +2687,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         DrawableItem *item = &s_drawables[s_drawable_count++];
         item->type = DRAWABLE_GOLFER;
         item->sort_key = FROM_FIXED(FMUL(gs->golfer.x + gs->golfer.y, TO_FIXED(32)));
-        item->foot_sx = FROM_FIXED(FMUL(gs->golfer.x - gs->golfer.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->golfer.x + gs->golfer.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->golfer.current_z) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->golfer.x, gs->golfer.y, gs->golfer.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* 6. Ball */
@@ -1953,8 +2695,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         DrawableItem *item = &s_drawables[s_drawable_count++];
         item->type = DRAWABLE_BALL;
         item->sort_key = FROM_FIXED(FMUL(gs->ball.x + gs->ball.y, TO_FIXED(32)));
-        item->foot_sx = FROM_FIXED(FMUL(gs->ball.x - gs->ball.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->ball.x + gs->ball.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->ball.x, gs->ball.y, gs->ball.ground_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* 7. Beverage Cart Girl */
@@ -1962,8 +2703,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         DrawableItem *item = &s_drawables[s_drawable_count++];
         item->type = DRAWABLE_BEV_CART;
         item->sort_key = FROM_FIXED(FMUL(gs->bev_cart.x + gs->bev_cart.y, TO_FIXED(32)));
-        item->foot_sx = FROM_FIXED(FMUL(gs->bev_cart.x - gs->bev_cart.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->bev_cart.x + gs->bev_cart.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->bev_cart.current_z) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->bev_cart.x, gs->bev_cart.y, gs->bev_cart.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* 8. Gopher Holes (Caddyshack Hazards) */
@@ -1991,8 +2731,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         item->gy = gs->gopher.gy;
         item->data = gs->gopher.anim_frame;
         item->sort_key = FROM_FIXED(FMUL(gs->gopher.x + gs->gopher.y, TO_FIXED(32))) + 12;
-        item->foot_sx = FROM_FIXED(FMUL(gs->gopher.x - gs->gopher.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->gopher.x + gs->gopher.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->gopher.current_z) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->gopher.x, gs->gopher.y, gs->gopher.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* 10. Carl Spackler Greenskeeper */
@@ -2003,8 +2742,7 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         item->gy = FROM_FIXED(gs->carl.y);
         item->data = (int32_t)gs->carl.state;
         item->sort_key = FROM_FIXED(FMUL(gs->carl.x + gs->carl.y, TO_FIXED(32))) + 14;
-        item->foot_sx = FROM_FIXED(FMUL(gs->carl.x - gs->carl.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->carl.x + gs->carl.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->carl.current_z) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->carl.x, gs->carl.y, gs->carl.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* 11. Carl's TNT Plunger Box */
@@ -2018,9 +2756,41 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         item->gy = FROM_FIXED(gs->carl.plunger_y);
         item->data = (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE && gs->carl.timer >= 14) || gs->carl.state == CARL_STATE_CELEBRATING ? 1 : 0;
         item->sort_key = FROM_FIXED(FMUL(gs->carl.plunger_x + gs->carl.plunger_y, TO_FIXED(32))) + 10;
-        item->foot_sx = FROM_FIXED(FMUL(gs->carl.plunger_x - gs->carl.plunger_y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        item->foot_sy = FROM_FIXED(FMUL(gs->carl.plunger_x + gs->carl.plunger_y, TO_FIXED(TILE_HALF_H))) -
-                        FROM_FIXED(golf_get_ground_z_fixed(gs, gs->carl.plunger_x, gs->carl.plunger_y)) + rc->camera_y + TILE_HALF_H;
+        world_to_screen_fixed(gs->carl.plunger_x, gs->carl.plunger_y,
+                              golf_get_ground_z_fixed(gs, gs->carl.plunger_x, gs->carl.plunger_y),
+                              rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
+    }
+    
+    /* 12. Tumbleweeds in La Playa */
+    if (gs->theme == THEME_LA_PLAYA) {
+        for (int t = 0; t < MAX_TUMBLEWEEDS; ++t) {
+            const TumbleweedEntity *tw = &gs->tumbleweeds[t];
+            if (!tw->active) continue;
+            if (s_drawable_count < MAX_DRAWABLES) {
+                DrawableItem *item = &s_drawables[s_drawable_count++];
+                item->type = DRAWABLE_TUMBLEWEED;
+                item->data = tw->rotation;
+                item->sort_key = FROM_FIXED(FMUL(tw->x + tw->y, TO_FIXED(32))) + 8;
+                world_to_screen_fixed(tw->x, tw->y, tw->current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
+            }
+        }
+    }
+    
+    /* 13. Sea Monster in Nocturnal Green */
+    if (gs->theme == THEME_NOCTURNAL_GREEN && gs->sea_monster.active && s_drawable_count < MAX_DRAWABLES) {
+        DrawableItem *item = &s_drawables[s_drawable_count++];
+        item->type = DRAWABLE_SEA_MONSTER;
+        item->data = gs->sea_monster.state;
+        item->sort_key = FROM_FIXED(FMUL(gs->sea_monster.x + gs->sea_monster.y, TO_FIXED(32))) + 10;
+        world_to_screen_fixed(gs->sea_monster.x, gs->sea_monster.y, gs->sea_monster.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
+    }
+    
+    /* 14. Course Ranger in Sneak On Mode */
+    if (gs->is_sneak_on && gs->ranger.active && s_drawable_count < MAX_DRAWABLES) {
+        DrawableItem *item = &s_drawables[s_drawable_count++];
+        item->type = DRAWABLE_RANGER;
+        item->sort_key = FROM_FIXED(FMUL(gs->ranger.x + gs->ranger.y, TO_FIXED(32))) + 12;
+        world_to_screen_fixed(gs->ranger.x, gs->ranger.y, gs->ranger.current_z, rc->camera_x, rc->camera_y, &item->foot_sx, &item->foot_sy);
     }
     
     /* Sort all drawables back-to-front by sort_key */
@@ -2034,7 +2804,13 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         
         switch (item->type) {
             case DRAWABLE_CLUBHOUSE: {
-                render_clubhouse(rc, item->foot_sx, item->foot_sy);
+                if (gs->theme == THEME_LA_PLAYA) {
+                    render_burning_man_effigy(rc, item->foot_sx, item->foot_sy, rc->tick_count);
+                } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                    render_transylvania_castle(rc, item->foot_sx, item->foot_sy);
+                } else {
+                    render_clubhouse(rc, item->foot_sx, item->foot_sy);
+                }
                 break;
             }
             case DRAWABLE_FEATURE: {
@@ -2042,41 +2818,82 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                 int fx = item->foot_sx;
                 int fy = item->foot_sy;
                 
-                if (feat == FEAT_PINE) {
-                    draw_drop_shadow(rc, fx, fy, 18, 9, 130);
-                    blit_sprite_depth(rc, fx - SPRITE_PINE_W / 2, fy - SPRITE_PINE_H + 4,
-                                      SPRITE_PINE_W, SPRITE_PINE_H, s_sprite_pine, item->sort_key);
-                } else if (feat == FEAT_OAK) {
-                    draw_drop_shadow(rc, fx, fy, 22, 11, 140);
-                    blit_sprite_depth(rc, fx - SPRITE_OAK_W / 2, fy - SPRITE_OAK_H + 6,
-                                      SPRITE_OAK_W, SPRITE_OAK_H, s_sprite_oak, item->sort_key);
-                } else if (feat == FEAT_PALM) {
-                    draw_drop_shadow(rc, fx, fy, 16, 8, 120);
-                    blit_sprite_depth(rc, fx - SPRITE_PALM_W / 2, fy - SPRITE_PALM_H + 4,
-                                      SPRITE_PALM_W, SPRITE_PALM_H, s_sprite_palm, item->sort_key);
-                } else if (feat == FEAT_FLOWERING) {
-                    draw_drop_shadow(rc, fx, fy, 20, 10, 130);
-                    blit_sprite_depth(rc, fx - SPRITE_FLOWERING_W / 2, fy - SPRITE_FLOWERING_H + 4,
-                                      SPRITE_FLOWERING_W, SPRITE_FLOWERING_H, s_sprite_flowering, item->sort_key);
-                } else if (feat == FEAT_BUSH) {
-                    draw_drop_shadow(rc, fx, fy, 14, 6, 120);
-                    blit_sprite_depth(rc, fx - SPRITE_BUSH_W / 2, fy - SPRITE_BUSH_H + 2,
-                                      SPRITE_BUSH_W, SPRITE_BUSH_H, s_sprite_bush, item->sort_key);
-                } else if (feat == FEAT_FLOWERS) {
-                    blit_sprite_depth(rc, fx - SPRITE_FLOWERS_W / 2, fy - SPRITE_FLOWERS_H + 2,
-                                      SPRITE_FLOWERS_W, SPRITE_FLOWERS_H, s_sprite_flowers, item->sort_key);
-                } else if (feat == FEAT_ROCK) {
-                    draw_drop_shadow(rc, fx, fy, 16, 7, 130);
-                    blit_sprite_depth(rc, fx - SPRITE_ROCK_W / 2, fy - SPRITE_ROCK_H + 2,
-                                      SPRITE_ROCK_W, SPRITE_ROCK_H, s_sprite_rock, item->sort_key);
-                } else if (feat == FEAT_BENCH) {
-                    draw_drop_shadow(rc, fx, fy, 14, 6, 110);
-                    blit_sprite_depth(rc, fx - SPRITE_BENCH_W / 2, fy - SPRITE_BENCH_H + 2,
-                                      SPRITE_BENCH_W, SPRITE_BENCH_H, s_sprite_bench, item->sort_key);
-                } else if (feat == FEAT_CART) {
-                    draw_drop_shadow(rc, fx, fy, 22, 10, 140);
-                    blit_sprite_depth(rc, fx - SPRITE_CART_W / 2, fy - SPRITE_CART_H + 4,
-                                      SPRITE_CART_W, SPRITE_CART_H, s_sprite_cart, item->sort_key);
+                if (gs->theme == THEME_LA_PLAYA) {
+                    if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING) {
+                        render_cactus(rc, fx, fy, item->sort_key);
+                    } else if (feat == FEAT_BUSH) {
+                        render_tumbleweed(rc, fx, fy, 0, item->sort_key);
+                    } else if (feat == FEAT_ROCK) {
+                        render_desert_monolith_rock(rc, fx, fy, item->sort_key);
+                    } else if (feat == FEAT_FLOWERS) {
+                        blit_sprite_depth(rc, fx - SPRITE_FLOWERS_W / 2, fy - SPRITE_FLOWERS_H + 2,
+                                          SPRITE_FLOWERS_W, SPRITE_FLOWERS_H, s_sprite_flowers, item->sort_key);
+                    } else if (feat == FEAT_BENCH) {
+                        draw_drop_shadow(rc, fx, fy, 14, 6, 110);
+                        blit_sprite_depth(rc, fx - SPRITE_BENCH_W / 2, fy - SPRITE_BENCH_H + 2,
+                                          SPRITE_BENCH_W, SPRITE_BENCH_H, s_sprite_bench, item->sort_key);
+                    } else if (feat == FEAT_CART) {
+                        draw_drop_shadow(rc, fx, fy, 22, 10, 140);
+                        blit_sprite_depth(rc, fx - SPRITE_CART_W / 2, fy - SPRITE_CART_H + 4,
+                                          SPRITE_CART_W, SPRITE_CART_H, s_sprite_cart, item->sort_key);
+                    }
+                } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                    if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING) {
+                        render_autumn_tree(rc, fx, fy, feat, item->sort_key);
+                    } else if (feat == FEAT_BUSH) {
+                        render_sickly_bush(rc, fx, fy, item->sort_key);
+                    } else if (feat == FEAT_ROCK) {
+                        render_coffin_pile(rc, fx, fy, item->sort_key);
+                    } else if (feat == FEAT_FLOWERS) {
+                        blit_sprite_depth(rc, fx - SPRITE_FLOWERS_W / 2, fy - SPRITE_FLOWERS_H + 2,
+                                          SPRITE_FLOWERS_W, SPRITE_FLOWERS_H, s_sprite_flowers, item->sort_key);
+                    } else if (feat == FEAT_BENCH) {
+                        draw_drop_shadow(rc, fx, fy, 14, 6, 110);
+                        blit_sprite_depth(rc, fx - SPRITE_BENCH_W / 2, fy - SPRITE_BENCH_H + 2,
+                                          SPRITE_BENCH_W, SPRITE_BENCH_H, s_sprite_bench, item->sort_key);
+                    } else if (feat == FEAT_CART) {
+                        draw_drop_shadow(rc, fx, fy, 22, 10, 140);
+                        blit_sprite_depth(rc, fx - SPRITE_CART_W / 2, fy - SPRITE_CART_H + 4,
+                                          SPRITE_CART_W, SPRITE_CART_H, s_sprite_cart, item->sort_key);
+                    }
+                } else {
+                    /* Bushwood Theme */
+                    if (feat == FEAT_PINE) {
+                        draw_drop_shadow(rc, fx, fy, 18, 9, 130);
+                        blit_sprite_depth(rc, fx - SPRITE_PINE_W / 2, fy - SPRITE_PINE_H + 4,
+                                          SPRITE_PINE_W, SPRITE_PINE_H, s_sprite_pine, item->sort_key);
+                    } else if (feat == FEAT_OAK) {
+                        draw_drop_shadow(rc, fx, fy, 22, 11, 140);
+                        blit_sprite_depth(rc, fx - SPRITE_OAK_W / 2, fy - SPRITE_OAK_H + 6,
+                                          SPRITE_OAK_W, SPRITE_OAK_H, s_sprite_oak, item->sort_key);
+                    } else if (feat == FEAT_PALM) {
+                        draw_drop_shadow(rc, fx, fy, 16, 8, 120);
+                        blit_sprite_depth(rc, fx - SPRITE_PALM_W / 2, fy - SPRITE_PALM_H + 4,
+                                          SPRITE_PALM_W, SPRITE_PALM_H, s_sprite_palm, item->sort_key);
+                    } else if (feat == FEAT_FLOWERING) {
+                        draw_drop_shadow(rc, fx, fy, 20, 10, 130);
+                        blit_sprite_depth(rc, fx - SPRITE_FLOWERING_W / 2, fy - SPRITE_FLOWERING_H + 4,
+                                          SPRITE_FLOWERING_W, SPRITE_FLOWERING_H, s_sprite_flowering, item->sort_key);
+                    } else if (feat == FEAT_BUSH) {
+                        draw_drop_shadow(rc, fx, fy, 14, 6, 120);
+                        blit_sprite_depth(rc, fx - SPRITE_BUSH_W / 2, fy - SPRITE_BUSH_H + 2,
+                                          SPRITE_BUSH_W, SPRITE_BUSH_H, s_sprite_bush, item->sort_key);
+                    } else if (feat == FEAT_FLOWERS) {
+                        blit_sprite_depth(rc, fx - SPRITE_FLOWERS_W / 2, fy - SPRITE_FLOWERS_H + 2,
+                                          SPRITE_FLOWERS_W, SPRITE_FLOWERS_H, s_sprite_flowers, item->sort_key);
+                    } else if (feat == FEAT_ROCK) {
+                        draw_drop_shadow(rc, fx, fy, 16, 7, 130);
+                        blit_sprite_depth(rc, fx - SPRITE_ROCK_W / 2, fy - SPRITE_ROCK_H + 2,
+                                          SPRITE_ROCK_W, SPRITE_ROCK_H, s_sprite_rock, item->sort_key);
+                    } else if (feat == FEAT_BENCH) {
+                        draw_drop_shadow(rc, fx, fy, 14, 6, 110);
+                        blit_sprite_depth(rc, fx - SPRITE_BENCH_W / 2, fy - SPRITE_BENCH_H + 2,
+                                          SPRITE_BENCH_W, SPRITE_BENCH_H, s_sprite_bench, item->sort_key);
+                    } else if (feat == FEAT_CART) {
+                        draw_drop_shadow(rc, fx, fy, 22, 10, 140);
+                        blit_sprite_depth(rc, fx - SPRITE_CART_W / 2, fy - SPRITE_CART_H + 4,
+                                          SPRITE_CART_W, SPRITE_CART_H, s_sprite_cart, item->sort_key);
+                    }
                 }
                 break;
             }
@@ -2104,16 +2921,23 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             case DRAWABLE_CADDY: {
                 int fx = item->foot_sx;
                 int fy = item->foot_sy;
-                const uint32_t *c_spr = s_sprite_caddy;
-                if (gs->caddy.state == CADDY_STATE_FOLLOWING) {
-                    c_spr = s_sprite_caddy_walk[gs->caddy.walk_anim_frame % 6];
-                } else if (gs->caddy.state == CADDY_STATE_CELEBRATING) {
-                    c_spr = s_sprite_caddy_celebrate;
+                if (gs->caddy_eaten) {
+                    draw_drop_shadow(rc, fx, fy, 10, 5, 120);
+                    draw_rect(rc, fx - 6, fy - 18, 12, 18, COLOR_RGB(120, 125, 135));
+                    draw_rect(rc, fx - 4, fy - 14, 8, 2, COLOR_RGB(55, 60, 70));
+                    draw_rect(rc, fx - 1, fy - 16, 2, 6, COLOR_RGB(55, 60, 70));
+                    draw_text(rc, fx - 18, fy - 28, "RIP CADDY", COLOR_RGB(255, 120, 120), true);
+                } else {
+                    const uint32_t *c_spr = s_sprite_caddy;
+                    if (gs->caddy.state == CADDY_STATE_FOLLOWING) {
+                        c_spr = s_sprite_caddy_walk[gs->caddy.walk_anim_frame % 6];
+                    } else if (gs->caddy.state == CADDY_STATE_CELEBRATING) {
+                        c_spr = s_sprite_caddy_celebrate;
+                    }
+                    draw_drop_shadow(rc, fx, fy, 9, 4, 125);
+                    blit_sprite_depth(rc, fx - SPRITE_CADDY_W / 2, fy - SPRITE_CADDY_H + 4,
+                                      SPRITE_CADDY_W, SPRITE_CADDY_H, c_spr, item->sort_key);
                 }
-                
-                draw_drop_shadow(rc, fx, fy, 9, 4, 125);
-                blit_sprite_depth(rc, fx - SPRITE_CADDY_W / 2, fy - SPRITE_CADDY_H + 4,
-                                  SPRITE_CADDY_W, SPRITE_CADDY_H, c_spr, item->sort_key);
                 break;
             }
             case DRAWABLE_GOLFER: {
@@ -2186,14 +3010,18 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             case DRAWABLE_GOPHER: {
                 int fx = item->foot_sx;
                 int fy = item->foot_sy;
-                int anim_f = item->data % 4;
-                blit_sprite_depth(rc, fx - SPRITE_GOPHER_W / 2, fy - SPRITE_GOPHER_H + 4,
-                                  SPRITE_GOPHER_W, SPRITE_GOPHER_H, s_sprite_gopher[anim_f], item->sort_key);
-                
-                /* If dancing/taunting, draw speech bubble / chuckle above him */
-                if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
-                    int note_y = fy - SPRITE_GOPHER_H - 4 - (int)((rc->tick_count / 10) % 4);
-                    draw_text(rc, fx - 24, note_y, "HEE HEE!", COLOR_RGB(255, 235, 95), true);
+                if (gs->theme == THEME_LA_PLAYA) {
+                    render_raver(rc, fx, fy, gs->raver_passed_out_timer, rc->tick_count, item->sort_key);
+                } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                    render_zombie(rc, fx, fy, item->data, item->sort_key);
+                } else {
+                    int anim_f = item->data % 4;
+                    blit_sprite_depth(rc, fx - SPRITE_GOPHER_W / 2, fy - SPRITE_GOPHER_H + 4,
+                                      SPRITE_GOPHER_W, SPRITE_GOPHER_H, s_sprite_gopher[anim_f], item->sort_key);
+                    if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
+                        int note_y = fy - SPRITE_GOPHER_H - 4 - (int)((rc->tick_count / 10) % 4);
+                        draw_text(rc, fx - 24, note_y, "HEE HEE!", COLOR_RGB(255, 235, 95), true);
+                    }
                 }
                 break;
             }
@@ -2202,17 +3030,14 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                 int fy = item->foot_sy;
                 int plunger_down = item->data;
                 
-                /* Small drop shadow under wooden detonator box */
                 draw_drop_shadow(rc, fx, fy, 8, 4, 120);
                 blit_sprite_depth(rc, fx - SPRITE_TNT_BOX_W / 2, fy - SPRITE_TNT_BOX_H + 2,
                                   SPRITE_TNT_BOX_W, SPRITE_TNT_BOX_H, s_sprite_tnt_box[plunger_down], item->sort_key);
                 
-                /* Draw red/black detonation wire from TNT box to the gopher burrow */
                 int hole_sx = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) - TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
                 int hole_sy = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) + TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_H))) -
                               FROM_FIXED(golf_get_ground_z_fixed(gs, TO_FIXED(gs->carl.target_gx) + FIXED_HALF, TO_FIXED(gs->carl.target_gy) + FIXED_HALF)) + rc->camera_y + TILE_HALF_H;
                 
-                /* Render wire line with subtle sag/curve */
                 int steps = 24;
                 for (int s = 0; s <= steps; ++s) {
                     float t = (float)s / (float)steps;
@@ -2227,142 +3052,149 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             case DRAWABLE_CARL: {
                 int fx = item->foot_sx;
                 int fy = item->foot_sy;
-                const uint32_t *carl_spr = s_sprite_carl_walk[gs->carl.anim_frame % 4];
-                
-                switch (gs->carl.state) {
-                    case CARL_STATE_APPROACHING:
-                    case CARL_STATE_LEAVING:
-                        carl_spr = s_sprite_carl_walk[gs->carl.anim_frame % 4];
-                        break;
-                    case CARL_STATE_DYNAMITE_PLANT:
-                        carl_spr = s_sprite_carl_plant[gs->carl.anim_frame % 2];
-                        break;
-                    case CARL_STATE_DYNAMITE_PLUNGE:
-                        carl_spr = s_sprite_carl_plunge[gs->carl.anim_frame % 2];
-                        break;
-                    case CARL_STATE_HOSE_SPRAY:
-                        carl_spr = s_sprite_carl_hose[gs->carl.anim_frame % 2];
-                        break;
-                    case CARL_STATE_CELEBRATING:
-                        carl_spr = s_sprite_carl_celebrate[gs->carl.anim_frame % 2];
-                        break;
-                    default:
-                        break;
-                }
-                
-                /* Carl drop shadow */
-                draw_drop_shadow(rc, fx, fy, 10, 5, 135);
-                blit_sprite_depth(rc, fx - SPRITE_CARL_W / 2, fy - SPRITE_CARL_H + 4,
-                                  SPRITE_CARL_W, SPRITE_CARL_H, carl_spr, item->sort_key);
-                
-                /* Target burrow screen coordinates for visual effects */
-                int hole_sx = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) - TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-                int hole_sy = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) + TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_H))) -
-                              FROM_FIXED(golf_get_ground_z_fixed(gs, TO_FIXED(gs->carl.target_gx) + FIXED_HALF, TO_FIXED(gs->carl.target_gy) + FIXED_HALF)) + rc->camera_y + TILE_HALF_H;
-                
-                /* Effect 1: High-Pressure Water Jet Spray from Hose */
-                if (gs->carl.state == CARL_STATE_HOSE_SPRAY) {
-                    int nozzle_sx = fx + 7;
-                    int nozzle_sy = fy - 18;
-                    /* Draw multiple high pressure foaming stream lines */
-                    for (int stream = -1; stream <= 1; ++stream) {
-                        int steps = 30;
-                        for (int s = 0; s <= steps; ++s) {
-                            float t = (float)s / (float)steps;
-                            /* Parabolic water jet arc */
-                            int wx = (int)(nozzle_sx + t * (hole_sx - nozzle_sx) + stream * (1.0f - t) * 1.5f);
-                            int wy = (int)(nozzle_sy + t * (hole_sy - nozzle_sy) - sinf(t * (float)M_PI) * 12.0f);
-                            if (wx >= 0 && wx < SCREEN_W && wy >= 0 && wy < SCREEN_H) {
-                                uint32_t wcol = ((s + rc->tick_count * 2) % 4 == 0) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(80, 185, 245);
-                                rc->framebuffer[wy * SCREEN_W + wx] = wcol;
-                                if (wy + 1 < SCREEN_H && (s % 2 == 0)) {
-                                    rc->framebuffer[(wy + 1) * SCREEN_W + wx] = COLOR_RGB(45, 140, 215);
+                if (gs->theme == THEME_LA_PLAYA) {
+                    render_police_cart(rc, fx, fy, rc->tick_count, item->sort_key);
+                } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                    render_ash_williams(rc, fx, fy, gs->carl.state, rc->tick_count, item->sort_key);
+                } else {
+                    const uint32_t *carl_spr = s_sprite_carl_walk[gs->carl.anim_frame % 4];
+                    
+                    switch (gs->carl.state) {
+                        case CARL_STATE_APPROACHING:
+                        case CARL_STATE_LEAVING:
+                            carl_spr = s_sprite_carl_walk[gs->carl.anim_frame % 4];
+                            break;
+                        case CARL_STATE_DYNAMITE_PLANT:
+                            carl_spr = s_sprite_carl_plant[gs->carl.anim_frame % 2];
+                            break;
+                        case CARL_STATE_DYNAMITE_PLUNGE:
+                            carl_spr = s_sprite_carl_plunge[gs->carl.anim_frame % 2];
+                            break;
+                        case CARL_STATE_HOSE_SPRAY:
+                            carl_spr = s_sprite_carl_hose[gs->carl.anim_frame % 2];
+                            break;
+                        case CARL_STATE_CELEBRATING:
+                            carl_spr = s_sprite_carl_celebrate[gs->carl.anim_frame % 2];
+                            break;
+                        default:
+                            break;
+                    }
+                    
+                    draw_drop_shadow(rc, fx, fy, 10, 5, 135);
+                    blit_sprite_depth(rc, fx - SPRITE_CARL_W / 2, fy - SPRITE_CARL_H + 4,
+                                      SPRITE_CARL_W, SPRITE_CARL_H, carl_spr, item->sort_key);
+                    
+                    int hole_sx = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) - TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+                    int hole_sy = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) + TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_H))) -
+                                  FROM_FIXED(golf_get_ground_z_fixed(gs, TO_FIXED(gs->carl.target_gx) + FIXED_HALF, TO_FIXED(gs->carl.target_gy) + FIXED_HALF)) + rc->camera_y + TILE_HALF_H;
+                    
+                    if (gs->carl.state == CARL_STATE_HOSE_SPRAY) {
+                        int nozzle_sx = fx + 7;
+                        int nozzle_sy = fy - 18;
+                        for (int stream = -1; stream <= 1; ++stream) {
+                            int steps = 30;
+                            for (int s = 0; s <= steps; ++s) {
+                                float t = (float)s / (float)steps;
+                                int wx = (int)(nozzle_sx + t * (hole_sx - nozzle_sx) + stream * (1.0f - t) * 1.5f);
+                                int wy = (int)(nozzle_sy + t * (hole_sy - nozzle_sy) - sinf(t * (float)M_PI) * 12.0f);
+                                if (wx >= 0 && wx < SCREEN_W && wy >= 0 && wy < SCREEN_H) {
+                                    uint32_t wcol = ((s + rc->tick_count * 2) % 4 == 0) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(80, 185, 245);
+                                    rc->framebuffer[wy * SCREEN_W + wx] = wcol;
+                                    if (wy + 1 < SCREEN_H && (s % 2 == 0)) {
+                                        rc->framebuffer[(wy + 1) * SCREEN_W + wx] = COLOR_RGB(45, 140, 215);
+                                    }
                                 }
                             }
                         }
-                    }
-                    /* Water bubbling foam around burrow lip */
-                    for (int sp = 0; sp < 12; ++sp) {
-                        int f_dx = ((sp * 7 + rc->tick_count * 5) % 25) - 12;
-                        int f_dy = ((sp * 11 + rc->tick_count * 3) % 15) - 7;
-                        int px = hole_sx + f_dx;
-                        int py = hole_sy + f_dy;
-                        if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
-                            rc->framebuffer[py * SCREEN_W + px] = (sp % 2 == 0) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(130, 220, 255);
+                        for (int sp = 0; sp < 12; ++sp) {
+                            int f_dx = ((sp * 7 + rc->tick_count * 5) % 25) - 12;
+                            int f_dy = ((sp * 11 + rc->tick_count * 3) % 15) - 7;
+                            int px = hole_sx + f_dx;
+                            int py = hole_sy + f_dy;
+                            if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                rc->framebuffer[py * SCREEN_W + px] = (sp % 2 == 0) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(130, 220, 255);
+                            }
                         }
                     }
-                }
-                
-                /* Effect 2: Dynamite Detonation Explosion Burst */
-                if (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE && gs->carl.timer >= 14 && gs->carl.timer <= 48) {
-                    int blast_t = gs->carl.timer - 14;
-                    int max_rad = 12 + blast_t * 2;
-                    if (max_rad > 38) max_rad = 38;
                     
-                    /* Fiery blast core & billowing smoke puffs */
-                    for (int dy = -max_rad; dy <= max_rad; ++dy) {
-                        for (int dx = -max_rad; dx <= max_rad; ++dx) {
-                            int r2 = dx * dx + dy * dy;
-                            if (r2 <= max_rad * max_rad) {
-                                int px = hole_sx + dx;
-                                int py = hole_sy - 12 + dy;
-                                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
-                                    int dist = (int)sqrtf((float)r2);
-                                    if (dist < max_rad / 3) {
-                                        rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 250, 190); /* White-hot core */
-                                    } else if (dist < (max_rad * 2) / 3) {
-                                        rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 140, 25);  /* Fiery orange */
-                                    } else {
-                                        /* Billowing dark smoke edge */
-                                        if (((dx * 7 + dy * 13 + blast_t) & 3) != 0) {
-                                            rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(75, 68, 62);
+                    if (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE && gs->carl.timer >= 14 && gs->carl.timer <= 48) {
+                        int blast_t = gs->carl.timer - 14;
+                        int max_rad = 12 + blast_t * 2;
+                        if (max_rad > 38) max_rad = 38;
+                        
+                        for (int dy = -max_rad; dy <= max_rad; ++dy) {
+                            for (int dx = -max_rad; dx <= max_rad; ++dx) {
+                                int r2 = dx * dx + dy * dy;
+                                if (r2 <= max_rad * max_rad) {
+                                    int px = hole_sx + dx;
+                                    int py = hole_sy - 12 + dy;
+                                    if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                        int dist = (int)sqrtf((float)r2);
+                                        if (dist < max_rad / 3) {
+                                            rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 250, 190);
+                                        } else if (dist < (max_rad * 2) / 3) {
+                                            rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 140, 25);
+                                        } else {
+                                            if (((dx * 7 + dy * 13 + blast_t) & 3) != 0) {
+                                                rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(75, 68, 62);
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    /* Flying dirt chunks and blast shrapnel */
-                    for (int p = 0; p < 16; ++p) {
-                        float angle = (float)p * 0.3926f + (float)blast_t * 0.1f;
-                        float spd = 4.0f + (float)(p % 5) * 2.5f;
-                        int clod_x = hole_sx + (int)(cosf(angle) * spd * (float)blast_t * 0.7f);
-                        int clod_y = hole_sy - 12 + (int)(sinf(angle) * spd * (float)blast_t * 0.4f + 0.35f * blast_t * blast_t);
-                        for (int cdy = 0; cdy <= 1; ++cdy) {
-                            for (int cdx = 0; cdx <= 1; ++cdx) {
-                                int px = clod_x + cdx;
-                                int py = clod_y + cdy;
-                                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
-                                    rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(55, 38, 25);
+                        for (int p = 0; p < 16; ++p) {
+                            float angle = (float)p * 0.3926f + (float)blast_t * 0.1f;
+                            float spd = 4.0f + (float)(p % 5) * 2.5f;
+                            int clod_x = hole_sx + (int)(cosf(angle) * spd * (float)blast_t * 0.7f);
+                            int clod_y = hole_sy - 12 + (int)(sinf(angle) * spd * (float)blast_t * 0.4f + 0.35f * blast_t * blast_t);
+                            for (int cdy = 0; cdy <= 1; ++cdy) {
+                                for (int cdx = 0; cdx <= 1; ++cdx) {
+                                    int px = clod_x + cdx;
+                                    int py = clod_y + cdy;
+                                    if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                        rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(55, 38, 25);
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                
-                /* Carl's comic speech bubble */
-                const char *cmsg = NULL;
-                if (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE) {
-                    cmsg = "DIE GOPHER! lol";
-                } else if (gs->carl.state == CARL_STATE_HOSE_SPRAY) {
-                    cmsg = "HAVE SOME WATER! lol";
-                } else if (gs->carl.state == CARL_STATE_CELEBRATING) {
-                    cmsg = (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) ? "CINDERELLA STORY! lol" : "IN THE HOLE! lol";
-                }
-                
-                if (cmsg != NULL) {
-                    int bub_w = (int)strlen(cmsg) * 8 + 16;
-                    int bub_h = 22;
-                    int bub_x = fx - bub_w / 2;
-                    int bub_y = fy - SPRITE_CARL_H - 24;
-                    draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
-                    draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
-                    for (int dy = 0; dy < 5; ++dy) {
-                        draw_rect(rc, fx - 2 + dy / 2, bub_y + bub_h + dy, 5 - dy, 1, COLOR_RGB(255, 255, 255));
+                    
+                    const char *cmsg = NULL;
+                    if (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE) {
+                        cmsg = "DIE GOPHER! lol";
+                    } else if (gs->carl.state == CARL_STATE_HOSE_SPRAY) {
+                        cmsg = "HAVE SOME WATER! lol";
+                    } else if (gs->carl.state == CARL_STATE_CELEBRATING) {
+                        cmsg = (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) ? "CINDERELLA STORY! lol" : "IN THE HOLE! lol";
                     }
-                    int b_tx = bub_x + 8;
-                    draw_text(rc, b_tx, bub_y + 7, cmsg, COLOR_RGB(25, 40, 60), false);
+                    
+                    if (cmsg != NULL) {
+                        int bub_w = (int)strlen(cmsg) * 8 + 16;
+                        int bub_h = 22;
+                        int bub_x = fx - bub_w / 2;
+                        int bub_y = fy - SPRITE_CARL_H - 24;
+                        draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+                        draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
+                        for (int dy = 0; dy < 5; ++dy) {
+                            draw_rect(rc, fx - 2 + dy / 2, bub_y + bub_h + dy, 5 - dy, 1, COLOR_RGB(255, 255, 255));
+                        }
+                        int b_tx = bub_x + 8;
+                        draw_text(rc, b_tx, bub_y + 7, cmsg, COLOR_RGB(25, 40, 60), false);
+                    }
                 }
+                break;
+            }
+            case DRAWABLE_TUMBLEWEED: {
+                render_tumbleweed(rc, item->foot_sx, item->foot_sy, item->data, item->sort_key);
+                break;
+            }
+            case DRAWABLE_SEA_MONSTER: {
+                render_sea_monster(rc, item->foot_sx, item->foot_sy, item->data, rc->tick_count, item->sort_key);
+                break;
+            }
+            case DRAWABLE_RANGER: {
+                render_ranger(rc, gs, item->foot_sx, item->foot_sy, item->sort_key);
                 break;
             }
         }
@@ -2370,12 +3202,12 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
     
     /* 3. Aim Line & Reticle in Play Mode */
     if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE) {
-        int bsx = FROM_FIXED(FMUL(gs->ball.x - gs->ball.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        int bsy = FROM_FIXED(FMUL(gs->ball.x + gs->ball.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
+        int bsx, bsy;
+        world_to_screen_fixed(gs->ball.x, gs->ball.y, gs->ball.ground_z, rc->camera_x, rc->camera_y, &bsx, &bsy);
         
         fixed gz_aim = golf_get_ground_z_fixed(gs, gs->aim_target_x, gs->aim_target_y);
-        int asx = FROM_FIXED(FMUL(gs->aim_target_x - gs->aim_target_y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        int asy = FROM_FIXED(FMUL(gs->aim_target_x + gs->aim_target_y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz_aim) + rc->camera_y + TILE_HALF_H;
+        int asx, asy;
+        world_to_screen_fixed(gs->aim_target_x, gs->aim_target_y, gz_aim, rc->camera_x, rc->camera_y, &asx, &asy);
         
         /* Dashed Line */
         int steps = 24;
@@ -2416,24 +3248,29 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
     
     /* Hole & Score Panel */
     char stat_buf[128];
-    snprintf(stat_buf, sizeof(stat_buf), "HOLE 1  |  PAR %d  |  %d YDS", gs->par, gs->hole_yards);
-    draw_text(rc, 210, 10, stat_buf, COLOR_RGB(240, 245, 250), true);
+    snprintf(stat_buf, sizeof(stat_buf), "HOLE 1  PAR %d  %d YDS", gs->par, gs->hole_yards);
+    draw_text(rc, 220, 10, stat_buf, COLOR_RGB(240, 245, 250), true);
     char stroke_buf[64];
     snprintf(stroke_buf, sizeof(stroke_buf), "STROKE %d", gs->strokes);
-    draw_text(rc, 210, 26, stroke_buf, COLOR_RGB(200, 220, 240), true);
+    draw_text(rc, 220, 26, stroke_buf, COLOR_RGB(200, 220, 240), true);
     
     /* SimGolf Fun Rating Stars */
     int stars = (gs->fun_rating * 5) / 100;
     char star_buf[64];
     snprintf(star_buf, sizeof(star_buf), "FUN: %d/5 STARS (%d%%)", stars, gs->fun_rating);
-    draw_text(rc, 460, 10, star_buf, COLOR_RGB(255, 215, 65), true);
+    draw_text(rc, 425, 10, star_buf, COLOR_RGB(255, 215, 65), true);
     
     /* Economy Funds */
     char fund_buf[64];
     snprintf(fund_buf, sizeof(fund_buf), "FUNDS: $%d", gs->club_funds);
-    draw_text(rc, 460, 26, fund_buf, COLOR_RGB(115, 225, 115), true);
+    draw_text(rc, 425, 26, fund_buf, COLOR_RGB(115, 225, 115), true);
     
-    /* Top Bar Buttons: Randomize Hole and Mode Selector */
+    /* Top Bar Buttons: Replay Hole, Randomize Hole and Mode Selector */
+    int btn_replay_x = SCREEN_W - 410;
+    draw_rect_alpha(rc, btn_replay_x, 8, 125, 30, COLOR_RGB(35, 65, 55), 210);
+    draw_rect_border(rc, btn_replay_x, 8, 125, 30, COLOR_RGB(95, 175, 135));
+    draw_text(rc, btn_replay_x + 18, 17, "REPLAY HOLE", COLOR_RGB(255, 255, 255), true);
+    
     int btn_rand_x = SCREEN_W - 275;
     draw_rect_alpha(rc, btn_rand_x, 8, 125, 30, COLOR_RGB(35, 55, 75), 210);
     draw_rect_border(rc, btn_rand_x, 8, 125, 30, COLOR_RGB(85, 125, 165));
@@ -2573,11 +3410,15 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         
         /* Status prompt text */
         if (gs->swing.state == SWING_STATE_READY) {
-            draw_text(rc, sg_x + 55, sg_y + 32, "SPACE OR CLICK BALL TO START SWING", COLOR_RGB(255, 235, 90), true);
+            if (gs->golfer.state == GOLFER_STATE_WALKING) {
+                draw_text(rc, sg_x + 65, sg_y + 32, "WALKING TO BALL... (SPACE TO SKIP)", COLOR_RGB(175, 215, 255), true);
+            } else {
+                draw_text(rc, sg_x + 40, sg_y + 32, "PRESS 1: SPACE OR CLICK TO START SWING", COLOR_RGB(255, 235, 90), true);
+            }
         } else if (gs->swing.state == SWING_STATE_POWER) {
-            draw_text(rc, sg_x + 85, sg_y + 32, "CLICK TO LOCK POWER (0-100%)", COLOR_RGB(255, 245, 120), true);
+            draw_text(rc, sg_x + 35, sg_y + 32, "PRESS 2: LOCK POWER (OR AUTO-BOUNCE AT 100%)", COLOR_RGB(255, 245, 120), true);
         } else if (gs->swing.state == SWING_STATE_ACCURACY) {
-            draw_text(rc, sg_x + 75, sg_y + 32, "CLICK IN GOLD TO SNAP SWEET SPOT!", COLOR_RGB(255, 205, 45), true);
+            draw_text(rc, sg_x + 55, sg_y + 32, "PRESS IN GOLD SWEETSPOT TO STRIKE!", COLOR_RGB(255, 205, 45), true);
         } else {
             draw_text(rc, sg_x + 115, sg_y + 32, "BALL IN FLIGHT...", COLOR_RGB(165, 215, 255), true);
         }
@@ -2735,6 +3576,46 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     /* 6. Grand Georgian Clubhouse on High Bluff (x = 173..303, y = 368..453 - 100% Dry Ground!) */
     render_clubhouse(rc, 205, 420);
     
+    /* 6c. Weathered Caddyshack Building with Caddy Kids */
+    int shack_x = 95;
+    int shack_y = 445;
+    draw_drop_shadow(rc, shack_x + 35, shack_y + 40, 36, 14, 140);
+    for (int y = 14; y <= 40; ++y) {
+        for (int x = 6; x <= 64; ++x) {
+            int plank = (y % 3 == 0) ? -16 : 8;
+            rc->framebuffer[(shack_y + y) * SCREEN_W + (shack_x + x)] = COLOR_RGB(110 + plank, 95 + plank, 78 + plank);
+        }
+    }
+    for (int y = 0; y <= 14; ++y) {
+        for (int x = 2; x <= 68; ++x) {
+            if (x >= 2 + (14 - y) && x <= 68 - (14 - y)) {
+                int tin = (x % 4 == 0) ? 18 : -14;
+                rc->framebuffer[(shack_y + y) * SCREEN_W + (shack_x + x)] = COLOR_RGB(85 + tin, 88 + tin, 92 + tin);
+            }
+        }
+    }
+    draw_rect(rc, shack_x + 28, shack_y + 20, 14, 20, COLOR_RGB(28, 22, 18));
+    draw_rect(rc, shack_x + 16, shack_y + 15, 40, 8, COLOR_RGB(65, 48, 35));
+    draw_text(rc, shack_x + 18, shack_y + 15, "CADDY", COLOR_RGB(255, 225, 120), false);
+    
+    /* 3 Caddy Kids hanging around in white pants and red & black shirts */
+    /* Kid 1: Sitting by doorway, red shirt, white pants */
+    draw_rect(rc, shack_x + 18, shack_y + 24, 5, 5, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, shack_x + 17, shack_y + 29, 7, 7, COLOR_RGB(220, 35, 35));
+    draw_rect(rc, shack_x + 17, shack_y + 36, 7, 6, COLOR_RGB(245, 248, 252));
+    
+    /* Kid 2: Leaning against wall with golf bag, black shirt, white pants */
+    draw_rect(rc, shack_x + 48, shack_y + 22, 5, 5, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, shack_x + 47, shack_y + 27, 7, 8, COLOR_RGB(32, 32, 38));
+    draw_rect(rc, shack_x + 47, shack_y + 35, 7, 7, COLOR_RGB(245, 248, 252));
+    draw_rect(rc, shack_x + 55, shack_y + 26, 4, 16, COLOR_RGB(95, 55, 35));
+    draw_rect(rc, shack_x + 56, shack_y + 22, 2, 4, COLOR_RGB(190, 195, 205));
+    
+    /* Kid 3: Lounging on grass, red & black shirt, white pants */
+    draw_rect(rc, shack_x + 72, shack_y + 32, 5, 5, COLOR_RGB(245, 205, 175));
+    draw_rect(rc, shack_x + 71, shack_y + 37, 7, 6, COLOR_RGB(200, 30, 30));
+    draw_rect(rc, shack_x + 70, shack_y + 43, 9, 4, COLOR_RGB(245, 248, 252));
+    
     /* Water Hazard Lake down on lower left (x = 20..170, y = 545..585 - nestled in valley) */
     for (int dy = -20; dy <= 20; ++dy) {
         int py = 565 + dy;
@@ -2767,11 +3648,22 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     draw_rect(rc, 840, 415, 2, 35, COLOR_RGB(230, 235, 240));
     draw_rect(rc, 842, 415, 14, 8, COLOR_RGB(225, 45, 45)); /* Red flag */
     
-    /* Ponderosa Pines along ridge */
+    /* Trees along ridge */
     blit_sprite_depth(rc, 40, 390, SPRITE_PINE_W, SPRITE_PINE_H, s_sprite_pine, 999999);
     blit_sprite_depth(rc, 280, 400, SPRITE_OAK_W, SPRITE_OAK_H, s_sprite_oak, 999999);
     blit_sprite_depth(rc, 910, 420, SPRITE_PALM_W, SPRITE_PALM_H, s_sprite_palm, 999999);
     blit_sprite_depth(rc, 870, 450, SPRITE_FLOWERING_W, SPRITE_FLOWERING_H, s_sprite_flowering, 999999);
+    
+    /* 6b. Carved Wooden "Bushwood" Sign by Clubhouse (drawn on top of lawn & ridge, fully visible) */
+    int sign_x = 338;
+    int sign_y = 436;
+    draw_rect(rc, sign_x + 6, sign_y + 12, 3, 16, COLOR_RGB(78, 52, 34));
+    draw_rect(rc, sign_x + 62, sign_y + 12, 3, 16, COLOR_RGB(78, 52, 34));
+    draw_rect(rc, sign_x, sign_y, 72, 18, COLOR_RGB(145, 96, 56));
+    draw_rect_border(rc, sign_x, sign_y, 72, 18, COLOR_RGB(68, 42, 24));
+    draw_rect(rc, sign_x + 2, sign_y + 2, 2, 2, COLOR_RGB(220, 195, 60));
+    draw_rect(rc, sign_x + 68, sign_y + 2, 2, 2, COLOR_RGB(220, 195, 60));
+    draw_text(rc, sign_x + 5, sign_y + 5, "BUSHWOOD", COLOR_RGB(255, 235, 140), true);
     
     /* 7. Foreground Golfer on Left (x = 270, y = 520) */
     draw_drop_shadow(rc, 284, 555, 14, 6, 140);
@@ -2848,27 +3740,167 @@ void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
     int s_tx = SCREEN_W / 2 - (int)strlen(sub_text) * 8 / 2;
     draw_text(rc, s_tx, title_y + 58, sub_text, COLOR_RGB(255, 225, 145), true);
     
-    /* 10. Prominent Interactive START PROMPT & Guidance (Clean, no enclosing button box!) */
-    int btn_y = 642;
-    bool pulse = ((tick_count / 24) % 2 == 0);
-    uint32_t prompt_col = pulse ? COLOR_RGB(255, 255, 160) : COLOR_RGB(255, 220, 75);
+    /* 10. Interactive Dual Mode Buttons: [ SNEAK ON ] and [ PLAY A HOLE ] */
+    int btn_w = 230;
+    int btn_h = 46;
     
-    const char *btn_label = ">>  PRESS ENTER TO TEE OFF  <<";
-    int b_char_w = 16;
-    int btx = SCREEN_W / 2 - ((int)strlen(btn_label) * b_char_w) / 2;
-    draw_text_2x(rc, btx, btn_y, btn_label, prompt_col, true);
+    /* SNEAK ON Button */
+    int btn_sneak_x = 240;
+    int btn_sneak_y = 632;
+    draw_rect_alpha(rc, btn_sneak_x, btn_sneak_y, btn_w, btn_h, COLOR_RGB(25, 60, 35), 235);
+    draw_rect_border(rc, btn_sneak_x, btn_sneak_y, btn_w, btn_h, COLOR_RGB(255, 215, 65));
+    draw_text_2x(rc, btn_sneak_x + 51, btn_sneak_y + 15, "SNEAK ON", COLOR_RGB(255, 255, 255), true);
     
-    /* Explicit Clear Instruction */
-    const char *note_text = "Press ENTER (or click) to start  |  Spacebar is reserved for swings during play";
+    /* PLAY A HOLE Button */
+    int btn_play_x = 554;
+    int btn_play_y = 632;
+    draw_rect_alpha(rc, btn_play_x, btn_play_y, btn_w, btn_h, COLOR_RGB(25, 45, 80), 235);
+    draw_rect_border(rc, btn_play_x, btn_play_y, btn_w, btn_h, COLOR_RGB(255, 215, 65));
+    draw_text_2x(rc, btn_play_x + 27, btn_play_y + 15, "PLAY A HOLE", COLOR_RGB(255, 255, 255), true);
+    
+    /* Clear Instruction & Controls */
+    const char *note_text = "Click SNEAK ON for instant round  |  PLAY A HOLE (or ENTER) to customize obstacles";
     int ntx = SCREEN_W / 2 - (int)strlen(note_text) * 8 / 2;
-    draw_text(rc, ntx, btn_y + 36, note_text, COLOR_RGB(255, 225, 130), true);
+    draw_text(rc, ntx, 694, note_text, COLOR_RGB(255, 225, 130), true);
     
-    const char *keys_hint = "Controls: TAB Switch Modes | Mouse Aim & Drag | Arrow Keys Pan Camera | C Change Club";
+    const char *keys_hint = "Controls: TAB Switch Modes | Mouse Aim & Drag | Arrow Keys Pan Camera | R Replay Hole";
     int ktx = SCREEN_W / 2 - (int)strlen(keys_hint) * 8 / 2;
-    draw_text(rc, ktx, btn_y + 54, keys_hint, COLOR_RGB(165, 195, 215), false);
+    draw_text(rc, ktx, 714, keys_hint, COLOR_RGB(165, 195, 215), false);
+    draw_text(rc, SCREEN_W - 120, SCREEN_H - 18, "v" DUFFER_VERSION, COLOR_RGB(135, 165, 195), false);
     
     /* Outer screen vignette border */
     draw_rect_border(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(35, 45, 55));
+}
+
+/* Championship Setup Screen Renderer (1024x768) */
+void render_setup_screen(RenderContext *rc, const GolfState *gs, uint32_t tick_count) {
+    /* 1. Backdrop */
+    for (int y = 0; y < SCREEN_H; ++y) {
+        float t = (float)y / (float)SCREEN_H;
+        int r = (int)(22.0f * (1.0f - t) + 12.0f * t);
+        int g = (int)(32.0f * (1.0f - t) + 18.0f * t);
+        int b = (int)(46.0f * (1.0f - t) + 26.0f * t);
+        uint32_t c = COLOR_RGB(r, g, b);
+        for (int x = 0; x < SCREEN_W; ++x) {
+            rc->framebuffer[y * SCREEN_W + x] = c;
+        }
+    }
+    
+    /* 2. Glassmorphism Main Dashboard Panel */
+    int pan_x = 100, pan_y = 50, pan_w = 824, pan_h = 660;
+    draw_rect_alpha(rc, pan_x, pan_y, pan_w, pan_h, COLOR_RGB(18, 26, 36), 235);
+    draw_rect_border(rc, pan_x, pan_y, pan_w, pan_h, COLOR_RGB(75, 115, 165));
+    
+    /* Top Title Header */
+    draw_text_2x(rc, pan_x + 30, pan_y + 24, "COURSE SETUP & TEE CUSTOMIZATION", COLOR_RGB(255, 215, 65), true);
+    draw_text(rc, pan_x + 32, pan_y + 54, "Select natural obstacle scales (1-5) and environmental course theme", COLOR_RGB(180, 205, 230), false);
+    draw_rect(rc, pan_x + 30, pan_y + 74, pan_w - 60, 1, COLOR_RGB(60, 85, 115));
+    
+    /* 3. Obstacle Density Radio Buttons */
+    const char *row_names[4] = { "TREES:", "BUSHES:", "ROCKS:", "WATER:" };
+    int scales[4] = { gs->tree_scale, gs->bush_scale, gs->rock_scale, gs->water_scale };
+    int row_y_starts[4] = { pan_y + 105, pan_y + 155, pan_y + 205, pan_y + 255 };
+    
+    for (int r = 0; r < 4; ++r) {
+        int ry = row_y_starts[r];
+        draw_text_2x(rc, pan_x + 40, ry - 4, row_names[r], COLOR_RGB(240, 245, 250), true);
+        
+        for (int v = 1; v <= 5; ++v) {
+            int cx = pan_x + 280 + (v - 1) * 65;
+            int cy = ry + 4;
+            bool active = (scales[r] == v);
+            
+            for (int dy = -10; dy <= 10; ++dy) {
+                for (int dx = -10; dx <= 10; ++dx) {
+                    int d2 = dx * dx + dy * dy;
+                    if (d2 <= 100 && d2 >= 64) {
+                        rc->framebuffer[(cy + dy) * SCREEN_W + (cx + dx)] = active ? COLOR_RGB(255, 220, 75) : COLOR_RGB(100, 120, 145);
+                    }
+                    if (active && d2 <= 36) {
+                        rc->framebuffer[(cy + dy) * SCREEN_W + (cx + dx)] = COLOR_RGB(255, 215, 60);
+                    }
+                }
+            }
+            char num_str[4];
+            snprintf(num_str, sizeof(num_str), "%d", v);
+            draw_text(rc, cx - 4, cy + 15, num_str, active ? COLOR_RGB(255, 235, 90) : COLOR_RGB(165, 175, 190), true);
+        }
+        
+        const char *desc[5] = { "1: Very Light", "2: Light", "3: Medium (Default)", "4: Heavy", "5: Maximum" };
+        int cur_val = scales[r];
+        if (cur_val < 1) cur_val = 1; if (cur_val > 5) cur_val = 5;
+        draw_text(rc, pan_x + 630, ry + 2, desc[cur_val - 1], COLOR_RGB(145, 215, 175), true);
+    }
+    
+    /* Playability Guarantee Banner */
+    int g_y = pan_y + 305;
+    draw_rect_alpha(rc, pan_x + 35, g_y, pan_w - 70, 32, COLOR_RGB(25, 45, 35), 200);
+    draw_rect_border(rc, pan_x + 35, g_y, pan_w - 70, 32, COLOR_RGB(65, 155, 95));
+    draw_text(rc, pan_x + 50, g_y + 10, "[OK] FAIRWAY OVERLAY ACTIVE: Map obstacles hard-capped at 70% coverage. 100% playable!", COLOR_RGB(180, 245, 190), true);
+    
+    /* 4. Course Theme Selector Cards */
+    draw_text_2x(rc, pan_x + 40, pan_y + 355, "COURSE THEME:", COLOR_RGB(255, 215, 65), true);
+    
+    struct {
+        CourseTheme theme;
+        const char *title;
+        const char *sub1;
+        const char *sub2;
+        int x;
+        uint32_t color;
+    } theme_cards[3] = {
+        { THEME_BUSHWOOD, "BUSHWOOD", "Classic Country Club Greens", "Gopher & Carl Spackler", pan_x + 34, COLOR_RGB(45, 140, 75) },
+        { THEME_LA_PLAYA, "LA PLAYA", "Desert Sands & Saguaro Cactus", "Burning Man & Raver vs Cop", pan_x + 288, COLOR_RGB(195, 145, 65) },
+        { THEME_NOCTURNAL_GREEN, "NOCTURNAL GREEN", "Transylvania Purples & Greys", "Zombies & Ash vs Monster", pan_x + 542, COLOR_RGB(115, 65, 165) }
+    };
+    
+    for (int t = 0; t < 3; ++t) {
+        int tx = theme_cards[t].x;
+        int ty = pan_y + 390;
+        int tw = 248, th = 115;
+        bool sel = (gs->theme == theme_cards[t].theme);
+        
+        draw_rect_alpha(rc, tx, ty, tw, th, sel ? COLOR_RGB(35, 55, 75) : COLOR_RGB(24, 32, 42), 230);
+        draw_rect_border(rc, tx, ty, tw, th, sel ? COLOR_RGB(255, 215, 65) : COLOR_RGB(70, 85, 105));
+        if (sel) {
+            draw_rect_border(rc, tx + 1, ty + 1, tw - 2, th - 2, COLOR_RGB(255, 235, 120));
+        }
+        
+        draw_rect(rc, tx + 8, ty + 8, 12, 12, theme_cards[t].color);
+        if (strlen(theme_cards[t].title) > 10) {
+            draw_text(rc, tx + 25, ty + 10, theme_cards[t].title, sel ? COLOR_RGB(255, 235, 90) : COLOR_RGB(230, 235, 240), true);
+            draw_text(rc, tx + 26, ty + 10, theme_cards[t].title, sel ? COLOR_RGB(255, 235, 90) : COLOR_RGB(230, 235, 240), false);
+        } else {
+            draw_text_2x(rc, tx + 26, ty + 8, theme_cards[t].title, sel ? COLOR_RGB(255, 235, 90) : COLOR_RGB(230, 235, 240), true);
+        }
+        draw_text(rc, tx + 8, ty + 42, theme_cards[t].sub1, COLOR_RGB(190, 205, 220), false);
+        draw_text(rc, tx + 8, ty + 62, theme_cards[t].sub2, COLOR_RGB(165, 185, 205), false);
+        draw_text(rc, tx + 8, ty + 90, sel ? "[ SELECTED ACTIVE ]" : "Click to Select", sel ? COLOR_RGB(255, 215, 65) : COLOR_RGB(120, 140, 160), true);
+    }
+    
+    /* 5. Bottom Action Buttons */
+    int btn_action_y = pan_y + 535;
+    
+    /* Back Button */
+    int b_back_x = pan_x + 40;
+    draw_rect_alpha(rc, b_back_x, btn_action_y, 160, 48, COLOR_RGB(45, 55, 65), 220);
+    draw_rect_border(rc, b_back_x, btn_action_y, 160, 48, COLOR_RGB(105, 125, 145));
+    draw_text_2x(rc, b_back_x + 22, btn_action_y + 14, "< BACK", COLOR_RGB(220, 230, 240), true);
+    
+    /* Randomize Button */
+    int b_rand_x = pan_x + 220;
+    draw_rect_alpha(rc, b_rand_x, btn_action_y, 180, 48, COLOR_RGB(35, 65, 85), 220);
+    draw_rect_border(rc, b_rand_x, btn_action_y, 180, 48, COLOR_RGB(85, 145, 185));
+    draw_text_2x(rc, b_rand_x + 14, btn_action_y + 14, "RANDOMIZE", COLOR_RGB(220, 240, 255), true);
+    
+    /* Start Play Button */
+    int b_play_x = pan_x + 420;
+    int b_play_w = pan_w - 460;
+    bool pulse = ((tick_count / 20) % 2 == 0);
+    uint32_t pcol = pulse ? COLOR_RGB(55, 155, 85) : COLOR_RGB(45, 135, 75);
+    draw_rect_alpha(rc, b_play_x, btn_action_y, b_play_w, 48, pcol, 240);
+    draw_rect_border(rc, b_play_x, btn_action_y, b_play_w, 48, COLOR_RGB(255, 235, 90));
+    draw_text_2x(rc, b_play_x + 50, btn_action_y + 14, ">> START PLAY <<", COLOR_RGB(255, 255, 255), true);
 }
 
 /* BMP Screenshot Saver (1024x768) */

@@ -39,7 +39,13 @@ const int32_t g_sin_lut[256] = {
     -12785, -11204,  -9616,  -8022,  -6424,  -4821,  -3216,  -1608
 };
 
-/* Fast binary-radian atan2 */
+/* Exact 33-entry Octant Atan2 LUT (0..32 binary radians) */
+static const uint8_t s_octant_atan2[33] = {
+    0, 1, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18,
+    19, 20, 21, 22, 23, 24, 25, 25, 26, 27, 28, 29, 29, 30, 31, 31, 32
+};
+
+/* Fast, precise binary-radian atan2 */
 uint8_t fixed_atan2(fixed dy, fixed dx) {
     if (dx == 0 && dy == 0) return 0;
     
@@ -49,11 +55,13 @@ uint8_t fixed_atan2(fixed dy, fixed dx) {
     
     if (ax >= ay) {
         if (ax == 0) return 0;
-        int32_t ratio = (int32_t)(((int64_t)ay * 32) / ax);
-        angle = ratio;
+        int32_t idx = (int32_t)(((int64_t)ay * 32) / ax);
+        if (idx > 32) idx = 32;
+        angle = s_octant_atan2[idx];
     } else {
-        int32_t ratio = (int32_t)(((int64_t)ax * 32) / ay);
-        angle = 64 - ratio;
+        int32_t idx = (int32_t)(((int64_t)ax * 32) / ay);
+        if (idx > 32) idx = 32;
+        angle = 64 - s_octant_atan2[idx];
     }
     
     if (dx >= 0 && dy >= 0) {
@@ -257,8 +265,19 @@ static void set_banner(GolfState *gs, const char *msg, int32_t ticks) {
     gs->banner_timer = ticks;
 }
 
-void golf_generate_terrain(GolfState *gs, uint32_t seed) {
+void golf_generate_terrain_scaled(GolfState *gs, uint32_t seed, int trees, int bushes, int rocks, int water) {
     core_srand(seed);
+    gs->current_seed = seed;
+    
+    if (trees < 1) trees = 1; if (trees > 5) trees = 5;
+    if (bushes < 1) bushes = 1; if (bushes > 5) bushes = 5;
+    if (rocks < 1) rocks = 1; if (rocks > 5) rocks = 5;
+    if (water < 1) water = 1; if (water > 5) water = 5;
+    
+    gs->tree_scale = trees;
+    gs->bush_scale = bushes;
+    gs->rock_scale = rocks;
+    gs->water_scale = water;
     
     /* 1. Value noise height generation (0..5 tiers) - static to preserve GBA IWRAM stack */
     static int16_t s_noise[GRID_W][GRID_H];
@@ -291,23 +310,32 @@ void golf_generate_terrain(GolfState *gs, uint32_t seed) {
         memcpy(s_noise, s_temp, sizeof(s_noise));
     }
     
-    /* Map noise to discrete elevation tiers (0..4) */
+    /* Water threshold based on 1..5 scale (1: minimal water, 5: large water hazards) */
+    int32_t water_thresh = 14 + water * 6; /* 20, 26, 32, 38, 44 */
+    int32_t tier_step = (100 - water_thresh) / 4;
+    if (tier_step < 10) tier_step = 10;
+    
+    int32_t obstacle_count = 0;
+    const int32_t MAX_OBSTACLES = 1433; /* Hard clamp: max 70% of 2048 map tiles */
+    
+    /* Map noise to discrete elevation tiers */
     for (int y = 0; y < GRID_H; ++y) {
         for (int x = 0; x < GRID_W; ++x) {
             int32_t v = s_noise[x][y];
             uint8_t elev;
             uint8_t surf;
             
-            if (v < 32) {
+            if (v < water_thresh) {
                 elev = ELEV_WATER;
                 surf = SURF_WATER;
-            } else if (v < 48) {
+                obstacle_count++;
+            } else if (v < water_thresh + tier_step) {
                 elev = ELEV_LOWLAND;
                 surf = SURF_ROUGH;
-            } else if (v < 66) {
+            } else if (v < water_thresh + tier_step * 2) {
                 elev = ELEV_VALLEY;
                 surf = SURF_ROUGH;
-            } else if (v < 82) {
+            } else if (v < water_thresh + tier_step * 3) {
                 elev = ELEV_RIDGE;
                 surf = SURF_ROUGH;
             } else {
@@ -323,27 +351,49 @@ void golf_generate_terrain(GolfState *gs, uint32_t seed) {
         }
     }
     
-    /* Populate natural features in rough areas */
+    /* Scale feature densities (1..5):
+     * Trees: 3% to 15% (trees * 3)
+     * Bushes: 3% to 15% (bushes * 3)
+     * Rocks: 2% to 10% (rocks * 2)
+     * Clamped strictly to MAX_OBSTACLES (70% coverage limit)
+     */
+    int tree_pct = trees * 3;
+    int bush_pct = bushes * 3;
+    int rock_pct = rocks * 2;
+    
     for (int y = 2; y < GRID_H - 2; ++y) {
         for (int x = 2; x < GRID_W - 2; ++x) {
+            if (obstacle_count >= MAX_OBSTACLES) break;
+            
             if (gs->grid[x][y].surface == SURF_ROUGH) {
                 uint32_t r = core_rand() % 100;
-                if (r < 4) {
-                    gs->grid[x][y].feature = FEAT_PINE;
-                } else if (r < 7) {
-                    gs->grid[x][y].feature = FEAT_OAK;
-                } else if (r < 9) {
-                    gs->grid[x][y].feature = FEAT_FLOWERING;
-                } else if (r < 11) {
+                if ((int)r < tree_pct) {
+                    uint32_t tr = core_rand() % 4;
+                    if (tr == 0) gs->grid[x][y].feature = FEAT_PINE;
+                    else if (tr == 1) gs->grid[x][y].feature = FEAT_OAK;
+                    else if (tr == 2) gs->grid[x][y].feature = FEAT_PALM;
+                    else gs->grid[x][y].feature = FEAT_FLOWERING;
+                    obstacle_count++;
+                } else if ((int)r < tree_pct + bush_pct) {
                     gs->grid[x][y].feature = FEAT_BUSH;
-                } else if (r < 13 && gs->grid[x][y].elevation >= ELEV_RIDGE) {
+                    obstacle_count++;
+                } else if ((int)r < tree_pct + bush_pct + rock_pct) {
                     gs->grid[x][y].feature = FEAT_ROCK;
+                    obstacle_count++;
                 }
             }
         }
     }
     
     golf_update_autotile_masks(gs);
+}
+
+void golf_generate_terrain(GolfState *gs, uint32_t seed) {
+    int t = gs->tree_scale ? gs->tree_scale : 3;
+    int b = gs->bush_scale ? gs->bush_scale : 3;
+    int r = gs->rock_scale ? gs->rock_scale : 3;
+    int w = gs->water_scale ? gs->water_scale : 3;
+    golf_generate_terrain_scaled(gs, seed, t, b, r, w);
 }
 
 void golf_place_default_routing(GolfState *gs) {
@@ -513,7 +563,7 @@ void golf_place_default_routing(GolfState *gs) {
     gs->gopher.state = GOPHER_STATE_HIDDEN;
     gs->gopher.timer = 0;
     gs->gopher.anim_frame = 0;
-    gs->gopher.pop_cooldown = 180 + (core_rand() % 180); /* Pops up early in play */
+    gs->gopher.pop_cooldown = 2400 + (core_rand() % 1200); /* Rare random pop-up (40-60s) */
     gs->gopher.visible = false;
     gs->gopher.hole_count = 0;
     
@@ -547,6 +597,16 @@ void golf_place_default_routing(GolfState *gs) {
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
+
+    /* Snapshot initial layout for Replay Hole */
+    memcpy(gs->initial_grid, gs->grid, sizeof(gs->grid));
+    gs->initial_tee_gx = gs->tee_gx;
+    gs->initial_tee_gy = gs->tee_gy;
+    gs->initial_pin_gx = gs->pin_gx;
+    gs->initial_pin_gy = gs->pin_gy;
+    gs->initial_ch_gx = gs->clubhouse_gx;
+    gs->initial_ch_gy = gs->clubhouse_gy;
+    gs->initial_has_ch = gs->has_clubhouse;
 }
 
 bool golf_place_clubhouse(GolfState *gs, int32_t gx, int32_t gy) {
@@ -591,7 +651,18 @@ void golf_remove_clubhouse(GolfState *gs) {
 }
 
 void golf_randomize_hole(GolfState *gs, uint32_t seed) {
-    golf_generate_terrain(gs, seed);
+    if (gs->is_sneak_on) {
+        gs->tree_scale = 1 + (core_rand() % 5);
+        gs->bush_scale = 1 + (core_rand() % 5);
+        gs->rock_scale = 1 + (core_rand() % 5);
+        gs->water_scale = 1 + (core_rand() % 5);
+        gs->theme = (CourseTheme)(core_rand() % THEME_COUNT);
+    }
+    
+    golf_generate_terrain_scaled(gs, seed, gs->tree_scale ? gs->tree_scale : 3,
+                                           gs->bush_scale ? gs->bush_scale : 3,
+                                           gs->rock_scale ? gs->rock_scale : 3,
+                                           gs->water_scale ? gs->water_scale : 3);
     
     /* Find valid dry land for Pin (upper half rows 6..14) */
     int pin_candidates[32][2];
@@ -644,7 +715,7 @@ void golf_randomize_hole(GolfState *gs, uint32_t seed) {
     gs->has_tee = true;
     gs->has_pin = true;
     
-    /* Stamp Tee Box */
+    /* Stamp Tee Box over generated terrain */
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             int tx = gs->tee_gx + dx;
@@ -657,7 +728,7 @@ void golf_randomize_hole(GolfState *gs, uint32_t seed) {
         }
     }
     
-    /* Stamp Putting Green */
+    /* Stamp Putting Green over generated terrain */
     for (int dy = -3; dy <= 3; ++dy) {
         for (int dx = -3; dx <= 3; ++dx) {
             if (dx * dx + dy * dy <= 10) {
@@ -672,7 +743,7 @@ void golf_randomize_hole(GolfState *gs, uint32_t seed) {
         }
     }
     
-    /* Stamp Fairway Corridor connecting Tee to Green */
+    /* Stamp Fairway Corridor over generated terrain: guarantees playability! */
     int start_y = gs->pin_gy + 4;
     int end_y = gs->tee_gy - 1;
     for (int y = start_y; y <= end_y; ++y) {
@@ -714,16 +785,127 @@ void golf_randomize_hole(GolfState *gs, uint32_t seed) {
     int ch_y = gs->tee_gy - 2;
     golf_place_clubhouse(gs, ch_x, ch_y);
     
+    /* Setup Theme Entities */
+    if (gs->theme == THEME_LA_PLAYA) {
+        for (int i = 0; i < MAX_TUMBLEWEEDS; ++i) {
+            gs->tumbleweeds[i].active = (i < 4);
+            gs->tumbleweeds[i].x = TO_FIXED(core_rand() % GRID_W) + FIXED_HALF;
+            gs->tumbleweeds[i].y = TO_FIXED(core_rand() % (GRID_H / 2) + 10) + FIXED_HALF;
+            gs->tumbleweeds[i].vx = (TO_FIXED(4) / 100) + (core_rand() % 4) * (TO_FIXED(1) / 100);
+            gs->tumbleweeds[i].vy = (TO_FIXED(2) / 100) + (core_rand() % 4) * (TO_FIXED(1) / 100);
+            gs->tumbleweeds[i].current_z = golf_get_ground_z_fixed(gs, gs->tumbleweeds[i].x, gs->tumbleweeds[i].y);
+            gs->tumbleweeds[i].rotation = core_rand() % 360;
+            gs->tumbleweeds[i].stuck = false;
+        }
+    } else {
+        for (int i = 0; i < MAX_TUMBLEWEEDS; ++i) gs->tumbleweeds[i].active = false;
+    }
+    
+    gs->sea_monster.active = false;
+    gs->sea_monster.state = 0;
+    gs->sea_monster.timer = 2400 + (core_rand() % 1800);
+    
+    if (gs->is_sneak_on) {
+        gs->ranger.active = true;
+        gs->ranger.state = RANGER_STATE_PATROLLING;
+        gs->ranger.x = TO_FIXED(4) + FIXED_HALF;
+        gs->ranger.y = TO_FIXED(GRID_H / 2) + FIXED_HALF;
+        gs->ranger.current_z = golf_get_ground_z_fixed(gs, gs->ranger.x, gs->ranger.y);
+        gs->ranger.target_x = TO_FIXED(GRID_W - 6) + FIXED_HALF;
+        gs->ranger.target_y = TO_FIXED(4) + FIXED_HALF;
+        gs->ranger.facing_angle = 192;
+        gs->ranger.speed = 1350;
+        gs->ranger.timer = 0;
+        gs->ranger.speech_timer = 0;
+        gs->ranger.cooldown = 480; /* 8-second grace period on start */
+        gs->ranger.speech_msg[0] = '\0';
+    } else {
+        gs->ranger.active = false;
+    }
+    
+    /* Snapshot initial layout for Replay Hole */
+    memcpy(gs->initial_grid, gs->grid, sizeof(gs->grid));
+    gs->initial_tee_gx = gs->tee_gx;
+    gs->initial_tee_gy = gs->tee_gy;
+    gs->initial_pin_gx = gs->pin_gx;
+    gs->initial_pin_gy = gs->pin_gy;
+    gs->initial_ch_gx = gs->clubhouse_gx;
+    gs->initial_ch_gy = gs->clubhouse_gy;
+    gs->initial_has_ch = gs->has_clubhouse;
+    
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
     set_banner(gs, "NEW HOLE GENERATED!", 120);
 }
 
+void golf_replay_hole(GolfState *gs) {
+    memcpy(gs->grid, gs->initial_grid, sizeof(gs->grid));
+    gs->tee_gx = gs->initial_tee_gx;
+    gs->tee_gy = gs->initial_tee_gy;
+    gs->pin_gx = gs->initial_pin_gx;
+    gs->pin_gy = gs->initial_pin_gy;
+    gs->clubhouse_gx = gs->initial_ch_gx;
+    gs->clubhouse_gy = gs->initial_ch_gy;
+    gs->has_clubhouse = gs->initial_has_ch;
+    
+    gs->strokes = 0;
+    gs->score_rel_par = 0;
+    gs->hole_completed = false;
+    gs->caddy_eaten = false;
+    gs->caddy_eaten_timer = 0;
+    gs->raver_passed_out_timer = 0;
+    
+    gs->gopher.state = GOPHER_STATE_HIDDEN;
+    gs->gopher.timer = 0;
+    gs->gopher.visible = false;
+    gs->gopher.pop_cooldown = 2400 + (core_rand() % 1200);
+    gs->gopher_encounter_count = 0;
+    gs->carl.active = false;
+    gs->carl.state = CARL_STATE_INACTIVE;
+    gs->carl_cooldown = 3600;
+    gs->sea_monster.active = false;
+    gs->sea_monster.state = 0;
+    gs->sea_monster.timer = 2400 + (core_rand() % 1800);
+    gs->ranger.cooldown = 480;
+    
+    golf_reset_ball_to_tee(gs);
+    golf_golfer_arrive_at_ball(gs);
+    set_banner(gs, "REPLAYING HOLE", 120);
+}
+
+void golf_start_sneak_on(GolfState *gs) {
+    gs->is_sneak_on = true;
+    gs->tree_scale = 1 + (core_rand() % 5);
+    gs->bush_scale = 1 + (core_rand() % 5);
+    gs->rock_scale = 1 + (core_rand() % 5);
+    gs->water_scale = 1 + (core_rand() % 5);
+    gs->theme = (CourseTheme)(core_rand() % THEME_COUNT);
+    uint32_t seed = core_rand() | ((uint32_t)core_rand() << 16);
+    golf_randomize_hole(gs, seed);
+    
+    gs->mode = MODE_PLAY;
+    set_banner(gs, "SNEAK ON ACTIVE! AVOID THE RANGER!", 180);
+}
+
+void golf_set_theme(GolfState *gs, CourseTheme theme) {
+    if (theme >= THEME_COUNT) theme = THEME_BUSHWOOD;
+    gs->theme = theme;
+}
+
 void golf_init(GolfState *gs) {
     memset(gs, 0, sizeof(GolfState));
     
     gs->mode = MODE_SPLASH;
+    gs->theme = THEME_BUSHWOOD;
+    gs->tree_scale = 3;
+    gs->bush_scale = 3;
+    gs->rock_scale = 3;
+    gs->water_scale = 3;
+    gs->is_sneak_on = false;
+    gs->caddy_eaten = false;
+    gs->caddy_eaten_timer = 0;
+    gs->raver_passed_out_timer = 0;
     gs->build_category = BUILD_CAT_TERRAIN;
     gs->current_tool = TOOL_FAIRWAY;
     gs->brush_size = 1;
@@ -735,7 +917,7 @@ void golf_init(GolfState *gs) {
     /* Swing Gauge defaults */
     gs->swing.state = SWING_STATE_READY;
     gs->swing.cursor_pos = 0;
-    gs->swing.cursor_speed = 1000; /* Smooth SimGolf swing meter speed */
+    gs->swing.cursor_speed = 850; /* Smooth 3-press swing timing */
     gs->swing.locked_power = FIXED_ONE;
     gs->swing.locked_accuracy = 0;
     gs->swing.moving_up = true;
@@ -779,6 +961,8 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     
     gs->prev_ball_gx = gs->tee_gx;
     gs->prev_ball_gy = gs->tee_gy;
+    gs->shot_origin_gx = -1;
+    gs->shot_origin_gy = -1;
     
     /* Setup Golfer */
     gs->golfer.x = gs->ball.x;
@@ -1089,6 +1273,13 @@ bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy) {
 void golf_select_club(GolfState *gs, ClubType club) {
     if (club < CLUB_COUNT) {
         gs->current_club = club;
+        if (!gs->has_custom_aim) {
+            const ClubData *cd = golf_get_club_data(gs->current_club);
+            gs->aim_distance_yds = cd->nominal_yards;
+            fixed dist_tiles = FDIV(TO_FIXED(gs->aim_distance_yds), TO_FIXED(YARDS_PER_TILE));
+            gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
+            gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
+        }
     }
 }
 
@@ -1096,7 +1287,7 @@ void golf_change_club(GolfState *gs, int delta) {
     int next = (int)gs->current_club + delta;
     if (next < 0) next = CLUB_COUNT - 1;
     if (next >= CLUB_COUNT) next = 0;
-    gs->current_club = (ClubType)next;
+    golf_select_club(gs, (ClubType)next);
 }
 
 void golf_adjust_aim(GolfState *gs, int delta_angle) {
@@ -1123,6 +1314,7 @@ void golf_set_aim_target(GolfState *gs, fixed target_fx, fixed target_fy) {
     
     fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
     gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
+    if (gs->aim_distance_yds < 1) gs->aim_distance_yds = 1;
     
     /* Auto-select optimal club */
     if (gs->ball.current_surf == SURF_GREEN || gs->aim_distance_yds <= 20) {
@@ -1133,7 +1325,7 @@ void golf_set_aim_target(GolfState *gs, fixed target_fx, fixed target_fy) {
         gs->current_club = CLUB_3W;
     } else if (gs->aim_distance_yds > 130) {
         gs->current_club = CLUB_5I;
-    } else if (gs->aim_distance_yds > 80) {
+    } else if (gs->aim_distance_yds > 90) {
         gs->current_club = CLUB_9I;
     } else {
         gs->current_club = CLUB_PW;
@@ -1141,11 +1333,19 @@ void golf_set_aim_target(GolfState *gs, fixed target_fx, fixed target_fy) {
 }
 
 void golf_swing_click(GolfState *gs) {
-    if (gs->mode != MODE_PLAY || gs->ball.state != BALL_IDLE) return;
+    if (gs->mode != MODE_PLAY) return;
+    
+    /* If golfer is currently walking to the ball, click/space immediately arrives */
+    if (gs->golfer.state == GOLFER_STATE_WALKING) {
+        golf_golfer_arrive_at_ball(gs);
+        return;
+    }
+    
+    if (gs->ball.state != BALL_IDLE) return;
     
     switch (gs->swing.state) {
         case SWING_STATE_READY:
-            /* Click 1: Start power gauge oscillation */
+            /* Press 1: Start power gauge oscillation toward 100% */
             gs->swing.state = SWING_STATE_POWER;
             gs->swing.cursor_pos = 0;
             gs->swing.moving_up = true;
@@ -1153,17 +1353,17 @@ void golf_swing_click(GolfState *gs) {
             break;
             
         case SWING_STATE_POWER:
-            /* Click 2: Lock shot power */
+            /* Press 2: Lock shot power and reverse toward sweetspot */
             gs->swing.locked_power = gs->swing.cursor_pos;
-            if (gs->swing.locked_power < TO_FIXED(1) / 5) {
-                gs->swing.locked_power = TO_FIXED(1) / 5;
+            if (gs->swing.locked_power < TO_FIXED(1) / 10) {
+                gs->swing.locked_power = TO_FIXED(1) / 10;
             }
             gs->swing.state = SWING_STATE_ACCURACY;
             gs->swing.moving_up = false;
             break;
             
         case SWING_STATE_ACCURACY:
-            /* Click 3: Lock accuracy & strike ball */
+            /* Press 2 (if auto-bounced at 100%) or Press 3: Lock accuracy & strike ball */
             gs->swing.locked_accuracy = gs->swing.cursor_pos - gs->swing.sweetspot_center;
             gs->swing.state = SWING_STATE_RESOLVED;
             gs->golfer.state = GOLFER_STATE_WATCHING;
@@ -1173,6 +1373,8 @@ void golf_swing_click(GolfState *gs) {
                 gs->strokes++;
                 gs->prev_ball_gx = FROM_FIXED(gs->ball.x);
                 gs->prev_ball_gy = FROM_FIXED(gs->ball.y);
+                gs->shot_origin_gx = gs->prev_ball_gx;
+                gs->shot_origin_gy = gs->prev_ball_gy;
                 
                 /* Trigger club audio */
                 if (club->is_putter) {
@@ -1214,7 +1416,11 @@ void golf_swing_click(GolfState *gs) {
                 uint8_t final_angle = (uint8_t)(gs->aim_angle + angle_dev);
                 
                 if (club->is_putter) {
-                    fixed roll_speed = FMUL(FMUL(club->launch_speed_h, pwr), dist_scale);
+                    /* Calibrated putter roll: 100% power rolls right to aim target */
+                    fixed target_yds = (gs->aim_distance_yds > 0) ? gs->aim_distance_yds : 10;
+                    if (target_yds > 25) target_yds = 25;
+                    fixed roll_speed = FMUL(target_yds * 385, pwr);
+                    if (roll_speed < 1200) roll_speed = 1200;
                     gs->ball.vx = FMUL(roll_speed, fixed_cos(final_angle));
                     gs->ball.vy = FMUL(roll_speed, fixed_sin(final_angle));
                     gs->ball.vz = 0;
@@ -1356,10 +1562,11 @@ void golf_tick(GolfState *gs) {
     }
     
     /* 1. Update Swing Gauge */
-    if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE) {
+    if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE && gs->golfer.state != GOLFER_STATE_WALKING) {
         if (gs->swing.state == SWING_STATE_POWER) {
             gs->swing.cursor_pos += gs->swing.cursor_speed;
             if (gs->swing.cursor_pos >= FIXED_ONE) {
+                /* Far side auto-bounce: locks 100% power and reverses back down */
                 gs->swing.cursor_pos = FIXED_ONE;
                 gs->swing.locked_power = FIXED_ONE;
                 gs->swing.state = SWING_STATE_ACCURACY;
@@ -1368,8 +1575,12 @@ void golf_tick(GolfState *gs) {
         } else if (gs->swing.state == SWING_STATE_ACCURACY) {
             gs->swing.cursor_pos -= (gs->swing.cursor_speed * 11) / 10;
             if (gs->swing.cursor_pos <= 0) {
+                /* Needle reached bottom without player press: NEVER auto-fire!
+                   Reset swing meter so player can try again */
                 gs->swing.cursor_pos = 0;
-                golf_swing_click(gs);
+                gs->swing.state = SWING_STATE_READY;
+                gs->golfer.state = GOLFER_STATE_READY;
+                set_banner(gs, "SWING TIMED OUT - PRESS SPACE TO SWING", 120);
             }
         }
     }
@@ -1403,11 +1614,15 @@ void golf_tick(GolfState *gs) {
         /* Tree / Object Collision */
         int32_t bgx = FROM_FIXED(gs->ball.x);
         int32_t bgy = FROM_FIXED(gs->ball.y);
-        if (bgx >= 0 && bgx < GRID_W && bgy >= 0 && bgy < GRID_H) {
+        
+        /* Only collide if ball strikes obstacle from outside the square where it was struck */
+        bool is_launch_square = (bgx == gs->shot_origin_gx && bgy == gs->shot_origin_gy);
+        
+        if (!is_launch_square && bgx >= 0 && bgx < GRID_W && bgy >= 0 && bgy < GRID_H) {
             uint8_t feat = gs->grid[bgx][bgy].feature;
             fixed ground_z = TO_FIXED(gs->grid[bgx][bgy].elevation * HEIGHT_STEP_PX);
             
-            if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING) {
+            if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING || feat == FEAT_BUSH) {
                 if (gs->ball.z >= ground_z + TO_FIXED(4) && gs->ball.z <= ground_z + TO_FIXED(36)) {
                     gs->ball.vz = -FABS(gs->ball.vz) / 2 - TO_FIXED(1);
                     gs->ball.vx = gs->ball.vx / 3;
@@ -1428,6 +1643,13 @@ void golf_tick(GolfState *gs) {
         
         fixed gz = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
         gs->ball.ground_z = gz;
+        
+        /* Ascending launch clearance: allow ascending ball to clear terrace lips without getting stuck behind a tile */
+        if (gs->ball.air_ticks < 30 && gs->ball.vz > 0 && gs->ball.z < gz) {
+            if (gz - gs->ball.z <= TO_FIXED(HEIGHT_STEP_PX * 3)) {
+                gs->ball.z = gz + TO_FIXED(1);
+            }
+        }
         
         if (gs->ball.z <= gz) {
             gs->ball.z = gz;
@@ -1545,6 +1767,25 @@ void golf_tick(GolfState *gs) {
         
         gs->ball.x += gs->ball.vx;
         gs->ball.y += gs->ball.vy;
+        
+        /* Tree / Boulder Collision during roll */
+        int32_t r_bgx = FROM_FIXED(gs->ball.x);
+        int32_t r_bgy = FROM_FIXED(gs->ball.y);
+        bool is_launch_square = (r_bgx == gs->shot_origin_gx && r_bgy == gs->shot_origin_gy);
+        if (!is_launch_square && r_bgx >= 0 && r_bgx < GRID_W && r_bgy >= 0 && r_bgy < GRID_H) {
+            uint8_t feat = gs->grid[r_bgx][r_bgy].feature;
+            if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING || feat == FEAT_BUSH) {
+                gs->ball.vx = gs->ball.vx / 3;
+                gs->ball.vy = gs->ball.vy / 3;
+                gs->audio_event = AUDIO_EVT_TREE_HIT;
+                set_banner(gs, "THWACK! STRUCK TREE TRUNK!", 90);
+            } else if (feat == FEAT_ROCK) {
+                gs->ball.vx = -gs->ball.vx / 2;
+                gs->ball.vy = -gs->ball.vy / 2;
+                gs->audio_event = AUDIO_EVT_ROCK_HIT;
+                set_banner(gs, "CLANG! STRUCK BOULDER!", 90);
+            }
+        }
         
         /* Check if ball rolled into gopher hole or hit gopher */
         if (check_gopher_collision(gs)) return;
@@ -1691,7 +1932,7 @@ void golf_tick(GolfState *gs) {
         fixed gdx = gs->golfer.target_x - gs->golfer.x;
         fixed gdy = gs->golfer.target_y - gs->golfer.y;
         fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
-        fixed walk_spd = 3500;
+        fixed walk_spd = 5200;
         
         if (gdist <= walk_spd || gdist < TO_FIXED(1) / 3) {
             golf_golfer_arrive_at_ball(gs);
@@ -1730,7 +1971,7 @@ void golf_tick(GolfState *gs) {
             fixed cdx = c_target_x - gs->caddy.x;
             fixed cdy = c_target_y - gs->caddy.y;
             fixed cdist = fixed_sqrt(FMUL(cdx, cdx) + FMUL(cdy, cdy));
-            fixed c_spd = 3600;
+            fixed c_spd = 5300;
             
             if (cdist > TO_FIXED(1) / 2) {
                 gs->caddy.facing_angle = fixed_atan2(cdy, cdx);
@@ -1853,14 +2094,13 @@ void golf_tick(GolfState *gs) {
         }
     }
     
-    /* 7. Gopher Entity Simulation (Caddyshack Hole Hazards) */
+    /* 7. Gopher / Raver / Zombie Entity Simulation */
     if (gs->mode == MODE_PLAY) {
         if (gs->gopher.state == GOPHER_STATE_HIDDEN) {
             if (gs->gopher.pop_cooldown > 0) {
                 gs->gopher.pop_cooldown--;
             }
             if (gs->gopher.pop_cooldown <= 0) {
-                /* Find a suitable turf tile along the course corridor */
                 int gx = 0, gy = 0;
                 bool found = false;
                 for (int attempts = 0; attempts < 30; ++attempts) {
@@ -1892,30 +2132,42 @@ void golf_tick(GolfState *gs) {
                     gs->gopher.anim_frame = 0;
                     gs->gopher.timer = 0;
                     gs->gopher_encounter_count++;
-                    gs->audio_event = AUDIO_EVT_GOPHER_CHUCKLE;
                     
-                    /* Leave a permanent gopher hole hazard at this spot */
-                    bool already_has_hole = false;
-                    for (int i = 0; i < gs->gopher.hole_count; ++i) {
-                        if (gs->gopher.holes[i].gx == gx && gs->gopher.holes[i].gy == gy) {
-                            already_has_hole = true;
-                            break;
-                        }
+                    if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                        gs->audio_event = AUDIO_EVT_ZOMBIE;
+                        set_banner(gs, "A ZOMBIE CLAWS ITS WAY UP FROM THE GRAVE!", 180);
+                    } else if (gs->theme == THEME_LA_PLAYA) {
+                        gs->audio_event = AUDIO_EVT_GOPHER_CHUCKLE;
+                        gs->grid[gx][gy].surface = SURF_SAND; /* Raver tramples ground to dirt */
+                        set_banner(gs, "A DANCING RAVER APPEARS AND TRAMPLES THE GROUND TO DIRT!", 180);
+                    } else {
+                        gs->audio_event = AUDIO_EVT_GOPHER_CHUCKLE;
                     }
-                    if (!already_has_hole) {
-                        int h_idx = gs->gopher.hole_count;
-                        if (h_idx >= MAX_GOPHER_HOLES) {
-                            h_idx = core_rand() % MAX_GOPHER_HOLES;
-                        } else {
-                            gs->gopher.hole_count++;
+                    
+                    /* Leave a permanent gopher hole hazard at this spot for Bushwood */
+                    if (gs->theme == THEME_BUSHWOOD) {
+                        bool already_has_hole = false;
+                        for (int i = 0; i < gs->gopher.hole_count; ++i) {
+                            if (gs->gopher.holes[i].gx == gx && gs->gopher.holes[i].gy == gy) {
+                                already_has_hole = true;
+                                break;
+                            }
                         }
-                        gs->gopher.holes[h_idx].gx = gx;
-                        gs->gopher.holes[h_idx].gy = gy;
-                        gs->gopher.holes[h_idx].current_z = gs->gopher.current_z;
-                        gs->gopher.holes[h_idx].active = true;
+                        if (!already_has_hole) {
+                            int h_idx = gs->gopher.hole_count;
+                            if (h_idx >= MAX_GOPHER_HOLES) {
+                                h_idx = core_rand() % MAX_GOPHER_HOLES;
+                            } else {
+                                gs->gopher.hole_count++;
+                            }
+                            gs->gopher.holes[h_idx].gx = gx;
+                            gs->gopher.holes[h_idx].gy = gy;
+                            gs->gopher.holes[h_idx].current_z = gs->gopher.current_z;
+                            gs->gopher.holes[h_idx].active = true;
+                        }
                     }
                 } else {
-                    gs->gopher.pop_cooldown = 120;
+                    gs->gopher.pop_cooldown = 600;
                 }
             }
         } else if (gs->gopher.state == GOPHER_STATE_POPPING_UP) {
@@ -1927,10 +2179,90 @@ void golf_tick(GolfState *gs) {
             }
         } else if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
             gs->gopher.timer++;
-            gs->gopher.anim_frame = 2 + ((gs->gopher.timer / 14) % 2); /* Dance left/right */
-            if (gs->gopher.timer >= 180) { /* 3 seconds of dancing/chuckle */
-                gs->gopher.state = GOPHER_STATE_RETREATING;
-                gs->gopher.timer = 0;
+            gs->gopher.anim_frame = (gs->gopher.timer / 10) % 4;
+            
+            if (gs->theme == THEME_LA_PLAYA) {
+                /* Raver dancing, tramples current square */
+                int rgx = gs->gopher.gx;
+                int rgy = gs->gopher.gy;
+                if (rgx >= 0 && rgx < GRID_W && rgy >= 0 && rgy < GRID_H) {
+                    if (gs->grid[rgx][rgy].surface == SURF_FAIRWAY || gs->grid[rgx][rgy].surface == SURF_ROUGH) {
+                        gs->grid[rgx][rgy].surface = SURF_SAND;
+                    }
+                }
+                
+                if (gs->gopher.timer >= 160 && gs->raver_passed_out_timer == 0) {
+                    gs->raver_passed_out_timer = 180; /* Raver passes out! Zzz */
+                }
+                if (gs->raver_passed_out_timer > 0) {
+                    gs->raver_passed_out_timer--;
+                    if (gs->raver_passed_out_timer == 1) {
+                        /* Wakes up and tramples another square! */
+                        int n_gx = rgx + (int)(core_rand() % 3) - 1;
+                        int n_gy = rgy + (int)(core_rand() % 3) - 1;
+                        if (n_gx >= 2 && n_gx < GRID_W - 2 && n_gy >= 2 && n_gy < GRID_H - 2) {
+                            gs->gopher.gx = n_gx;
+                            gs->gopher.gy = n_gy;
+                            gs->gopher.x = TO_FIXED(n_gx) + FIXED_HALF;
+                            gs->gopher.y = TO_FIXED(n_gy) + FIXED_HALF;
+                            gs->grid[n_gx][n_gy].surface = SURF_SAND;
+                            set_banner(gs, "RAVER WAKES UP & TRAMPLES ANOTHER SQUARE!", 180);
+                        }
+                        gs->gopher.state = GOPHER_STATE_RETREATING;
+                        gs->gopher.timer = 0;
+                    }
+                }
+            } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                /* Zombie wanders and chases caddy if hit */
+                if (gs->gopher.timer % 30 == 0) {
+                    int w_dx = (int)(core_rand() % 3) - 1;
+                    int w_dy = (int)(core_rand() % 3) - 1;
+                    gs->gopher.x += TO_FIXED(w_dx * 0.15);
+                    gs->gopher.y += TO_FIXED(w_dy * 0.15);
+                    gs->gopher.gx = FROM_FIXED(gs->gopher.x);
+                    gs->gopher.gy = FROM_FIXED(gs->gopher.y);
+                    gs->gopher.current_z = golf_get_ground_z_fixed(gs, gs->gopher.x, gs->gopher.y);
+                }
+                
+                fixed bdx = gs->ball.x - gs->gopher.x;
+                fixed bdy = gs->ball.y - gs->gopher.y;
+                fixed bdist2 = FMUL(bdx, bdx) + FMUL(bdy, bdy);
+                
+                fixed pdx = gs->golfer.x - gs->gopher.x;
+                fixed pdy = gs->golfer.y - gs->gopher.y;
+                fixed pdist2 = FMUL(pdx, pdx) + FMUL(pdy, pdy);
+                
+                bool ball_touch = (gs->ball.state == BALL_IN_FLIGHT || gs->ball.state == BALL_ROLLING || gs->ball.state == BALL_BOUNCING) && (bdist2 < TO_FIXED(2));
+                bool player_touch = (pdist2 < (TO_FIXED(15) / 10));
+                
+                if (ball_touch || player_touch) {
+                    fixed cdx = gs->caddy.x - gs->gopher.x;
+                    fixed cdy = gs->caddy.y - gs->gopher.y;
+                    fixed cdist = fixed_sqrt(FMUL(cdx, cdx) + FMUL(cdy, cdy));
+                    if (cdist < (TO_FIXED(6) / 10)) {
+                        gs->caddy_eaten = true;
+                        gs->caddy_eaten_timer = 360;
+                        gs->audio_event = AUDIO_EVT_ZOMBIE;
+                        set_banner(gs, "THE ZOMBIE ATE YOUR CADDY! NO CLUB ADVICE!", 240);
+                        gs->gopher.state = GOPHER_STATE_RETREATING;
+                        gs->gopher.timer = 0;
+                    } else if (cdist > 0) {
+                        gs->gopher.x += FDIV(FMUL(cdx, TO_FIXED(8) / 100), cdist);
+                        gs->gopher.y += FDIV(FMUL(cdy, TO_FIXED(8) / 100), cdist);
+                        gs->gopher.current_z = golf_get_ground_z_fixed(gs, gs->gopher.x, gs->gopher.y);
+                    }
+                }
+                
+                if (gs->gopher.timer >= 240) {
+                    gs->gopher.state = GOPHER_STATE_RETREATING;
+                    gs->gopher.timer = 0;
+                }
+            } else {
+                /* Bushwood Gopher */
+                if (gs->gopher.timer >= 180) {
+                    gs->gopher.state = GOPHER_STATE_RETREATING;
+                    gs->gopher.timer = 0;
+                }
             }
         } else if (gs->gopher.state == GOPHER_STATE_RETREATING) {
             gs->gopher.timer++;
@@ -1939,38 +2271,28 @@ void golf_tick(GolfState *gs) {
                 gs->gopher.state = GOPHER_STATE_HIDDEN;
                 gs->gopher.visible = false;
                 gs->gopher.timer = 0;
-                gs->gopher.pop_cooldown = 420 + (core_rand() % 480); /* 7..15 seconds cooldown */
+                gs->gopher.pop_cooldown = 3600 + (core_rand() % 2400); /* 60 to 100 seconds */
             }
         }
     }
     
-    /* 8. Carl Spackler Greenskeeper Simulation (Caddyshack Nemesis Attacks) */
+    /* 8. Carl / Police Cop / Ash Williams Nemesis Simulation */
     if (gs->mode == MODE_PLAY) {
         if (gs->carl_cooldown > 0) {
             gs->carl_cooldown--;
         }
         
-        /* Check if Carl should spawn to attack gopher */
-        if (!gs->carl.active && gs->carl_cooldown <= 0 && gs->gopher_encounter_count >= 3 &&
+        if (!gs->carl.active && gs->carl_cooldown <= 0 && (core_rand() % 20 == 0) &&
             gs->gopher.state >= GOPHER_STATE_POPPING_UP && gs->gopher.state <= GOPHER_STATE_RETREATING) {
             
             int tgx = gs->gopher.gx;
             int tgy = gs->gopher.gy;
             
-            /* Course Protection: ensure safe distance from tee box, cup/green, and clubhouse */
             bool safe_from_tee = (abs(tgx - gs->tee_gx) >= 4 || abs(tgy - gs->tee_gy) >= 4);
             bool safe_from_pin = (abs(tgx - gs->pin_gx) >= 4 || abs(tgy - gs->pin_gy) >= 4);
             bool safe_from_bounds = (tgx >= 3 && tgx < GRID_W - 3 && tgy >= 3 && tgy < GRID_H - 3);
-            bool safe_from_club = true;
-            for (int cy = tgy - 2; cy <= tgy + 2; ++cy) {
-                for (int cx = tgx - 2; cx <= tgx + 2; ++cx) {
-                    if (cx >= 0 && cx < GRID_W && cy >= 0 && cy < GRID_H) {
-                        if (gs->grid[cx][cy].feature == FEAT_CLUBHOUSE) safe_from_club = false;
-                    }
-                }
-            }
             
-            if (safe_from_tee && safe_from_pin && safe_from_bounds && safe_from_club) {
+            if (safe_from_tee && safe_from_pin && safe_from_bounds) {
                 gs->carl.active = true;
                 gs->carl.target_gx = tgx;
                 gs->carl.target_gy = tgy;
@@ -1978,12 +2300,15 @@ void golf_tick(GolfState *gs) {
                 gs->carl.timer = 0;
                 gs->carl.anim_frame = 0;
                 gs->gopher_encounter_count = 0;
-                gs->carl_cooldown = 1500; /* ~25 seconds cooldown between Carl attacks */
+                gs->carl_cooldown = 3600; /* 60 seconds */
                 
-                /* 50/50 Chance: Dynamite Blast vs High-Pressure Water Hose */
-                gs->carl.attack_type = (core_rand() % 2 == 0) ? CARL_ATTACK_DYNAMITE : CARL_ATTACK_HOSE;
+                if (gs->theme == THEME_LA_PLAYA) {
+                    gs->carl.attack_type = CARL_ATTACK_HOSE;
+                    gs->audio_event = AUDIO_EVT_SIREN;
+                } else {
+                    gs->carl.attack_type = (core_rand() % 2 == 0) ? CARL_ATTACK_DYNAMITE : CARL_ATTACK_HOSE;
+                }
                 
-                /* Pick approach starting point ~3-4 tiles away */
                 int off_x = (tgx < GRID_W / 2) ? 3 : -3;
                 int off_y = (tgy < GRID_H / 2) ? 3 : -3;
                 gs->carl.start_x = TO_FIXED(tgx + off_x) + FIXED_HALF;
@@ -1992,50 +2317,56 @@ void golf_tick(GolfState *gs) {
                 gs->carl.y = gs->carl.start_y;
                 gs->carl.current_z = golf_get_ground_z_fixed(gs, gs->carl.x, gs->carl.y);
                 
-                /* For dynamite, place plunger box ~1.8 tiles from burrow */
                 gs->carl.plunger_x = TO_FIXED(tgx) + FIXED_HALF + TO_FIXED(off_x * 6 / 10);
                 gs->carl.plunger_y = TO_FIXED(tgy) + FIXED_HALF + TO_FIXED(off_y * 6 / 10);
                 
                 gs->carl.state = CARL_STATE_APPROACHING;
-                
-                /* Gopher notices Carl and ducks/dives down burrow! */
-                if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
-                    gs->gopher.state = GOPHER_STATE_RETREATING;
-                    gs->gopher.timer = 0;
-                }
             }
         }
         
-        /* Carl Spackler State Machine */
         if (gs->carl.active) {
             gs->carl.timer++;
             
             switch (gs->carl.state) {
                 case CARL_STATE_APPROACHING: {
-                    fixed dest_x, dest_y;
-                    if (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) {
-                        dest_x = gs->carl.plunger_x + TO_FIXED(0.2);
-                        dest_y = gs->carl.plunger_y + TO_FIXED(0.2);
-                    } else {
-                        /* Walk to within 0.8 tiles of the hole */
-                        dest_x = TO_FIXED(gs->carl.target_gx) + FIXED_HALF + (gs->carl.start_x > TO_FIXED(gs->carl.target_gx) ? TO_FIXED(0.8) : -TO_FIXED(0.8));
-                        dest_y = TO_FIXED(gs->carl.target_gy) + FIXED_HALF + (gs->carl.start_y > TO_FIXED(gs->carl.target_gy) ? TO_FIXED(0.6) : -TO_FIXED(0.6));
-                    }
-                    
+                    fixed dest_x = TO_FIXED(gs->carl.target_gx) + FIXED_HALF;
+                    fixed dest_y = TO_FIXED(gs->carl.target_gy) + FIXED_HALF;
                     fixed dx = dest_x - gs->carl.x;
                     fixed dy = dest_y - gs->carl.y;
                     fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
-                    fixed step = TO_FIXED(0.05); /* Stealth sneak speed */
+                    fixed step = (gs->theme == THEME_LA_PLAYA) ? (TO_FIXED(8) / 100) : (TO_FIXED(5) / 100);
                     
                     if (dist <= step || gs->carl.timer >= 120) {
                         gs->carl.x = dest_x;
                         gs->carl.y = dest_y;
                         gs->carl.timer = 0;
-                        if (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) {
-                            gs->carl.state = CARL_STATE_DYNAMITE_PLANT;
+                        
+                        if (gs->theme == THEME_LA_PLAYA) {
+                            /* Cop catches Raver! */
+                            gs->gopher.state = GOPHER_STATE_HIDDEN;
+                            gs->gopher.visible = false;
+                            gs->audio_event = AUDIO_EVT_SIREN;
+                            set_banner(gs, "OFFICER: 'PARTY OVER!' RAVER ARRESTED ON POLICE GOLF CART!", 240);
+                            gs->carl.state = CARL_STATE_LEAVING;
+                        } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+                            /* Ash Williams attacks Zombie */
+                            gs->gopher.state = GOPHER_STATE_HIDDEN;
+                            gs->gopher.visible = false;
+                            if (core_rand() % 2 == 0) {
+                                gs->audio_event = AUDIO_EVT_SHOTGUN;
+                                set_banner(gs, "ASH: 'THIS IS MY BOOMSTICK!' ZOMBIE ANNIHILATED!", 240);
+                            } else {
+                                gs->audio_event = AUDIO_EVT_CHAINSAW;
+                                set_banner(gs, "ASH: 'GROOVY!' ZOMBIE CHAINSAWED IN HALF!", 240);
+                            }
+                            gs->carl.state = CARL_STATE_CELEBRATING;
                         } else {
-                            gs->carl.state = CARL_STATE_HOSE_SPRAY;
-                            gs->audio_event = AUDIO_EVT_CARL_HOSE;
+                            if (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) {
+                                gs->carl.state = CARL_STATE_DYNAMITE_PLANT;
+                            } else {
+                                gs->carl.state = CARL_STATE_HOSE_SPRAY;
+                                gs->audio_event = AUDIO_EVT_CARL_HOSE;
+                            }
                         }
                     } else {
                         gs->carl.x += FDIV(FMUL(dx, step), dist);
@@ -2057,45 +2388,28 @@ void golf_tick(GolfState *gs) {
                 
                 case CARL_STATE_DYNAMITE_PLUNGE: {
                     gs->carl.anim_frame = (gs->carl.timer < 14) ? 0 : 1;
-                    
-                    /* Detonation instant */
                     if (gs->carl.timer == 14 && !gs->carl.triggered_effect) {
                         gs->carl.triggered_effect = true;
                         gs->audio_event = AUDIO_EVT_CARL_EXPLOSION;
-                        
                         int tgx = gs->carl.target_gx;
                         int tgy = gs->carl.target_gy;
-                        
-                        /* Deepen the bomb crater: drop elevation by 1 if above 0 */
-                        if (gs->grid[tgx][tgy].elevation > 0) {
-                            gs->grid[tgx][tgy].elevation--;
-                        }
-                        
-                        /* Create bomb crater in 3x3 radius */
+                        if (gs->grid[tgx][tgy].elevation > 0) gs->grid[tgx][tgy].elevation--;
                         for (int dy = -1; dy <= 1; ++dy) {
                             for (int dx = -1; dx <= 1; ++dx) {
-                                int cx = tgx + dx;
-                                int cy = tgy + dy;
+                                int cx = tgx + dx, cy = tgy + dy;
                                 if (cx >= 1 && cx < GRID_W - 1 && cy >= 1 && cy < GRID_H - 1) {
-                                    if (abs(cx - gs->tee_gx) <= 1 && abs(cy - gs->tee_gy) <= 1) continue;
-                                    if (abs(cx - gs->pin_gx) <= 1 && abs(cy - gs->pin_gy) <= 1) continue;
+                                    if (abs(cx - gs->tee_gx) <= 2 && abs(cy - gs->tee_gy) <= 2) continue;
+                                    if (abs(cx - gs->pin_gx) <= 2 && abs(cy - gs->pin_gy) <= 2) continue;
+                                    if (gs->grid[cx][cy].surface == SURF_GREEN || gs->grid[cx][cy].surface == SURF_TEE) continue;
                                     if (gs->grid[cx][cy].feature == FEAT_CLUBHOUSE) continue;
-                                    
                                     gs->grid[cx][cy].feature = FEAT_NONE;
-                                    if (dx == 0 && dy == 0) {
-                                        gs->grid[cx][cy].surface = SURF_SAND; /* Crater pit bunker */
-                                    } else if (abs(dx) + abs(dy) == 1) {
-                                        gs->grid[cx][cy].surface = ((dx + dy) & 1) ? SURF_SAND : SURF_ROUGH;
-                                    } else {
-                                        gs->grid[cx][cy].surface = SURF_ROUGH;
-                                    }
+                                    gs->grid[cx][cy].surface = (dx == 0 && dy == 0) ? SURF_SAND : SURF_ROUGH;
                                 }
                             }
                         }
                         golf_update_autotile_masks(gs);
                         set_banner(gs, "CARL SPACKLER: 'CINDERELLA STORY!' DYNAMITE CRATER CREATED! lol", 240);
                     }
-                    
                     if (gs->carl.timer >= 70) {
                         gs->carl.state = CARL_STATE_CELEBRATING;
                         gs->carl.timer = 0;
@@ -2105,38 +2419,27 @@ void golf_tick(GolfState *gs) {
                 
                 case CARL_STATE_HOSE_SPRAY: {
                     gs->carl.anim_frame = (gs->carl.timer / 6) % 2;
-                    if (gs->carl.timer == 45) {
-                        gs->audio_event = AUDIO_EVT_CARL_HOSE;
-                    }
-                    
-                    /* Flooding effect at mid-spray */
+                    if (gs->carl.timer == 45) gs->audio_event = AUDIO_EVT_CARL_HOSE;
                     if (gs->carl.timer == 50 && !gs->carl.triggered_effect) {
                         gs->carl.triggered_effect = true;
-                        
                         int tgx = gs->carl.target_gx;
                         int tgy = gs->carl.target_gy;
-                        
-                        /* Flood 3x3 footprint centered on burrow into water hazard */
                         for (int dy = -1; dy <= 1; ++dy) {
                             for (int dx = -1; dx <= 1; ++dx) {
-                                int cx = tgx + dx;
-                                int cy = tgy + dy;
+                                int cx = tgx + dx, cy = tgy + dy;
                                 if (cx >= 1 && cx < GRID_W - 1 && cy >= 1 && cy < GRID_H - 1) {
-                                    if (abs(cx - gs->tee_gx) <= 1 && abs(cy - gs->tee_gy) <= 1) continue;
-                                    if (abs(cx - gs->pin_gx) <= 1 && abs(cy - gs->pin_gy) <= 1) continue;
+                                    if (abs(cx - gs->tee_gx) <= 2 && abs(cy - gs->tee_gy) <= 2) continue;
+                                    if (abs(cx - gs->pin_gx) <= 2 && abs(cy - gs->pin_gy) <= 2) continue;
+                                    if (gs->grid[cx][cy].surface == SURF_GREEN || gs->grid[cx][cy].surface == SURF_TEE) continue;
                                     if (gs->grid[cx][cy].feature == FEAT_CLUBHOUSE) continue;
-                                    
                                     gs->grid[cx][cy].feature = FEAT_NONE;
-                                    if (abs(dx) + abs(dy) <= 1 || (abs(dx) == 1 && abs(dy) == 1 && ((cx + cy) & 1))) {
-                                        gs->grid[cx][cy].surface = SURF_WATER;
-                                    }
+                                    if (abs(dx) + abs(dy) <= 1) gs->grid[cx][cy].surface = SURF_WATER;
                                 }
                             }
                         }
                         golf_update_autotile_masks(gs);
                         set_banner(gs, "CARL SPACKLER: 'IN THE HOLE!' HOSE FLOODED A WATER HAZARD! lol", 240);
                     }
-                    
                     if (gs->carl.timer >= 95) {
                         gs->carl.state = CARL_STATE_CELEBRATING;
                         gs->carl.timer = 0;
@@ -2159,8 +2462,7 @@ void golf_tick(GolfState *gs) {
                     fixed dx = dest_x - gs->carl.x;
                     fixed dy = dest_y - gs->carl.y;
                     fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
-                    fixed step = TO_FIXED(0.06);
-                    
+                    fixed step = (TO_FIXED(7) / 100);
                     if (dist <= step || gs->carl.timer >= 100) {
                         gs->carl.state = CARL_STATE_INACTIVE;
                         gs->carl.active = false;
@@ -2178,6 +2480,191 @@ void golf_tick(GolfState *gs) {
                     gs->carl.state = CARL_STATE_INACTIVE;
                     gs->carl.active = false;
                     break;
+            }
+        }
+    }
+    
+    /* 9. Tumbleweeds Simulation for La Playa Theme */
+    if (gs->mode == MODE_PLAY && gs->theme == THEME_LA_PLAYA) {
+        for (int i = 0; i < MAX_TUMBLEWEEDS; ++i) {
+            TumbleweedEntity *tw = &gs->tumbleweeds[i];
+            if (!tw->active) {
+                if (core_rand() % 1200 == 0) {
+                    tw->active = true;
+                    tw->x = 0;
+                    tw->y = TO_FIXED(core_rand() % GRID_H) + FIXED_HALF;
+                    tw->vx = (TO_FIXED(4) / 100) + (core_rand() % 4) * (TO_FIXED(1) / 100);
+                    tw->vy = (TO_FIXED(1) / 100) + (core_rand() % 3) * (TO_FIXED(1) / 100);
+                    tw->current_z = golf_get_ground_z_fixed(gs, tw->x, tw->y);
+                    tw->rotation = 0;
+                    tw->stuck = false;
+                }
+            } else if (!tw->stuck) {
+                tw->x += tw->vx;
+                tw->y += tw->vy;
+                tw->rotation = (tw->rotation + 8) % 360;
+                
+                if (tw->x >= TO_FIXED(GRID_W) || tw->y >= TO_FIXED(GRID_H)) {
+                    tw->active = false;
+                } else {
+                    int tgx = FROM_FIXED(tw->x);
+                    int tgy = FROM_FIXED(tw->y);
+                    if (tgx >= 0 && tgx < GRID_W && tgy >= 0 && tgy < GRID_H) {
+                        FeatureType f = gs->grid[tgx][tgy].feature;
+                        if (f == FEAT_PINE || f == FEAT_OAK || f == FEAT_PALM || f == FEAT_ROCK) {
+                            tw->stuck = true; /* Piled up on tree or boulder! */
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /* 10. Sea Monster Simulation for Nocturnal Green Theme */
+    if (gs->mode == MODE_PLAY && gs->theme == THEME_NOCTURNAL_GREEN) {
+        if (gs->sea_monster.timer > 0) {
+            gs->sea_monster.timer--;
+        }
+        if (gs->sea_monster.timer == 0) {
+            int found_wx = -1, found_wy = -1;
+            for (int a = 0; a < 20; ++a) {
+                int wx = core_rand() % GRID_W;
+                int wy = 10 + (core_rand() % (GRID_H - 20));
+                if (gs->grid[wx][wy].surface == SURF_WATER) {
+                    found_wx = wx; found_wy = wy;
+                    break;
+                }
+            }
+            if (found_wx >= 0) {
+                gs->sea_monster.active = true;
+                gs->sea_monster.state = 1; /* Eyes and head peeking out */
+                gs->sea_monster.x = TO_FIXED(found_wx) + FIXED_HALF;
+                gs->sea_monster.y = TO_FIXED(found_wy) + FIXED_HALF;
+                gs->sea_monster.current_z = golf_get_ground_z_fixed(gs, gs->sea_monster.x, gs->sea_monster.y);
+                gs->sea_monster.timer = 180;
+            } else {
+                gs->sea_monster.timer = 600;
+            }
+        } else if (gs->sea_monster.state == 1 && gs->sea_monster.timer <= 1) {
+            gs->sea_monster.active = false;
+            gs->sea_monster.state = 0;
+            gs->sea_monster.timer = 2400 + (core_rand() % 1800);
+        }
+        
+        /* Rare sea monster appendage swipe: ONLY when ball came to rest right at water's edge */
+        if (gs->ball.state == BALL_IDLE && gs->sea_monster.state == 0 && gs->strokes > 0) {
+            int bgx = FROM_FIXED(gs->ball.x);
+            int bgy = FROM_FIXED(gs->ball.y);
+            bool near_water = false;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    int wx = bgx + dx, wy = bgy + dy;
+                    if (wx >= 0 && wx < GRID_W && wy >= 0 && wy < GRID_H) {
+                        if (gs->grid[wx][wy].surface == SURF_WATER) near_water = true;
+                    }
+                }
+            }
+            if (near_water && (core_rand() % 20 == 0)) {
+                gs->sea_monster.active = true;
+                gs->sea_monster.state = 2; /* Tentacle swipe! */
+                gs->sea_monster.x = gs->ball.x;
+                gs->sea_monster.y = gs->ball.y;
+                gs->sea_monster.current_z = gs->ball.ground_z;
+                gs->sea_monster.timer = 90;
+                gs->ball.state = BALL_WATER;
+                gs->strokes++;
+                gs->audio_event = AUDIO_EVT_SEAMONSTER;
+                set_banner(gs, "A LOCH NESS LEVIATHAN SWIPES YOUR BALL INTO THE DEPTHS!", 240);
+            }
+        } else if (gs->sea_monster.state == 2) {
+            if (gs->sea_monster.timer > 0) gs->sea_monster.timer--;
+            else {
+                gs->sea_monster.state = 0;
+                gs->sea_monster.active = false;
+                gs->sea_monster.timer = 2400 + (core_rand() % 1800);
+            }
+        }
+    }
+    
+    /* 11. Ranger Patrol & Scolding Simulation for Sneak On Mode */
+    if (gs->mode == MODE_PLAY && gs->is_sneak_on && gs->ranger.active) {
+        if (gs->ranger.cooldown > 0) {
+            gs->ranger.cooldown--;
+        }
+        
+        if (gs->ranger.state == RANGER_STATE_PATROLLING) {
+            fixed rdx = gs->ranger.target_x - gs->ranger.x;
+            fixed rdy = gs->ranger.target_y - gs->ranger.y;
+            fixed rdist = fixed_sqrt(FMUL(rdx, rdx) + FMUL(rdy, rdy));
+            if (rdist < FIXED_HALF) {
+                /* Pick a patrol waypoint along outer perimeters / rough edges */
+                int side = core_rand() % 4;
+                int rgx = 4, rgy = 4;
+                if (side == 0) { rgx = 3 + (core_rand() % 6); rgy = 6 + (core_rand() % (GRID_H - 12)); }
+                else if (side == 1) { rgx = GRID_W - 9 + (core_rand() % 6); rgy = 6 + (core_rand() % (GRID_H - 12)); }
+                else if (side == 2) { rgx = 6 + (core_rand() % (GRID_W - 12)); rgy = 3 + (core_rand() % 6); }
+                else { rgx = 6 + (core_rand() % (GRID_W - 12)); rgy = GRID_H - 9 + (core_rand() % 6); }
+                
+                gs->ranger.target_x = TO_FIXED(rgx) + FIXED_HALF;
+                gs->ranger.target_y = TO_FIXED(rgy) + FIXED_HALF;
+                gs->ranger.facing_angle = fixed_atan2(gs->ranger.target_y - gs->ranger.y, gs->ranger.target_x - gs->ranger.x);
+            } else {
+                fixed step = gs->ranger.speed;
+                gs->ranger.x += FDIV(FMUL(rdx, step), rdist);
+                gs->ranger.y += FDIV(FMUL(rdy, step), rdist);
+                gs->ranger.facing_angle = fixed_atan2(rdy, rdx);
+                gs->ranger.current_z = golf_get_ground_z_fixed(gs, gs->ranger.x, gs->ranger.y);
+            }
+            
+            fixed bdx = gs->ball.x - gs->ranger.x;
+            fixed bdy = gs->ball.y - gs->ranger.y;
+            fixed bdist = fixed_sqrt(FMUL(bdx, bdx) + FMUL(bdy, bdy));
+            
+            fixed gdx = gs->golfer.x - gs->ranger.x;
+            fixed gdy = gs->golfer.y - gs->ranger.y;
+            fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
+            
+            bool ball_hit = (gs->ball.state == BALL_IN_FLIGHT || gs->ball.state == BALL_ROLLING || gs->ball.state == BALL_BOUNCING) && (bdist < (TO_FIXED(9) / 10));
+            bool golfer_hit = (gdist < (TO_FIXED(9) / 10));
+            
+            if (gs->ranger.cooldown <= 0 && (ball_hit || golfer_hit)) {
+                /* User request: catch only ~1 in 20 times (5%) */
+                if (core_rand() % 20 == 0) {
+                    golf_reset_ball_to_tee(gs);
+                    golf_golfer_arrive_at_ball(gs);
+                    gs->ranger.state = RANGER_STATE_SCOLDING;
+                    gs->ranger.speech_timer = 180;
+                    gs->ranger.cooldown = 1800; /* 30 seconds immunity */
+                    
+                    /* Send ranger driving away from the tee */
+                    gs->ranger.target_x = TO_FIXED(GRID_W - 6) + FIXED_HALF;
+                    gs->ranger.target_y = TO_FIXED(GRID_H - 6) + FIXED_HALF;
+                    
+                    const char *r_msgs[3] = {
+                        "RANGER: 'HEY! NO SNEAKING ON BUSHWOOD! BACK TO TEE #1!'",
+                        "RANGER: 'MEMBERS ONLY! YOU GET OFF MY COURSE!'",
+                        "RANGER: 'CAUGHT YOU! TEE OFF LEGALLY OR GET ESCORTED OFF!'"
+                    };
+                    strncpy(gs->ranger.speech_msg, r_msgs[core_rand() % 3], sizeof(gs->ranger.speech_msg) - 1);
+                    set_banner(gs, gs->ranger.speech_msg, 240);
+                } else {
+                    /* 95%: Ranger doesn't catch you, just drives by with warning shout */
+                    gs->ranger.cooldown = 900; /* 15 seconds immunity */
+                    const char *warn_msgs[3] = {
+                        "RANGER: 'KEEP PACE! 4 HOURS OR LESS!'",
+                        "RANGER: 'WATCH OUT FOR MY CART!'",
+                        "RANGER: 'KEEP THOSE TIRES OFF THE GREEN!'"
+                    };
+                    strncpy(gs->ranger.speech_msg, warn_msgs[core_rand() % 3], sizeof(gs->ranger.speech_msg) - 1);
+                    gs->ranger.speech_timer = 90;
+                }
+            }
+        } else if (gs->ranger.state == RANGER_STATE_SCOLDING) {
+            if (gs->ranger.speech_timer > 0) {
+                gs->ranger.speech_timer--;
+            } else {
+                gs->ranger.state = RANGER_STATE_PATROLLING;
             }
         }
     }

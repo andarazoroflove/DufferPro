@@ -5,21 +5,22 @@
 *.dll.a
 *.elf
 *.sav
-build/duffer
-build/duffer.exe
-build/duffer_pro.exe
-build/retrosimgolf
-build/retrosimgolf.exe
-build/gbafix.exe
-build/gba_test.exe
 
-# Keep build directory structure with SDL2.dll for direct running if desired
+# Intermediate build outputs
+build/*
 !build/SDL2.dll
+!build/duffer_pro.gba
 tools/SDL2.dll
 
 # Screenshots and temp files
 *.bmp
 *.png
+!docs/screenshots/*.png
+
+# Allow all files in release bundle
+!release/
+!release/**
+
 tools/capture_test.exe
 tools/gba_test.exe
 
@@ -31,4 +32,5 @@ tools/gba_test.exe
 *~
 .DS_Store
 Thumbs.db
+
 

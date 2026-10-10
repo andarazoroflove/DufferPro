@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
     }
     
     SDL_Window *window = SDL_CreateWindow(
-        "Duffer-Pro [SimGolf Championship Edition]",
+        "Duffer Pro v" DUFFER_VERSION,
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_W,
@@ -212,14 +212,35 @@ int main(int argc, char *argv[]) {
                     
                 case SDL_KEYDOWN:
                     if (s_game_state.mode == MODE_SPLASH) {
-                        /* Only Return/Enter starts the game from splash screen */
-                        if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER) {
+                        if (event.key.keysym.sym == SDLK_s) {
+                            /* SNEAK ON */
                             golf_audio_stop_intro_music();
+                            golf_start_sneak_on(&s_game_state);
+                            s_game_state.swing.state = SWING_STATE_READY;
+                            s_game_state.swing.cursor_pos = s_game_state.swing.sweetspot_center;
+                            if (s_game_state.has_tee) {
+                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
+                                s_free_cam = false;
+                            }
+                        } else if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER || event.key.keysym.sym == SDLK_SPACE) {
+                            /* PLAY A HOLE -> enters MODE_SETUP */
+                            s_game_state.mode = MODE_SETUP;
+                        }
+                        break;
+                    }
+                    if (s_game_state.mode == MODE_SETUP) {
+                        if (event.key.keysym.sym == SDLK_ESCAPE) {
+                            s_game_state.mode = MODE_SPLASH;
+                        } else if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER || event.key.keysym.sym == SDLK_SPACE) {
+                            golf_audio_stop_intro_music();
+                            golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
                             golf_set_mode(&s_game_state, MODE_PLAY);
                             s_game_state.swing.state = SWING_STATE_READY;
                             s_game_state.swing.cursor_pos = s_game_state.swing.sweetspot_center;
                             if (s_game_state.has_tee) {
                                 render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
                                 s_free_cam = false;
                             }
                         }
@@ -235,6 +256,7 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_SPACE:
+                            if (event.key.repeat) break;
                             if (s_game_state.mode == MODE_PLAY) {
                                 s_free_cam = false;
                                 golf_swing_click(&s_game_state);
@@ -292,9 +314,10 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_r:
-                            golf_reset_ball_to_tee(&s_game_state);
+                            golf_replay_hole(&s_game_state);
                             if (s_game_state.has_tee) {
                                 render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
                                 s_free_cam = false;
                             }
                             break;
@@ -367,18 +390,74 @@ int main(int argc, char *argv[]) {
                     if (s_game_state.mode == MODE_SPLASH) {
                         int mx = event.button.x;
                         int my = event.button.y;
-                        int btn_w = 440;
-                        int btn_h = 44;
-                        int btn_x = SCREEN_W / 2 - btn_w / 2;
-                        int btn_y = 636;
-                        if ((mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h) || my >= 630) {
+                        if (mx >= 240 && mx <= 470 && my >= 630 && my <= 682) {
                             golf_audio_stop_intro_music();
-                            golf_set_mode(&s_game_state, MODE_PLAY);
+                            golf_start_sneak_on(&s_game_state);
                             s_game_state.swing.state = SWING_STATE_READY;
                             s_game_state.swing.cursor_pos = s_game_state.swing.sweetspot_center;
                             if (s_game_state.has_tee) {
                                 render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                render_pan_camera(&s_render_ctx, 0, 70);
                                 s_free_cam = false;
+                            }
+                        } else if ((mx >= 554 && mx <= 784 && my >= 630 && my <= 682) || my >= 620) {
+                            s_game_state.mode = MODE_SETUP;
+                        }
+                        break;
+                    }
+                    if (s_game_state.mode == MODE_SETUP) {
+                        int mx = event.button.x;
+                        int my = event.button.y;
+                        int pan_x = 100, pan_y = 50, pan_w = 824;
+                        
+                        int row_y_starts[4] = { pan_y + 105, pan_y + 155, pan_y + 205, pan_y + 255 };
+                        for (int r = 0; r < 4; ++r) {
+                            int ry = row_y_starts[r];
+                            if (my >= ry - 15 && my <= ry + 25) {
+                                for (int v = 1; v <= 5; ++v) {
+                                    int cx = pan_x + 280 + (v - 1) * 65;
+                                    if (abs(mx - cx) <= 25) {
+                                        if (r == 0) s_game_state.tree_scale = v;
+                                        else if (r == 1) s_game_state.bush_scale = v;
+                                        else if (r == 2) s_game_state.rock_scale = v;
+                                        else if (r == 3) s_game_state.water_scale = v;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (my >= pan_y + 390 && my <= pan_y + 505) {
+                            if (mx >= pan_x + 34 && mx <= pan_x + 282) {
+                                golf_set_theme(&s_game_state, THEME_BUSHWOOD);
+                            } else if (mx >= pan_x + 288 && mx <= pan_x + 536) {
+                                golf_set_theme(&s_game_state, THEME_LA_PLAYA);
+                            } else if (mx >= pan_x + 542 && mx <= pan_x + 790) {
+                                golf_set_theme(&s_game_state, THEME_NOCTURNAL_GREEN);
+                            }
+                        }
+                        
+                        int btn_action_y = pan_y + 535;
+                        if (my >= btn_action_y && my <= btn_action_y + 48) {
+                            if (mx >= pan_x + 40 && mx <= pan_x + 200) {
+                                s_game_state.mode = MODE_SPLASH;
+                            } else if (mx >= pan_x + 220 && mx <= pan_x + 400) {
+                                s_game_state.tree_scale = 1 + (rand() % 5);
+                                s_game_state.bush_scale = 1 + (rand() % 5);
+                                s_game_state.rock_scale = 1 + (rand() % 5);
+                                s_game_state.water_scale = 1 + (rand() % 5);
+                                golf_set_theme(&s_game_state, (CourseTheme)(rand() % THEME_COUNT));
+                            } else if (mx >= pan_x + 420 && mx <= pan_x + pan_w - 40) {
+                                golf_audio_stop_intro_music();
+                                golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
+                                golf_set_mode(&s_game_state, MODE_PLAY);
+                                s_game_state.swing.state = SWING_STATE_READY;
+                                s_game_state.swing.cursor_pos = s_game_state.swing.sweetspot_center;
+                                if (s_game_state.has_tee) {
+                                    render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                    render_pan_camera(&s_render_ctx, 0, 70);
+                                    s_free_cam = false;
+                                }
                             }
                         }
                         break;
@@ -394,8 +473,25 @@ int main(int argc, char *argv[]) {
                         
                         /* Top bar clicks */
                         if (my <= 46) {
+                            int btn_replay_x = SCREEN_W - 410;
+                            if (mx >= btn_replay_x && mx <= btn_replay_x + 125) {
+                                golf_replay_hole(&s_game_state);
+                                if (s_game_state.has_tee) {
+                                    render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                    render_pan_camera(&s_render_ctx, 0, 70);
+                                    s_free_cam = false;
+                                }
+                                break;
+                            }
                             int btn_rand_x = SCREEN_W - 275;
                             if (mx >= btn_rand_x && mx <= btn_rand_x + 125) {
+                                if (s_game_state.is_sneak_on) {
+                                    s_game_state.tree_scale = 1 + (rand() % 5);
+                                    s_game_state.bush_scale = 1 + (rand() % 5);
+                                    s_game_state.rock_scale = 1 + (rand() % 5);
+                                    s_game_state.water_scale = 1 + (rand() % 5);
+                                    golf_set_theme(&s_game_state, (CourseTheme)(rand() % THEME_COUNT));
+                                }
                                 golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
                                 if (s_game_state.has_tee) {
                                     render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
@@ -427,16 +523,21 @@ int main(int argc, char *argv[]) {
                                 }
                             } else {
                                 /* Play Mode */
-                                if (s_game_state.swing.state == SWING_STATE_READY) {
+                                if (s_game_state.golfer.state == GOLFER_STATE_WALKING) {
+                                    /* Click anywhere during walk fast-forwards arrival */
+                                    s_free_cam = false;
+                                    golf_swing_click(&s_game_state);
+                                    dispatch_audio_events();
+                                } else if (s_game_state.swing.state == SWING_STATE_READY) {
                                     /* Check if clicking golfer or ball to swing */
                                     fixed fx = s_game_state.ball.x;
                                     fixed fy = s_game_state.ball.y;
                                     fixed gz = s_game_state.ball.ground_z;
-                                    int32_t bsx = FROM_FIXED(FMUL(fx - fy, TO_FIXED(TILE_HALF_W))) + s_render_ctx.camera_x + TILE_HALF_W;
-                                    int32_t bsy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + s_render_ctx.camera_y + TILE_HALF_H - 10;
+                                    int32_t bsx, bsy;
+                                    world_to_screen_fixed(fx, fy, gz, s_render_ctx.camera_x, s_render_ctx.camera_y, &bsx, &bsy);
                                     int cdx = mx - bsx;
                                     int cdy = my - bsy;
-                                    if (cdx * cdx + cdy * cdy <= 22 * 22) {
+                                    if (cdx * cdx + cdy * cdy <= 28 * 28) {
                                         s_free_cam = false;
                                         golf_swing_click(&s_game_state);
                                         dispatch_audio_events();
@@ -469,7 +570,7 @@ int main(int argc, char *argv[]) {
         }
         
         /* Edge Scrolling */
-        if (s_game_state.mode != MODE_SPLASH) {
+        if (s_game_state.mode != MODE_SPLASH && s_game_state.mode != MODE_SETUP) {
             int mouse_x, mouse_y;
             SDL_GetMouseState(&mouse_x, &mouse_y);
             if (mouse_x >= 0 && mouse_x < SCREEN_W && mouse_y >= 0 && mouse_y < SCREEN_H) {
@@ -539,11 +640,11 @@ int main(int argc, char *argv[]) {
                     focus_gz = s_game_state.ball.ground_z;
                 }
                 
-                int32_t target_sx = FROM_FIXED(FMUL(focus_x - focus_y, TO_FIXED(TILE_HALF_W)));
-                int32_t target_sy = FROM_FIXED(FMUL(focus_x + focus_y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(focus_gz);
+                int32_t target_sx, target_sy;
+                world_to_screen_fixed(focus_x, focus_y, focus_gz, 0, 0, &target_sx, &target_sy);
                 
-                int32_t desired_cam_x = SCREEN_W / 2 - target_sx - TILE_HALF_W;
-                int32_t desired_cam_y = SCREEN_H / 2 - target_sy - TILE_HALF_H;
+                int32_t desired_cam_x = SCREEN_W / 2 - target_sx;
+                int32_t desired_cam_y = SCREEN_H / 2 - target_sy;
                 
                 int smooth_factor = in_action ? 4 : 6;
                 s_render_ctx.camera_x += (desired_cam_x - s_render_ctx.camera_x) / smooth_factor;

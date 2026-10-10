@@ -90,4 +90,12 @@ else
 	$(CC) -std=c99 -O2 tools/gbafix.c -o $(GBAFIX)
 endif
 
-.PHONY: all clean gba
+macos: mac
+mac:
+ifeq ($(OS),Windows_NT)
+	wsl -u root -d Debian -- bash /mnt/c/Users/adam/code/Duffer/tools/build_macos.sh
+else
+	bash tools/build_macos.sh
+endif
+
+.PHONY: all clean gba mac macos

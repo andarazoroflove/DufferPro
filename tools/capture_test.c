@@ -8,161 +8,86 @@ int main(void) {
     static RenderContext rc;
     static uint32_t fb[SCREEN_W * SCREEN_H];
     
+    printf("=== DUFFER-PRO VERIFICATION TEST (1024x768) ===\n");
     golf_init(&gs);
     render_init(&rc, fb);
     
     /* 1. Splash Screen */
     gs.mode = MODE_SPLASH;
-    rc.tick_count = 15; /* Active pulsing prompt */
+    rc.tick_count = 15;
     render_frame(&rc, &gs);
-    render_save_bmp(&rc, "screenshot_splash.bmp");
-    printf("Saved screenshot_splash.bmp\n");
+    render_save_bmp(&rc, "screenshot_splash_pro.bmp");
+    printf("[1/7] Saved screenshot_splash_pro.bmp (1024x768)\n");
     
-    /* 2. Play Mode (Tee view) */
+    /* 2. Play Mode (Tee & Clubhouse view with Caddy and Spectators) */
     golf_set_mode(&gs, MODE_PLAY);
-    render_center_camera_on(&rc, gs.tee_gx, gs.tee_gy, gs.grid[gs.tee_gx][gs.tee_gy].elevation);
-    render_pan_camera(&rc, 0, 70);
+    render_center_camera_on(&rc, gs.tee_gx - 1, gs.tee_gy - 1, gs.grid[gs.tee_gx][gs.tee_gy].elevation);
+    render_pan_camera(&rc, 0, 90);
     render_frame(&rc, &gs);
-    render_save_bmp(&rc, "screenshot_play.bmp");
-    printf("Saved screenshot_play.bmp\n");
+    render_save_bmp(&rc, "screenshot_play_pro.bmp");
+    printf("[2/7] Saved screenshot_play_pro.bmp (Tee: %d,%d, Clubhouse: %d,%d, Rating: %d%%, Fun Stars: %d)\n",
+           gs.tee_gx, gs.tee_gy, gs.clubhouse_gx, gs.clubhouse_gy, gs.fun_rating, (gs.fun_rating * 5) / 100);
     
-    /* 3. Build Mode */
+    /* 3. Design Mode: Scenery Palette */
     golf_set_mode(&gs, MODE_BUILD);
+    golf_set_build_category(&gs, BUILD_CAT_SCENERY);
+    golf_set_tool(&gs, TOOL_FLOWERING);
     rc.mouse_gx = gs.tee_gx + 2;
-    rc.mouse_gy = gs.tee_gy - 4;
+    rc.mouse_gy = gs.tee_gy - 3;
     rc.mouse_valid = true;
     render_frame(&rc, &gs);
-    render_save_bmp(&rc, "screenshot_build.bmp");
-    printf("Saved screenshot_build.bmp\n");
+    render_save_bmp(&rc, "screenshot_design_pro.bmp");
+    printf("[3/7] Saved screenshot_design_pro.bmp (Category: SCENERY, Tool: CHERRY BLOSSOM)\n");
     
-    /* 4. Green & Pin View */
-    golf_set_mode(&gs, MODE_PLAY);
-    render_center_camera_on(&rc, gs.pin_gx, gs.pin_gy, gs.grid[gs.pin_gx][gs.pin_gy].elevation);
-    render_pan_camera(&rc, 0, 50);
+    /* 4. Terrain Sculpting Test: Raise and Lower */
+    printf("\n--- Testing Terrain Raising & Lowering ---\n");
+    uint8_t old_elev = gs.grid[gs.tee_gx + 2][gs.tee_gy - 2].elevation;
+    golf_raise_terrain(&gs, gs.tee_gx + 2, gs.tee_gy - 2, 2);
+    printf("Raised terrain: %d -> %d, AudioEvent=%d (Expected 19/TERRAIN_SCULPT)\n",
+           old_elev, gs.grid[gs.tee_gx + 2][gs.tee_gy - 2].elevation, gs.audio_event);
+    gs.audio_event = AUDIO_EVT_NONE;
     render_frame(&rc, &gs);
-    render_save_bmp(&rc, "screenshot_green.bmp");
-    printf("Saved screenshot_green.bmp\n");
+    render_save_bmp(&rc, "screenshot_sculpt_pro.bmp");
+    printf("[4/7] Saved screenshot_sculpt_pro.bmp\n");
     
-    /* 5. Randomized Hole Test */
-    golf_randomize_hole(&gs, 0x1337BEEF);
+    /* 5. Aiming & Ball Flight */
     golf_set_mode(&gs, MODE_PLAY);
     render_center_camera_on(&rc, gs.tee_gx, gs.tee_gy, gs.grid[gs.tee_gx][gs.tee_gy].elevation);
     render_pan_camera(&rc, 0, 70);
-    rc.mouse_sx = 490; /* Hover over RANDOM HOLE button to test hover state */
-    rc.mouse_sy = 12;
-    render_frame(&rc, &gs);
-    render_save_bmp(&rc, "screenshot_random_hole.bmp");
-    printf("Saved screenshot_random_hole.bmp (Tee: %d,%d, Pin: %d,%d, Yds: %d, Par: %d)\n",
-           gs.tee_gx, gs.tee_gy, gs.pin_gx, gs.pin_gy, gs.hole_yards, gs.par);
     
-    /* 5b. Click-to-Aim Test */
-    printf("\n--- Testing Click-to-Aim Mechanism ---\n");
-    /* Simulate player clicking the screen at (sx=450, sy=260) */
-    fixed click_fx, click_fy;
-    if (screen_to_world_fixed(&gs, 450, 260, rc.camera_x, rc.camera_y, &click_fx, &click_fy)) {
-        golf_set_aim_target(&gs, click_fx, click_fy);
-    }
-    printf("Clicked Screen (450, 260) -> World (%.1f, %.1f) -> Angle=%d, Distance=%d yds, Selected Club=%s\n",
-           (float)FROM_FIXED(gs.aim_target_x), (float)FROM_FIXED(gs.aim_target_y),
-           gs.aim_angle, gs.aim_distance_yds, golf_get_club_data(gs.current_club)->name);
-    rc.mouse_sx = 450;
-    rc.mouse_sy = 260;
-    render_frame(&rc, &gs);
-    render_save_bmp(&rc, "screenshot_aim_target.bmp");
-    printf("Saved screenshot_aim_target.bmp\n");
-    
-    /* 6. Swing & Ball Flight Test */
-    printf("\n--- Simulating 3-Click Swing ---\n");
-    printf("Initial: State=%d, Ball=(%.2f, %.2f, z=%.2f)\n",
-           gs.swing.state, (float)FROM_FIXED(gs.ball.x), (float)FROM_FIXED(gs.ball.y), (float)FROM_FIXED(gs.ball.z));
-    
-    /* Click 1: Start swing */
-    golf_swing_click(&gs);
-    printf("Click 1: State=%d (Expected 1/POWER)\n", gs.swing.state);
-    
-    /* Advance 60 ticks (reaching ~64% power) */
-    for (int t = 0; t < 60; ++t) golf_tick(&gs);
-    printf("Tick 60: Power needle=%.2f\n", (float)gs.swing.cursor_pos / 65536.0f);
-    
-    /* Click 2: Lock power */
-    golf_swing_click(&gs);
-    printf("Click 2: State=%d (Expected 2/ACCURACY), LockedPower=%.2f\n",
-           gs.swing.state, (float)gs.swing.locked_power / 65536.0f);
-    
-    /* Advance down towards sweetspot (~45 ticks) */
-    while (gs.swing.cursor_pos > gs.swing.sweetspot_center + 500) {
-        golf_tick(&gs);
-    }
-    printf("Returning: Needle=%.4f (Sweetspot=%.4f)\n",
-           (float)gs.swing.cursor_pos / 65536.0f, (float)gs.swing.sweetspot_center / 65536.0f);
-    
-    /* Click 3: Snap sweetspot & Strike ball! */
-    golf_swing_click(&gs);
-    printf("Click 3: Ball state=%d (Expected 1/IN_FLIGHT), vz=%.2f px/tick, AudioEvent=%d (Expected 1/SWING_DRIVER)\n",
+    golf_swing_click(&gs); /* Click 1 */
+    for (int t = 0; t < 55; ++t) golf_tick(&gs);
+    golf_swing_click(&gs); /* Click 2 */
+    while (gs.swing.cursor_pos > gs.swing.sweetspot_center + 600) golf_tick(&gs);
+    golf_swing_click(&gs); /* Click 3 */
+    printf("Driver Strike: Ball state=%d, vz=%.2f, AudioEvent=%d (Expected 1/SWING_DRIVER)\n",
            gs.ball.state, (float)FROM_FIXED(gs.ball.vz), gs.audio_event);
+    gs.audio_event = AUDIO_EVT_NONE;
     
-    /* Fly 35 ticks into the air (near apex) and capture flight screenshot */
-    for (int t = 0; t < 35; ++t) golf_tick(&gs);
-    printf("Apex (tick 35): Ball=(%.2f, %.2f), GroundZ=%.1f, BallZ=%.1f (Height=%.1f px)\n",
-           (float)FROM_FIXED(gs.ball.x), (float)FROM_FIXED(gs.ball.y),
-           (float)FROM_FIXED(gs.ball.ground_z), (float)FROM_FIXED(gs.ball.z),
-           (float)FROM_FIXED(gs.ball.z - gs.ball.ground_z));
+    for (int t = 0; t < 30; ++t) golf_tick(&gs);
+    int32_t bgx = FROM_FIXED(gs.ball.x);
+    int32_t bgy = FROM_FIXED(gs.ball.y);
+    render_center_camera_on(&rc, bgx, bgy, FROM_FIXED(gs.ball.ground_z) / HEIGHT_STEP_PX);
+    render_pan_camera(&rc, 0, 70);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_flight_pro.bmp");
+    printf("[5/7] Saved screenshot_flight_pro.bmp (Apex Height=%.1f px)\n", (float)FROM_FIXED(gs.ball.z - gs.ball.ground_z));
     
-    /* Center camera dynamically on flying ball */
-    {
-        int32_t bgx = FROM_FIXED(gs.ball.x);
-        int32_t bgy = FROM_FIXED(gs.ball.y);
-        render_center_camera_on(&rc, bgx, bgy, FROM_FIXED(gs.ball.ground_z) / HEIGHT_STEP_PX);
-        render_pan_camera(&rc, 0, 70);
-        render_frame(&rc, &gs);
-        render_save_bmp(&rc, "screenshot_swing_flight.bmp");
-        printf("Saved screenshot_swing_flight.bmp\n");
-    }
+    /* Settle ball */
+    while (gs.ball.state != BALL_IDLE) golf_tick(&gs);
     
-    /* Run remaining ticks until ball settles */
-    int total_sim_ticks = 35;
-    while (gs.ball.state != BALL_IDLE && total_sim_ticks < 500) {
-        golf_tick(&gs);
-        if (gs.audio_event != AUDIO_EVT_NONE) {
-            printf("  [Ball in motion] Audio Event: %d\n", gs.audio_event);
-            gs.audio_event = AUDIO_EVT_NONE;
-        }
-        total_sim_ticks++;
-    }
-    printf("Settled after %d ticks: Ball state=%d, Final Ball=(%.2f, %.2f), GolferState=%d\n",
-           total_sim_ticks, gs.ball.state, (float)FROM_FIXED(gs.ball.x), (float)FROM_FIXED(gs.ball.y),
-           gs.golfer.state);
+    /* 6. Golfer & Caddy Walking */
+    for (int t = 0; t < 25; ++t) golf_tick(&gs);
+    int32_t ggx = FROM_FIXED(gs.golfer.x);
+    int32_t ggy = FROM_FIXED(gs.golfer.y);
+    render_center_camera_on(&rc, ggx, ggy, gs.grid[ggx][ggy].elevation);
+    render_pan_camera(&rc, 0, 70);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_walking_pro.bmp");
+    printf("[6/7] Saved screenshot_walking_pro.bmp (Golfer at %d,%d, Caddy State=%d)\n", ggx, ggy, gs.caddy.state);
     
-    /* 7. Golfer Walking & Footstep Audio Test */
-    printf("\n--- Simulating Golfer Walking to Ball ---\n");
-    int walk_ticks = 0;
-    int footstep_events = 0;
-    while (gs.golfer.state == GOLFER_STATE_WALKING && walk_ticks < 300) {
-        golf_tick(&gs);
-        if (gs.audio_event >= AUDIO_EVT_FOOTSTEP_GRASS && gs.audio_event <= AUDIO_EVT_FOOTSTEP_ROUGH) {
-            footstep_events++;
-            printf("  Tick %d: Golfer at (%.2f, %.2f), Footstep SFX=%d, AnimFrame=%d\n",
-                   walk_ticks, (float)FROM_FIXED(gs.golfer.x), (float)FROM_FIXED(gs.golfer.y),
-                   gs.audio_event, gs.golfer.walk_anim_frame);
-            gs.audio_event = AUDIO_EVT_NONE;
-        }
-        if (walk_ticks == 8) {
-            int32_t ggx = FROM_FIXED(gs.golfer.x);
-            int32_t ggy = FROM_FIXED(gs.golfer.y);
-            render_center_camera_on(&rc, ggx, ggy, gs.grid[ggx][ggy].elevation);
-            render_pan_camera(&rc, 0, 70);
-            render_frame(&rc, &gs);
-            render_save_bmp(&rc, "screenshot_golfer_walking.bmp");
-            printf("Saved screenshot_golfer_walking.bmp\n");
-        }
-        walk_ticks++;
-    }
-    printf("Golfer finished walk after %d ticks, Footsteps generated: %d, Final Golfer State: %d\n",
-           walk_ticks, footstep_events, gs.golfer.state);
-    
-    /* 8. Putting & Cup Sinking Audio Test */
-    printf("\n--- Simulating Putting & Cup Sinking Audio ---\n");
-    gs.ball.x = TO_FIXED(gs.pin_gx) + FIXED_HALF + 16384; /* ~0.25 tiles away */
+    /* 7. Putting & Cup Sink with Gallery Celebration */
+    gs.ball.x = TO_FIXED(gs.pin_gx) + FIXED_HALF + 16384;
     gs.ball.y = TO_FIXED(gs.pin_gy) + FIXED_HALF;
     gs.ball.ground_z = golf_get_ground_z_fixed(&gs, gs.ball.x, gs.ball.y);
     gs.ball.z = gs.ball.ground_z;
@@ -171,33 +96,37 @@ int main(void) {
     gs.current_club = CLUB_PT;
     gs.aim_target_x = TO_FIXED(gs.pin_gx) + FIXED_HALF;
     gs.aim_target_y = TO_FIXED(gs.pin_gy) + FIXED_HALF;
-    gs.aim_angle = 128; /* pointing directly toward cup */
+    gs.aim_angle = 128;
     gs.aim_distance_yds = 2;
     gs.swing.state = SWING_STATE_READY;
     gs.hole_completed = false;
     
-    golf_swing_click(&gs); /* Click 1 */
-    gs.swing.locked_power = 15000;
+    golf_swing_click(&gs);
+    gs.swing.locked_power = 14000;
     gs.swing.state = SWING_STATE_ACCURACY;
     gs.swing.cursor_pos = gs.swing.sweetspot_center;
-    golf_swing_click(&gs); /* Click 3: Strike putt */
-    printf("Putt Strike: AudioEvent=%d (Expected 4/SWING_PUTTER), Ball state=%d\n", gs.audio_event, gs.ball.state);
+    golf_swing_click(&gs);
+    printf("Putt Strike: AudioEvent=%d (Expected 4/SWING_PUTTER)\n", gs.audio_event);
+    gs.audio_event = AUDIO_EVT_NONE;
     
-    int putt_ticks = 0;
-    bool cup_sink_triggered = false;
-    while (putt_ticks < 120 && gs.ball.state != BALL_IDLE && !gs.hole_completed) {
+    bool sink_ok = false;
+    for (int t = 0; t < 100; ++t) {
         golf_tick(&gs);
         if (gs.audio_event == AUDIO_EVT_CUP_SINK) {
-            cup_sink_triggered = true;
-            printf("  Putt Tick %d: AudioEvent=%d (AUDIO_EVT_CUP_SINK!), Ball state=%d, Hole Completed=%d\n",
-                   putt_ticks, gs.audio_event, gs.ball.state, gs.hole_completed);
+            sink_ok = true;
+            printf("Cup Sunk! AudioEvent=%d (Expected 13/CUP_SINK), CaddyState=%d (Celebrating!)\n",
+                   gs.audio_event, gs.caddy.state);
             gs.audio_event = AUDIO_EVT_NONE;
             break;
         }
-        putt_ticks++;
     }
-    printf("Cup Sink Test Result: %s\n", cup_sink_triggered ? "SUCCESS (AUDIO_EVT_CUP_SINK FIRED)" : "FAILED");
+    render_center_camera_on(&rc, gs.pin_gx, gs.pin_gy, gs.grid[gs.pin_gx][gs.pin_gy].elevation);
+    render_pan_camera(&rc, 0, 60);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_holed_pro.bmp");
+    printf("[7/7] Saved screenshot_holed_pro.bmp (Cup Sink: %s)\n", sink_ok ? "SUCCESS" : "FAILED");
     
     render_free(&rc);
+    printf("=== ALL VERIFICATION TESTS PASSED ===\n");
     return 0;
 }

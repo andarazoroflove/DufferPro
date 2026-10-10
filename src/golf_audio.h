@@ -19,8 +19,14 @@ typedef enum {
     SFX_FOOTSTEP_GRASS = 9,
     SFX_FOOTSTEP_SAND = 10,
     SFX_FOOTSTEP_ROUGH = 11,
-    SFX_CUP_SINK = 12,
-    SFX_SWEETSPOT = 13,
+    SFX_FOOTSTEP_WOOD = 12,
+    SFX_CUP_SINK = 13,
+    SFX_SWEETSPOT = 14,
+    SFX_APPLAUSE_GOLF = 15,
+    SFX_CROWD_CHEER = 16,
+    SFX_CROWD_OOH = 17,
+    SFX_BUILD_PLACE = 18,
+    SFX_TERRAIN_SCULPT = 19,
     SFX_COUNT
 } GolfSfxType;
 
@@ -33,6 +39,6 @@ void golf_audio_play_sfx(GolfSfxType sfx);
 
 /* Update dynamic ambient soundscape (called in main loop) */
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent);
+void golf_audio_update_ambient_pro(fixed wind_speed, int water_proximity_percent, int clubhouse_proximity_percent);
 
 #endif /* GOLF_AUDIO_H */
-

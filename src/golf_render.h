@@ -5,9 +5,9 @@
 #include <stdbool.h>
 #include "golf_core.h"
 
-/* Native Desktop Resolution */
-#define SCREEN_W            640
-#define SCREEN_H            480
+/* High-Definition 1024x768 Canvas for Duffer-Pro */
+#define SCREEN_W            1024
+#define SCREEN_H            768
 
 /* Isometric Tile Geometry (2:1 Ratio) */
 #define TILE_W              64
@@ -17,7 +17,7 @@
 
 /* Render Context */
 typedef struct {
-    uint32_t *framebuffer;  /* 640x480 32-bit ARGB (0xAARRGGBB) */
+    uint32_t *framebuffer;  /* 1024x768 32-bit ARGB (0xAARRGGBB) */
     int32_t camera_x;
     int32_t camera_y;
     int32_t mouse_gx;       /* Hovered grid tile */
@@ -44,12 +44,13 @@ void render_frame(RenderContext *rc, const GolfState *gs);
 void render_center_camera_on(RenderContext *rc, int32_t gx, int32_t gy, int32_t elevation);
 void render_pan_camera(RenderContext *rc, int32_t dx, int32_t dy);
 
-/* UI Text Blitter */
+/* UI Text & Shape Blitters */
 void draw_text(RenderContext *rc, int32_t x, int32_t y, const char *str, uint32_t color, bool shadow);
 void draw_rect(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
+void draw_rect_alpha(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color, uint8_t alpha);
 void draw_rect_border(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
 
-/* Screenshot helper (saves 640x480 BMP) */
+/* Screenshot helper (saves 1024x768 BMP) */
 bool render_save_bmp(const RenderContext *rc, const char *filename);
 
 /* Splash Screen Renderer */

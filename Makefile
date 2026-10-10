@@ -1,4 +1,4 @@
-# Duffer Makefile
+# Duffer-Pro Makefile
 # Portable C99 Makefile supporting MinGW (Windows), Linux, and macOS
 
 CC = gcc
@@ -32,20 +32,23 @@ $(TARGET): $(OBJS)
 	@if not exist build mkdir build
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
 	@if exist vendor\SDL2\bin\SDL2.dll copy /Y vendor\SDL2\bin\SDL2.dll build\SDL2.dll >nul
-	@echo Built target: $(TARGET)
+	@copy /Y build\duffer.exe build\duffer_pro.exe >nul
+	@echo Built targets: build/duffer.exe and build/duffer_pro.exe
 
 clean:
 	@if exist src\*.o del /Q /F src\*.o
 	@if exist build\duffer.exe del /Q /F build\duffer.exe
+	@if exist build\duffer_pro.exe del /Q /F build\duffer_pro.exe
 	@if exist build\retrosimgolf.exe del /Q /F build\retrosimgolf.exe
 else
 $(TARGET): $(OBJS)
 	@mkdir -p build
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+	@cp -f build/duffer build/duffer_pro 2>/dev/null || true
 	@echo Built target: $(TARGET)
 
 clean:
-	@rm -f src/*.o build/duffer build/duffer.exe build/retrosimgolf build/retrosimgolf.exe
+	@rm -f src/*.o build/duffer build/duffer.exe build/duffer_pro build/duffer_pro.exe build/retrosimgolf build/retrosimgolf.exe
 endif
 
 .PHONY: all clean

@@ -1,18 +1,15 @@
 #include "golf_render.h"
 #include "font8x8.h"
+#include "splash_art.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "splash_art.h"
+#include <math.h>
 
-/* Pixel format: 0xAARRGGBB */
 #ifndef COLOR_ARGB
 #define COLOR_ARGB(a, r, g, b) (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 #define COLOR_RGB(r, g, b)     COLOR_ARGB(255, r, g, b)
 #endif
-
-/* Splash Screen Art Buffer */
-static uint32_t s_splash_art[SCREEN_W * SCREEN_H];
 
 /* Procedural Sprite Buffers */
 static uint32_t s_tile_rough[4][TILE_W * TILE_H];
@@ -20,42 +17,78 @@ static uint32_t s_tile_fairway[16][TILE_W * TILE_H];
 static uint32_t s_tile_green[16][TILE_W * TILE_H];
 static uint32_t s_tile_sand[16][TILE_W * TILE_H];
 static uint32_t s_tile_water[4][TILE_W * TILE_H];
+static uint32_t s_tile_cartpath[16][TILE_W * TILE_H];
+static uint32_t s_tile_bridge[4][TILE_W * TILE_H];
 static uint32_t s_tile_tee[TILE_W * TILE_H];
 
-/* Cliff Strata Textures */
-static uint32_t s_cliff_sw[64 * 48]; /* Max 4 levels * 12px = 48px */
-static uint32_t s_cliff_se[64 * 48];
+/* Cliff Strata Textures (up to 6 levels * 12px = 72px) */
+static uint32_t s_cliff_sw[64 * 72];
+static uint32_t s_cliff_se[64 * 72];
 
-/* Dynamic Entity Sprites */
-#define SPRITE_PINE_W 32
-#define SPRITE_PINE_H 48
+/* Dynamic Scenery Sprites */
+#define SPRITE_PINE_W 34
+#define SPRITE_PINE_H 54
 static uint32_t s_sprite_pine[SPRITE_PINE_W * SPRITE_PINE_H];
 
-#define SPRITE_OAK_W  38
-#define SPRITE_OAK_H  46
+#define SPRITE_OAK_W  44
+#define SPRITE_OAK_H  50
 static uint32_t s_sprite_oak[SPRITE_OAK_W * SPRITE_OAK_H];
 
-#define SPRITE_ROCK_W 24
-#define SPRITE_ROCK_H 18
+#define SPRITE_PALM_W 40
+#define SPRITE_PALM_H 56
+static uint32_t s_sprite_palm[SPRITE_PALM_W * SPRITE_PALM_H];
+
+#define SPRITE_FLOWERING_W 42
+#define SPRITE_FLOWERING_H 48
+static uint32_t s_sprite_flowering[SPRITE_FLOWERING_W * SPRITE_FLOWERING_H];
+
+#define SPRITE_BUSH_W 26
+#define SPRITE_BUSH_H 22
+static uint32_t s_sprite_bush[SPRITE_BUSH_W * SPRITE_BUSH_H];
+
+#define SPRITE_FLOWERS_W 28
+#define SPRITE_FLOWERS_H 18
+static uint32_t s_sprite_flowers[SPRITE_FLOWERS_W * SPRITE_FLOWERS_H];
+
+#define SPRITE_ROCK_W 28
+#define SPRITE_ROCK_H 22
 static uint32_t s_sprite_rock[SPRITE_ROCK_W * SPRITE_ROCK_H];
 
-#define SPRITE_FLAG_W 16
-#define SPRITE_FLAG_H 40
+#define SPRITE_BENCH_W 26
+#define SPRITE_BENCH_H 18
+static uint32_t s_sprite_bench[SPRITE_BENCH_W * SPRITE_BENCH_H];
+
+#define SPRITE_CART_W 28
+#define SPRITE_CART_H 26
+static uint32_t s_sprite_cart[SPRITE_CART_W * SPRITE_CART_H];
+
+#define SPRITE_FLAG_W 18
+#define SPRITE_FLAG_H 44
 static uint32_t s_sprite_flag[4][SPRITE_FLAG_W * SPRITE_FLAG_H];
 
-#define SPRITE_GOLFER_W 22
-#define SPRITE_GOLFER_H 32
+/* Characters & People */
+#define SPRITE_GOLFER_W 24
+#define SPRITE_GOLFER_H 34
 static uint32_t s_sprite_golfer[SPRITE_GOLFER_W * SPRITE_GOLFER_H];
 static uint32_t s_sprite_golfer_walk[4][SPRITE_GOLFER_W * SPRITE_GOLFER_H];
 
-/* Fast PRNG for procedural texture generation */
+#define SPRITE_CADDY_W 24
+#define SPRITE_CADDY_H 34
+static uint32_t s_sprite_caddy[SPRITE_CADDY_W * SPRITE_CADDY_H];
+static uint32_t s_sprite_caddy_walk[4][SPRITE_CADDY_W * SPRITE_CADDY_H];
+
+#define SPRITE_SPEC_W 18
+#define SPRITE_SPEC_H 28
+static uint32_t s_sprite_spec[5][4][SPRITE_SPEC_W * SPRITE_SPEC_H]; /* [shirt color][anim frame] */
+
+/* Fast PRNG for procedural textures */
 static uint32_t s_tex_rand = 987654321;
 static uint32_t trand(void) {
     s_tex_rand = s_tex_rand * 1664525 + 1013904223;
     return (s_tex_rand >> 16) & 0x7FFF;
 }
 
-/* Helper to check if (px, py) is inside 64x32 diamond */
+/* Helper: Check if (px, py) is inside 64x32 diamond */
 static inline bool is_in_diamond(int px, int py, int *dist_from_edge) {
     int min_x, max_x;
     if (py < 16) {
@@ -88,11 +121,32 @@ static inline uint32_t blend_color(uint32_t c1, uint32_t c2, int t256) {
     return COLOR_RGB(r, g, b);
 }
 
-/* Generate procedural period-correct textures */
+static inline uint32_t shade_color(uint32_t c, float factor) {
+    int r = (int)(((c >> 16) & 0xFF) * factor);
+    int g = (int)(((c >> 8) & 0xFF) * factor);
+    int b = (int)((c & 0xFF) * factor);
+    if (r > 255) r = 255; if (r < 0) r = 0;
+    if (g > 255) g = 255; if (g < 0) g = 0;
+    if (b > 255) b = 255; if (b < 0) b = 0;
+    return COLOR_RGB(r, g, b);
+}
+
+/* Alpha blend pixel over target */
+static inline uint32_t alpha_blend_pixel(uint32_t dst, uint32_t src, uint8_t alpha) {
+    int r_d = (dst >> 16) & 0xFF, g_d = (dst >> 8) & 0xFF, b_d = dst & 0xFF;
+    int r_s = (src >> 16) & 0xFF, g_s = (src >> 8) & 0xFF, b_s = src & 0xFF;
+    int a = alpha;
+    int r = (r_s * a + r_d * (255 - a)) / 255;
+    int g = (g_s * a + g_d * (255 - a)) / 255;
+    int b = (b_s * a + b_d * (255 - a)) / 255;
+    return COLOR_RGB(r, g, b);
+}
+
+/* Procedural Texture Generation for Duffer-Pro */
 static void generate_procedural_graphics(void) {
     s_tex_rand = 54321;
     
-    /* 1. Generate Rough Grass Variations (4 variants) */
+    /* 1. Rough Grass Variants */
     for (int v = 0; v < 4; ++v) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -101,28 +155,20 @@ static void generate_procedural_graphics(void) {
                     s_tile_rough[v][idx] = 0;
                     continue;
                 }
-                
-                /* Organic grass texture: rich meadow greens with subtle stippling */
                 int noise = (trand() % 16) - 8;
-                int dither = ((px ^ py) & 1) ? 4 : -4;
-                int r = 50 + noise + dither;
-                int g = 96 + noise * 2 + dither * 2;
+                int dither = ((px ^ py) & 1) ? 3 : -3;
+                int r = 48 + noise + dither;
+                int g = 98 + noise * 2 + dither * 2;
                 int b = 32 + noise / 2;
-                
-                /* Subtle shade along top/bottom */
-                if (py < 4) { r -= 6; g -= 8; b -= 4; }
-                if (py > 27) { r -= 8; g -= 12; b -= 6; }
-                
-                if (r < 30) r = 30; if (r > 80) r = 80;
-                if (g < 65) g = 65; if (g > 130) g = 130;
+                if (r < 25) r = 25; if (r > 75) r = 75;
+                if (g < 65) g = 65; if (g > 135) g = 135;
                 if (b < 15) b = 15; if (b > 50) b = 50;
-                
                 s_tile_rough[v][idx] = COLOR_RGB(r, g, b);
             }
         }
     }
     
-    /* 2. Generate Fairway (16 Autotile Masks) */
+    /* 2. Championship Fairway with Alternating Mower Stripes */
     for (int m = 0; m < 16; ++m) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -132,43 +178,29 @@ static void generate_procedural_graphics(void) {
                     s_tile_fairway[m][idx] = 0;
                     continue;
                 }
-                
-                /* Classic 2:1 mowed stripe pattern */
                 int stripe = ((px + py * 2) / 8) & 1;
-                int r = stripe ? 92 : 80;
-                int g = stripe ? 168 : 152;
-                int b = stripe ? 44 : 36;
+                int r = stripe ? 96 : 82;
+                int g = stripe ? 172 : 154;
+                int b = stripe ? 46 : 38;
+                uint32_t fw_col = COLOR_RGB(r, g, b);
                 
-                /* Fine velvety grain */
-                int grain = (trand() % 6) - 3;
-                r += grain; g += grain * 2; b += grain;
-                
-                /* Autotile transition: if bordering rough on this side, scallop with rough */
-                bool nw_open = !(m & MASK_NW);
-                bool ne_open = !(m & MASK_NE);
-                bool se_open = !(m & MASK_SE);
-                bool sw_open = !(m & MASK_SW);
-                
-                bool is_edge = false;
-                if (nw_open && px < 32 && py < 16 && (31 - px) >= (py * 2 - 4)) is_edge = true;
-                if (ne_open && px >= 32 && py < 16 && (px - 32) >= (py * 2 - 4)) is_edge = true;
-                if (sw_open && px < 32 && py >= 16 && (31 - px) >= ((31 - py) * 2 - 4)) is_edge = true;
-                if (se_open && px >= 32 && py >= 16 && (px - 32) >= ((31 - py) * 2 - 4)) is_edge = true;
-                
-                if (is_edge && dist_edge < 4) {
-                    /* Blend into native rough tone */
-                    int blend = (dist_edge * 64);
-                    uint32_t rough_col = s_tile_rough[0][idx];
-                    uint32_t fw_col = COLOR_RGB(r, g, b);
-                    s_tile_fairway[m][idx] = blend_color(rough_col, fw_col, blend);
-                } else {
-                    s_tile_fairway[m][idx] = COLOR_RGB(r, g, b);
+                if (dist_edge < 6) {
+                    bool edge_rough = false;
+                    if (py < 16 && px < 32 && !(m & MASK_NW)) edge_rough = true;
+                    if (py < 16 && px >= 32 && !(m & MASK_NE)) edge_rough = true;
+                    if (py >= 16 && px >= 32 && !(m & MASK_SE)) edge_rough = true;
+                    if (py >= 16 && px < 32 && !(m & MASK_SW)) edge_rough = true;
+                    if (edge_rough) {
+                        int t256 = (dist_edge * 256) / 6;
+                        fw_col = blend_color(s_tile_rough[0][idx], fw_col, t256);
+                    }
                 }
+                s_tile_fairway[m][idx] = fw_col;
             }
         }
     }
     
-    /* 3. Generate Green (16 Autotile Masks) */
+    /* 3. Putting Green */
     for (int m = 0; m < 16; ++m) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -178,37 +210,25 @@ static void generate_procedural_graphics(void) {
                     s_tile_green[m][idx] = 0;
                     continue;
                 }
-                
-                /* Smooth putting turf */
-                int swirl = (((px - 32) * (px - 32) + (py - 16) * (py - 16) * 4) / 40) & 1;
-                int r = swirl ? 116 : 108;
-                int g = swirl ? 198 : 188;
-                int b = swirl ? 56 : 50;
-                
-                /* Autotile edge feathering */
-                bool nw_open = !(m & MASK_NW);
-                bool ne_open = !(m & MASK_NE);
-                bool se_open = !(m & MASK_SE);
-                bool sw_open = !(m & MASK_SW);
-                
-                bool is_edge = false;
-                if (nw_open && px < 32 && py < 16 && (31 - px) >= (py * 2 - 3)) is_edge = true;
-                if (ne_open && px >= 32 && py < 16 && (px - 32) >= (py * 2 - 3)) is_edge = true;
-                if (sw_open && px < 32 && py >= 16 && (31 - px) >= ((31 - py) * 2 - 3)) is_edge = true;
-                if (se_open && px >= 32 && py >= 16 && (px - 32) >= ((31 - py) * 2 - 3)) is_edge = true;
-                
-                if (is_edge && dist_edge < 4) {
-                    uint32_t fw_col = s_tile_fairway[15][idx];
-                    uint32_t gr_col = COLOR_RGB(r, g, b);
-                    s_tile_green[m][idx] = blend_color(fw_col, gr_col, dist_edge * 64);
-                } else {
-                    s_tile_green[m][idx] = COLOR_RGB(r, g, b);
+                int grain = ((px * 3 + py * 7) & 3) - 1;
+                uint32_t gr_col = COLOR_RGB(104 + grain, 204 + grain * 2, 60 + grain);
+                if (dist_edge < 6) {
+                    bool edge_rough = false;
+                    if (py < 16 && px < 32 && !(m & MASK_NW)) edge_rough = true;
+                    if (py < 16 && px >= 32 && !(m & MASK_NE)) edge_rough = true;
+                    if (py >= 16 && px >= 32 && !(m & MASK_SE)) edge_rough = true;
+                    if (py >= 16 && px < 32 && !(m & MASK_SW)) edge_rough = true;
+                    if (edge_rough) {
+                        int t256 = (dist_edge * 256) / 6;
+                        gr_col = blend_color(s_tile_rough[1][idx], gr_col, t256);
+                    }
                 }
+                s_tile_green[m][idx] = gr_col;
             }
         }
     }
     
-    /* 4. Generate Sand Bunkers (16 Autotile Masks) */
+    /* 4. Sand Bunkers */
     for (int m = 0; m < 16; ++m) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
@@ -218,457 +238,444 @@ static void generate_procedural_graphics(void) {
                     s_tile_sand[m][idx] = 0;
                     continue;
                 }
-                
-                /* Golden sand grain */
-                int grain = (trand() % 14) - 7;
-                int r = 214 + grain;
-                int g = 192 + grain;
-                int b = 132 + grain / 2;
-                
-                /* Subtle concave lip shadow on rim */
-                if (dist_edge < 3) {
-                    r -= 35; g -= 35; b -= 25;
+                int wave = (int)(sinf((float)px * 0.45f) * 4.0f);
+                int noise = (trand() % 8) - 4;
+                uint32_t sand_col = COLOR_RGB(226 + wave + noise, 206 + wave + noise, 142 + wave / 2);
+                if (dist_edge < 5) {
+                    int t256 = (dist_edge * 256) / 5;
+                    sand_col = blend_color(COLOR_RGB(120, 100, 60), sand_col, t256);
                 }
-                
-                if (r > 240) r = 240; if (r < 140) r = 140;
-                if (g > 220) g = 220; if (g < 125) g = 125;
-                if (b > 165) b = 165; if (b < 80) b = 80;
-                
-                s_tile_sand[m][idx] = COLOR_RGB(r, g, b);
+                s_tile_sand[m][idx] = sand_col;
             }
         }
     }
     
-    /* 5. Generate Water Waves (4 animation frames) */
-    for (int f = 0; f < 4; ++f) {
+    /* 5. Animated Water */
+    for (int v = 0; v < 4; ++v) {
         for (int py = 0; py < TILE_H; ++py) {
             for (int px = 0; px < TILE_W; ++px) {
                 int idx = py * TILE_W + px;
                 if (!is_in_diamond(px, py, NULL)) {
-                    s_tile_water[f][idx] = 0;
+                    s_tile_water[v][idx] = 0;
                     continue;
                 }
-                
-                int wave = ((px + py * 2 + f * 4) / 6) & 1;
-                int r = wave ? 38 : 30;
-                int g = wave ? 95 : 78;
-                int b = wave ? 142 : 122;
-                
-                /* Specular sparkle */
-                if (((px * 13 + py * 7 + f * 5) % 37) == 0) {
-                    r += 40; g += 50; b += 60;
+                float wave = sinf((float)px * 0.22f + (float)v * 1.57f) * 6.0f +
+                             cosf((float)py * 0.35f - (float)v * 1.57f) * 4.0f;
+                int r = 38 + (int)wave;
+                int g = 112 + (int)(wave * 1.5f);
+                int b = 186 + (int)(wave * 2.0f);
+                s_tile_water[v][idx] = COLOR_RGB(r, g, b);
+            }
+        }
+    }
+    
+    /* 6. Cart Path */
+    for (int m = 0; m < 16; ++m) {
+        for (int py = 0; py < TILE_H; ++py) {
+            for (int px = 0; px < TILE_W; ++px) {
+                int idx = py * TILE_W + px;
+                int dist_edge = 0;
+                if (!is_in_diamond(px, py, &dist_edge)) {
+                    s_tile_cartpath[m][idx] = 0;
+                    continue;
                 }
-                
-                s_tile_water[f][idx] = COLOR_RGB(r, g, b);
+                int noise = (trand() % 12) - 6;
+                int r = 168 + noise, g = 166 + noise, b = 162 + noise;
+                uint32_t col = COLOR_RGB(r, g, b);
+                if (dist_edge < 4) {
+                    col = blend_color(COLOR_RGB(110, 105, 95), col, (dist_edge * 256) / 4);
+                }
+                s_tile_cartpath[m][idx] = col;
             }
         }
     }
     
-    /* 6. Generate Tee Box (Fairway with dual markers) */
-    memcpy(s_tile_tee, s_tile_fairway[15], sizeof(s_tile_tee));
-    /* Red marker at (24, 14), White marker at (40, 18) */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -2; dx <= 2; ++dx) {
-            if (dx * dx + dy * dy <= 4) {
-                s_tile_tee[(14 + dy) * TILE_W + (24 + dx)] = COLOR_RGB(210, 40, 40); /* Red */
-                s_tile_tee[(18 + dy) * TILE_W + (40 + dx)] = COLOR_RGB(240, 240, 240); /* White */
+    /* 7. Wooden Bridge */
+    for (int v = 0; v < 4; ++v) {
+        for (int py = 0; py < TILE_H; ++py) {
+            for (int px = 0; px < TILE_W; ++px) {
+                int idx = py * TILE_W + px;
+                if (!is_in_diamond(px, py, NULL)) {
+                    s_tile_bridge[v][idx] = 0;
+                    continue;
+                }
+                /* Planks running horizontally */
+                int plank_idx = (py / 3) % 2;
+                int r = plank_idx ? 138 : 124;
+                int g = plank_idx ? 92 : 82;
+                int b = plank_idx ? 54 : 46;
+                if ((py % 3) == 0) { r -= 30; g -= 24; b -= 16; } /* plank gap */
+                /* Side railings */
+                if (px < 4 || px > TILE_W - 5) { r += 25; g += 18; b += 12; }
+                s_tile_bridge[v][idx] = COLOR_RGB(r, g, b);
             }
         }
     }
     
-    /* 7. Generate Cliff Textures (Stratified Rock with Highlights) */
-    for (int y = 0; y < 48; ++y) {
+    /* 8. Tee Box */
+    for (int py = 0; py < TILE_H; ++py) {
+        for (int px = 0; px < TILE_W; ++px) {
+            int idx = py * TILE_W + px;
+            if (!is_in_diamond(px, py, NULL)) {
+                s_tile_tee[idx] = 0;
+                continue;
+            }
+            int dither = ((px ^ py) & 1) ? 2 : -2;
+            s_tile_tee[idx] = COLOR_RGB(90 + dither, 165 + dither, 42);
+        }
+    }
+    
+    /* 9. Vertical Cliff Skirts */
+    for (int y = 0; y < 72; ++y) {
         for (int x = 0; x < 64; ++x) {
             int idx = y * 64 + x;
-            int strata = ((y / 4) & 1) ? 10 : -8;
-            int noise = (trand() % 12) - 6;
-            
-            /* SW cliff face (lit) */
+            int strata = (int)(sinf((float)y * 0.4f) * 12.0f);
+            int noise = (trand() % 16) - 8;
             int r_sw = 105 + strata + noise;
-            int g_sw = 92 + strata + noise;
-            int b_sw = 75 + strata + noise;
-            if (y < 2) { r_sw = 65; g_sw = 115; b_sw = 40; } /* Moss lip */
+            int g_sw = 95 + strata + noise;
+            int b_sw = 80 + strata + noise;
+            if (y < 4) { r_sw -= 20; g_sw += 15; b_sw -= 15; } /* moss top */
             s_cliff_sw[idx] = COLOR_RGB(r_sw, g_sw, b_sw);
             
-            /* SE cliff face (in shadow) */
-            int r_se = 72 + strata + noise;
-            int g_se = 62 + strata + noise;
-            int b_se = 50 + strata + noise;
-            if (y < 2) { r_se = 50; g_se = 90; b_se = 30; }
+            /* SE face is in shadow (Sun is NW) */
+            int r_se = (r_sw * 68) / 100;
+            int g_se = (g_sw * 68) / 100;
+            int b_se = (b_sw * 75) / 100;
             s_cliff_se[idx] = COLOR_RGB(r_se, g_se, b_se);
         }
     }
     
-    /* 8. Generate Pine Tree Sprite (32x48) - 4 Tiered Conifer */
+    /* 10. Scots Pine Sprite */
     memset(s_sprite_pine, 0, sizeof(s_sprite_pine));
-    /* Drop shadow at ground */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -6; dx <= 6; ++dx) {
-            if (dx * dx * 4 + dy * dy * 36 <= 144) {
-                s_sprite_pine[(45 + dy) * SPRITE_PINE_W + (16 + dx)] = COLOR_ARGB(120, 20, 30, 15);
+    for (int y = 0; y < SPRITE_PINE_H; ++y) {
+        for (int x = 0; x < SPRITE_PINE_W; ++x) {
+            int idx = y * SPRITE_PINE_W + x;
+            int cx = SPRITE_PINE_W / 2;
+            /* Trunk */
+            if (y >= 38 && x >= cx - 2 && x <= cx + 2) {
+                int bark = ((x ^ y) & 1) ? 8 : -8;
+                s_sprite_pine[idx] = COLOR_RGB(92 + bark, 64 + bark, 42);
+                continue;
             }
-        }
-    }
-    /* Textured trunk with root flare */
-    for (int y = 30; y < 45; ++y) {
-        int tw = (y > 41) ? 2 : 1;
-        for (int dx = -tw; dx <= tw; ++dx) {
-            int px = 16 + dx;
-            int lit = (dx < 0) ? 15 : -10;
-            s_sprite_pine[y * SPRITE_PINE_W + px] = COLOR_RGB(70 + lit, 45 + lit, 26 + lit);
-        }
-    }
-    /* 4-tier needle-fringed evergreen tiers */
-    static const struct { int top, bot, max_w; } pine_tiers[4] = {
-        {  4, 15,  6 },
-        { 11, 23, 10 },
-        { 18, 31, 14 },
-        { 25, 38, 17 }
-    };
-    for (int t = 0; t < 4; ++t) {
-        int t_top = pine_tiers[t].top;
-        int t_bot = pine_tiers[t].bot;
-        int max_w = pine_tiers[t].max_w;
-        for (int y = t_top; y < t_bot; ++y) {
-            int span = (y - t_top) * max_w / (t_bot - t_top) + 1;
-            /* Jagged scalloped needle fringe near tier bottom */
-            int fringe = (y >= t_bot - 3 && ((y ^ t) & 1)) ? 1 : 0;
-            span += fringe;
-            for (int dx = -span; dx <= span; ++dx) {
-                int px = 16 + dx;
-                int py = y;
-                if (px >= 0 && px < SPRITE_PINE_W && py < SPRITE_PINE_H) {
-                    /* Isometric lighting: top-left sun, bottom-right shade */
-                    int lit = ((-dx * 3) - ((y - t_top) * 2));
-                    int needle_noise = (trand() % 8) - 4;
-                    int r = 36 + lit + needle_noise;
-                    int g = 78 + lit * 2 + needle_noise * 2;
-                    int b = 38 + lit + needle_noise;
-                    if (r < 18) r = 18; if (r > 65) r = 65;
-                    if (g < 42) g = 42; if (g > 120) g = 120;
-                    if (b < 18) b = 18; if (b > 60) b = 60;
-                    s_sprite_pine[py * SPRITE_PINE_W + px] = COLOR_RGB(r, g, b);
+            /* 3 tiers of conical pine boughs */
+            int bough_tier = (y < 16) ? 0 : ((y < 28) ? 1 : ((y < 40) ? 2 : -1));
+            if (bough_tier >= 0) {
+                int tier_top = (bough_tier == 0) ? 2 : ((bough_tier == 1) ? 14 : 26);
+                int tier_h = (bough_tier == 0) ? 14 : ((bough_tier == 1) ? 14 : 14);
+                int rel_y = y - tier_top;
+                int max_w = (bough_tier == 0) ? 8 : ((bough_tier == 1) ? 12 : 16);
+                int w_at_y = (rel_y * max_w) / tier_h;
+                if (abs(x - cx) <= w_at_y) {
+                    int light = (x < cx) ? 18 : -14;
+                    int noise = (trand() % 12) - 6;
+                    s_sprite_pine[idx] = COLOR_RGB(34 + light + noise, 78 + light * 2 + noise, 38 + light);
                 }
             }
         }
     }
     
-    /* 9. Generate Oak Tree Sprite (38x46) - Multi-cluster Billowing Deciduous Tree */
+    /* 11. English Oak Sprite */
     memset(s_sprite_oak, 0, sizeof(s_sprite_oak));
-    /* Ground drop shadow */
-    for (int dy = -3; dy <= 3; ++dy) {
-        for (int dx = -10; dx <= 10; ++dx) {
-            if (dx * dx * 3 + dy * dy * 30 <= 300) {
-                s_sprite_oak[(42 + dy) * SPRITE_OAK_W + (19 + dx)] = COLOR_ARGB(120, 20, 30, 15);
+    for (int y = 0; y < SPRITE_OAK_H; ++y) {
+        for (int x = 0; x < SPRITE_OAK_W; ++x) {
+            int idx = y * SPRITE_OAK_W + x;
+            int cx = SPRITE_OAK_W / 2;
+            if (y >= 34 && x >= cx - 3 && x <= cx + 3) {
+                s_sprite_oak[idx] = COLOR_RGB(86, 58, 38);
+                continue;
+            }
+            int cdx = x - cx;
+            int cdy = y - 20;
+            if (cdx * cdx * 10 + cdy * cdy * 16 <= 18 * 18 * 10) {
+                int light = (x < cx && y < 22) ? 25 : ((x > cx) ? -18 : 0);
+                int noise = (trand() % 14) - 7;
+                s_sprite_oak[idx] = COLOR_RGB(56 + light + noise, 118 + light * 2 + noise, 42 + light);
             }
         }
     }
-    /* Gnarled Oak Trunk with branches */
-    for (int y = 24; y < 43; ++y) {
-        int w = (y > 38) ? 3 : 2;
-        for (int dx = -w; dx <= w; ++dx) {
-            int px = 19 + dx;
-            int lit = (dx < 0) ? 18 : -14;
-            s_sprite_oak[y * SPRITE_OAK_W + px] = COLOR_RGB(85 + lit, 58 + lit, 38 + lit);
+    
+    /* 12. Royal Palm Sprite */
+    memset(s_sprite_palm, 0, sizeof(s_sprite_palm));
+    for (int y = 0; y < SPRITE_PALM_H; ++y) {
+        for (int x = 0; x < SPRITE_PALM_W; ++x) {
+            int idx = y * SPRITE_PALM_W + x;
+            int cx = SPRITE_PALM_W / 2;
+            /* Curved trunk */
+            int tx = cx - (int)(sinf((float)y * 0.08f) * 4.0f);
+            if (y >= 18 && abs(x - tx) <= 2) {
+                int ring = (y % 4 == 0) ? -15 : 10;
+                s_sprite_palm[idx] = COLOR_RGB(138 + ring, 110 + ring, 78);
+                continue;
+            }
+            /* Palm fronds radiating from top (y=16) */
+            if (y < 24) {
+                int fx = x - tx;
+                int fy = y - 16;
+                float d = sqrtf((float)(fx * fx + fy * fy));
+                if (d < 18.0f && fabsf(fy) < 14.0f) {
+                    s_sprite_palm[idx] = COLOR_RGB(46, 126, 44);
+                }
+            }
         }
     }
-    /* Visible fork branches */
-    for (int i = 0; i < 6; ++i) {
-        s_sprite_oak[(25 - i) * SPRITE_OAK_W + (18 - i)] = COLOR_RGB(70, 48, 30);
-        s_sprite_oak[(25 - i) * SPRITE_OAK_W + (20 + i)] = COLOR_RGB(60, 40, 24);
+    
+    /* 13. Flowering Cherry Blossom */
+    memset(s_sprite_flowering, 0, sizeof(s_sprite_flowering));
+    for (int y = 0; y < SPRITE_FLOWERING_H; ++y) {
+        for (int x = 0; x < SPRITE_FLOWERING_W; ++x) {
+            int idx = y * SPRITE_FLOWERING_W + x;
+            int cx = SPRITE_FLOWERING_W / 2;
+            if (y >= 32 && x >= cx - 2 && x <= cx + 2) {
+                s_sprite_flowering[idx] = COLOR_RGB(75, 48, 36);
+                continue;
+            }
+            int cdx = x - cx;
+            int cdy = y - 18;
+            if (cdx * cdx * 12 + cdy * cdy * 16 <= 17 * 17 * 12) {
+                int blossom = (trand() % 20);
+                s_sprite_flowering[idx] = COLOR_RGB(235 + blossom, 155 + blossom, 175 + blossom);
+            }
+        }
     }
-    /* Overlapping foliage puffs (5 clusters: Top, Top-Left, Top-Right, Mid-Left, Mid-Right) */
-    static const struct { int cx, cy, rx, ry; } oak_puffs[5] = {
-        { 19, 12, 10,  9 },
-        { 13, 18,  9,  8 },
-        { 25, 17,  9,  8 },
-        { 12, 24,  8,  7 },
-        { 26, 23,  9,  7 }
-    };
-    for (int p = 0; p < 5; ++p) {
-        int cx = oak_puffs[p].cx;
-        int cy = oak_puffs[p].cy;
-        int rx = oak_puffs[p].rx;
-        int ry = oak_puffs[p].ry;
-        for (int dy = -ry; dy <= ry; ++dy) {
-            for (int dx = -rx; dx <= rx; ++dx) {
-                if (dx * dx * ry * ry + dy * dy * rx * rx <= rx * rx * ry * ry) {
-                    int px = cx + dx;
-                    int py = cy + dy;
-                    if (px >= 0 && px < SPRITE_OAK_W && py < SPRITE_OAK_H) {
-                        /* Leafy volume shading with sunlight from top-left */
-                        int lit = (-dx * 4 - dy * 4);
-                        int stipple = ((px ^ py) & 1) ? 6 : -6;
-                        int r = 68 + lit + stipple;
-                        int g = 134 + lit * 2 + stipple * 2;
-                        int b = 40 + lit + stipple;
-                        if (r < 25) r = 25; if (r > 125) r = 125;
-                        if (g < 55) g = 55; if (g > 195) g = 195;
-                        if (b < 18) b = 18; if (b > 65) b = 65;
-                        s_sprite_oak[py * SPRITE_OAK_W + px] = COLOR_RGB(r, g, b);
+    
+    /* 14. Azalea Bush */
+    memset(s_sprite_bush, 0, sizeof(s_sprite_bush));
+    for (int y = 0; y < SPRITE_BUSH_H; ++y) {
+        for (int x = 0; x < SPRITE_BUSH_W; ++x) {
+            int idx = y * SPRITE_BUSH_W + x;
+            int dx = x - 13, dy = y - 11;
+            if (dx * dx * 10 + dy * dy * 14 <= 10 * 10 * 10) {
+                if ((trand() % 5) == 0) s_sprite_bush[idx] = COLOR_RGB(228, 55, 115);
+                else s_sprite_bush[idx] = COLOR_RGB(48, 108, 42);
+            }
+        }
+    }
+    
+    /* 15. Wildflower Bed */
+    memset(s_sprite_flowers, 0, sizeof(s_sprite_flowers));
+    for (int y = 0; y < SPRITE_FLOWERS_H; ++y) {
+        for (int x = 0; x < SPRITE_FLOWERS_W; ++x) {
+            int idx = y * SPRITE_FLOWERS_W + x;
+            int dx = x - 14, dy = y - 9;
+            if (dx * dx * 8 + dy * dy * 16 <= 12 * 12 * 8) {
+                int fl = trand() % 6;
+                if (fl == 0) s_sprite_flowers[idx] = COLOR_RGB(240, 210, 40); /* yellow */
+                else if (fl == 1) s_sprite_flowers[idx] = COLOR_RGB(230, 60, 60); /* red */
+                else if (fl == 2) s_sprite_flowers[idx] = COLOR_RGB(80, 140, 240); /* blue */
+                else s_sprite_flowers[idx] = COLOR_RGB(50, 115, 45); /* stem */
+            }
+        }
+    }
+    
+    /* 16. Granite Boulder */
+    memset(s_sprite_rock, 0, sizeof(s_sprite_rock));
+    for (int y = 0; y < SPRITE_ROCK_H; ++y) {
+        for (int x = 0; x < SPRITE_ROCK_W; ++x) {
+            int idx = y * SPRITE_ROCK_W + x;
+            int dx = x - 14, dy = y - 11;
+            if (dx * dx * 10 + dy * dy * 14 <= 12 * 12 * 10) {
+                int shade = (x < 14) ? 20 : -20;
+                int noise = (trand() % 14) - 7;
+                s_sprite_rock[idx] = COLOR_RGB(125 + shade + noise, 122 + shade + noise, 118 + shade);
+            }
+        }
+    }
+    
+    /* 17. Park Bench */
+    memset(s_sprite_bench, 0, sizeof(s_sprite_bench));
+    for (int y = 0; y < SPRITE_BENCH_H; ++y) {
+        for (int x = 0; x < SPRITE_BENCH_W; ++x) {
+            int idx = y * SPRITE_BENCH_W + x;
+            /* Bench slats */
+            if (y >= 4 && y <= 8 && x >= 4 && x <= 22) s_sprite_bench[idx] = COLOR_RGB(145, 75, 40);
+            if (y >= 10 && y <= 13 && x >= 3 && x <= 23) s_sprite_bench[idx] = COLOR_RGB(165, 88, 48);
+            /* Cast iron legs */
+            if (y >= 8 && y <= 16 && (x == 5 || x == 21)) s_sprite_bench[idx] = COLOR_RGB(35, 55, 42);
+        }
+    }
+    
+    /* 18. Golf Cart */
+    memset(s_sprite_cart, 0, sizeof(s_sprite_cart));
+    for (int y = 0; y < SPRITE_CART_H; ++y) {
+        for (int x = 0; x < SPRITE_CART_W; ++x) {
+            int idx = y * SPRITE_CART_W + x;
+            /* White roof */
+            if (y >= 2 && y <= 5 && x >= 4 && x <= 24) s_sprite_cart[idx] = COLOR_RGB(240, 242, 245);
+            /* Roof struts */
+            if (y >= 5 && y <= 14 && (x == 6 || x == 22)) s_sprite_cart[idx] = COLOR_RGB(70, 75, 80);
+            /* Windshield */
+            if (y >= 8 && y <= 13 && x >= 7 && x <= 12) s_sprite_cart[idx] = COLOR_RGB(190, 220, 240);
+            /* White body */
+            if (y >= 14 && y <= 21 && x >= 4 && x <= 24) s_sprite_cart[idx] = COLOR_RGB(235, 238, 242);
+            /* Golf bags in back */
+            if (y >= 10 && y <= 17 && x >= 18 && x <= 23) s_sprite_cart[idx] = COLOR_RGB(160, 40, 40);
+            /* Wheels */
+            if (y >= 20 && y <= 25 && (x >= 6 && x <= 10)) s_sprite_cart[idx] = COLOR_RGB(30, 30, 30);
+            if (y >= 20 && y <= 25 && (x >= 18 && x <= 22)) s_sprite_cart[idx] = COLOR_RGB(30, 30, 30);
+        }
+    }
+    
+    /* 19. Waving Pin Flag */
+    for (int f = 0; f < 4; ++f) {
+        memset(s_sprite_flag[f], 0, sizeof(s_sprite_flag[0]));
+        for (int y = 0; y < SPRITE_FLAG_H; ++y) {
+            for (int x = 0; x < SPRITE_FLAG_W; ++x) {
+                int idx = y * SPRITE_FLAG_W + x;
+                /* Metal pole */
+                if (x == 3 && y >= 2) s_sprite_flag[f][idx] = COLOR_RGB(220, 225, 230);
+                /* Pennant flag */
+                if (x >= 4 && x <= 15 && y >= 2 && y <= 12) {
+                    int wave = (int)(sinf((float)x * 0.6f + (float)f * 1.57f) * 1.5f);
+                    if (y >= 3 + wave && y <= 11 + wave) {
+                        /* Red flag with white numeral */
+                        s_sprite_flag[f][idx] = COLOR_RGB(225, 45, 45);
                     }
                 }
             }
         }
     }
     
-    /* 10. Generate Rock Sprite (24x18) */
-    memset(s_sprite_rock, 0, sizeof(s_sprite_rock));
-    /* Rock ground shadow */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -7; dx <= 7; ++dx) {
-            if (dx * dx * 4 + dy * dy * 36 <= 144) {
-                s_sprite_rock[(15 + dy) * SPRITE_ROCK_W + (12 + dx)] = COLOR_ARGB(120, 20, 30, 15);
-            }
-        }
-    }
-    for (int y = 2; y < 15; ++y) {
-        for (int x = 3; x < 21; ++x) {
-            int dx = x - 12;
-            int dy = y - 9;
-            if (dx * dx * 3 + dy * dy * 5 <= 120) {
-                int lit = (-dx * 4 - dy * 5);
-                int grain = (trand() % 10) - 5;
-                int r = 108 + lit + grain;
-                int g = 104 + lit + grain;
-                int b = 98 + lit + grain;
-                /* Moss highlight on top left */
-                if (dy < -2 && dx < 0) {
-                    g += 20;
-                }
-                if (r < 45) r = 45; if (r > 165) r = 165;
-                if (g < 42) g = 42; if (g > 175) g = 175;
-                if (b < 38) b = 38; if (b > 155) b = 155;
-                s_sprite_rock[y * SPRITE_ROCK_W + x] = COLOR_RGB(r, g, b);
-            }
-        }
-    }
-    
-    /* 11. Generate Flag Sprite (16x40) - 4 animated waving frames */
-    for (int f = 0; f < 4; ++f) {
-        memset(s_sprite_flag[f], 0, sizeof(s_sprite_flag[f]));
-        /* Cup hole */
-        for (int dy = -2; dy <= 2; ++dy) {
-            for (int dx = -4; dx <= 4; ++dx) {
-                if (dx * dx * 4 + dy * dy * 16 <= 64) {
-                    s_sprite_flag[f][(38 + dy) * SPRITE_FLAG_W + (8 + dx)] = COLOR_RGB(15, 18, 22);
-                }
-            }
-        }
-        /* White pole */
-        for (int y = 4; y < 38; ++y) {
-            s_sprite_flag[f][y * SPRITE_FLAG_W + 8] = COLOR_RGB(245, 245, 245);
-            s_sprite_flag[f][y * SPRITE_FLAG_W + 7] = COLOR_RGB(160, 160, 160);
-        }
-        /* Red/Yellow pennant waving in the wind */
-        for (int y = 5; y < 17; ++y) {
-            int w = 7 - (y - 5) / 2;
-            int wave = 0;
-            if (f == 0 && y >= 6 && y <= 9) wave = 1;
-            else if (f == 1 && y >= 9 && y <= 12) wave = 1;
-            else if (f == 2 && y >= 12 && y <= 15) wave = 1;
-            else if (f == 3 && y >= 8 && y <= 11) wave = -1;
-            
-            int wy = y + wave;
-            if (wy >= 0 && wy < SPRITE_FLAG_H) {
-                for (int x = 9; x <= 9 + w; ++x) {
-                    int col = ((x + y + f) & 2) ? COLOR_RGB(235, 45, 45) : COLOR_RGB(255, 215, 30);
-                    s_sprite_flag[f][wy * SPRITE_FLAG_W + x] = col;
-                }
-            }
-        }
-    }
-    
-    /* 12. Generate Golfer Sprite (22x32) */
+    /* 20. Golfer Character (Ready stance and walk frames) */
     memset(s_sprite_golfer, 0, sizeof(s_sprite_golfer));
-    /* Ground shadow */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -5; dx <= 5; ++dx) {
-            if (dx * dx * 4 + dy * dy * 25 <= 100) {
-                s_sprite_golfer[(30 + dy) * SPRITE_GOLFER_W + (11 + dx)] = COLOR_ARGB(120, 20, 30, 15);
+    for (int y = 0; y < SPRITE_GOLFER_H; ++y) {
+        for (int x = 0; x < SPRITE_GOLFER_W; ++x) {
+            int idx = y * SPRITE_GOLFER_W + x;
+            int cx = 12;
+            /* White Cap */
+            if (y >= 2 && y <= 5 && abs(x - cx) <= 4) s_sprite_golfer[idx] = COLOR_RGB(245, 245, 245);
+            /* Head / Face */
+            if (y >= 6 && y <= 9 && abs(x - cx) <= 3) s_sprite_golfer[idx] = COLOR_RGB(238, 192, 155);
+            /* Red Polo Shirt */
+            if (y >= 10 && y <= 18 && abs(x - cx) <= 5) s_sprite_golfer[idx] = COLOR_RGB(215, 42, 42);
+            /* Khaki Shorts */
+            if (y >= 19 && y <= 24 && abs(x - cx) <= 4) s_sprite_golfer[idx] = COLOR_RGB(198, 172, 134);
+            /* Legs */
+            if (y >= 25 && y <= 29 && (abs(x - (cx - 2)) <= 1 || abs(x - (cx + 2)) <= 1)) s_sprite_golfer[idx] = COLOR_RGB(238, 192, 155);
+            /* White Golf Shoes */
+            if (y >= 30 && y <= 32 && (abs(x - (cx - 2)) <= 2 || abs(x - (cx + 2)) <= 2)) s_sprite_golfer[idx] = COLOR_RGB(240, 240, 240);
+        }
+    }
+    
+    /* 4 Walk Animation Frames */
+    for (int f = 0; f < 4; ++f) {
+        memcpy(s_sprite_golfer_walk[f], s_sprite_golfer, sizeof(s_sprite_golfer));
+        /* Leg strides */
+        int offset = (f == 1) ? 2 : ((f == 3) ? -2 : 0);
+        for (int y = 25; y < SPRITE_GOLFER_H; ++y) {
+            for (int x = 0; x < SPRITE_GOLFER_W; ++x) {
+                int idx = y * SPRITE_GOLFER_W + x;
+                s_sprite_golfer_walk[f][idx] = 0;
+            }
+        }
+        for (int y = 25; y <= 29; ++y) {
+            int x1 = 10 - offset, x2 = 14 + offset;
+            if (x1 >= 0 && x1 < SPRITE_GOLFER_W) s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x1] = COLOR_RGB(238, 192, 155);
+            if (x2 >= 0 && x2 < SPRITE_GOLFER_W) s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x2] = COLOR_RGB(238, 192, 155);
+        }
+        for (int y = 30; y <= 32; ++y) {
+            int x1 = 10 - offset, x2 = 14 + offset;
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (x1 + dx >= 0 && x1 + dx < SPRITE_GOLFER_W) s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x1 + dx] = COLOR_RGB(240, 240, 240);
+                if (x2 + dx >= 0 && x2 + dx < SPRITE_GOLFER_W) s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x2 + dx] = COLOR_RGB(240, 240, 240);
             }
         }
     }
-    /* White Visor/Cap */
-    for (int y = 4; y <= 6; ++y) {
-        for (int x = 9; x <= 14; ++x) {
-            s_sprite_golfer[y * SPRITE_GOLFER_W + x] = (y == 4) ? COLOR_RGB(250, 250, 250) : COLOR_RGB(220, 220, 220);
+    
+    /* 21. Caddy Character with Golf Tour Bag */
+    memset(s_sprite_caddy, 0, sizeof(s_sprite_caddy));
+    for (int y = 0; y < SPRITE_CADDY_H; ++y) {
+        for (int x = 0; x < SPRITE_CADDY_W; ++x) {
+            int idx = y * SPRITE_CADDY_W + x;
+            int cx = 10;
+            /* Green Visor */
+            if (y >= 2 && y <= 5 && abs(x - cx) <= 3) s_sprite_caddy[idx] = COLOR_RGB(45, 125, 65);
+            /* Face */
+            if (y >= 6 && y <= 9 && abs(x - cx) <= 3) s_sprite_caddy[idx] = COLOR_RGB(235, 190, 150);
+            /* White Polo */
+            if (y >= 10 && y <= 18 && abs(x - cx) <= 4) s_sprite_caddy[idx] = COLOR_RGB(235, 238, 242);
+            /* Navy Shorts */
+            if (y >= 19 && y <= 24 && abs(x - cx) <= 4) s_sprite_caddy[idx] = COLOR_RGB(35, 55, 95);
+            /* Legs */
+            if (y >= 25 && y <= 29 && (x == cx - 2 || x == cx + 2)) s_sprite_caddy[idx] = COLOR_RGB(235, 190, 150);
+            /* Shoes */
+            if (y >= 30 && y <= 32 && (abs(x - (cx - 2)) <= 1 || abs(x - (cx + 2)) <= 1)) s_sprite_caddy[idx] = COLOR_RGB(60, 60, 60);
+            /* Big Golf Bag over shoulder (x = 16..22, y = 8..26) */
+            if (y >= 8 && y <= 24 && x >= 16 && x <= 22) s_sprite_caddy[idx] = COLOR_RGB(25, 45, 85); /* Navy Bag */
+            if (y >= 6 && y <= 8 && (x == 17 || x == 19 || x == 21)) s_sprite_caddy[idx] = COLOR_RGB(190, 195, 200); /* Club Irons */
         }
     }
-    /* Face & Hair */
-    for (int y = 7; y <= 9; ++y) {
-        for (int x = 10; x <= 13; ++x) {
-            s_sprite_golfer[y * SPRITE_GOLFER_W + x] = COLOR_RGB(235, 190, 145);
-        }
-        s_sprite_golfer[y * SPRITE_GOLFER_W + 9] = COLOR_RGB(90, 60, 35); /* Hair */
-    }
-    /* Red Polo Shirt with shading */
-    for (int y = 10; y <= 18; ++y) {
-        for (int x = 8; x <= 15; ++x) {
-            int lit = (x < 11) ? 25 : -20;
-            s_sprite_golfer[y * SPRITE_GOLFER_W + x] = COLOR_RGB(200 + lit, 35 + lit / 2, 35 + lit / 2);
-        }
-    }
-    /* White golf glove on lead hand */
-    s_sprite_golfer[17 * SPRITE_GOLFER_W + 7] = COLOR_RGB(240, 240, 240);
-    s_sprite_golfer[18 * SPRITE_GOLFER_W + 7] = COLOR_RGB(240, 240, 240);
-    /* Khaki Trousers */
-    for (int y = 19; y <= 27; ++y) {
-        for (int x = 8; x <= 11; ++x)
-            s_sprite_golfer[y * SPRITE_GOLFER_W + x] = COLOR_RGB(190, 170, 130);
-        for (int x = 12; x <= 15; ++x)
-            s_sprite_golfer[y * SPRITE_GOLFER_W + x] = COLOR_RGB(165, 145, 110);
-    }
-    /* White/Black saddle golf shoes */
-    for (int x = 7; x <= 11; ++x) s_sprite_golfer[28 * SPRITE_GOLFER_W + x] = COLOR_RGB(230, 230, 230);
-    for (int x = 12; x <= 16; ++x) s_sprite_golfer[28 * SPRITE_GOLFER_W + x] = COLOR_RGB(230, 230, 230);
-    s_sprite_golfer[28 * SPRITE_GOLFER_W + 9] = COLOR_RGB(40, 40, 40);
-    s_sprite_golfer[28 * SPRITE_GOLFER_W + 14] = COLOR_RGB(40, 40, 40);
-    /* Steel Golf Club (shaft + iron head) */
-    for (int i = 0; i < 13; ++i) {
-        int cx = 13 + i / 2;
-        int cy = 16 + i;
-        if (cx < SPRITE_GOLFER_W && cy < SPRITE_GOLFER_H)
-            s_sprite_golfer[cy * SPRITE_GOLFER_W + cx] = COLOR_RGB(200, 205, 210);
-    }
-    /* Club head near ground */
-    s_sprite_golfer[28 * SPRITE_GOLFER_W + 19] = COLOR_RGB(150, 155, 160);
-    s_sprite_golfer[28 * SPRITE_GOLFER_W + 20] = COLOR_RGB(180, 185, 190);
-
-    /* 13. Generate Golfer Walking Animation Sprites (22x32 x 4 frames) */
-    for (int f = 0; f < 4; ++f) {
-        memset(s_sprite_golfer_walk[f], 0, sizeof(s_sprite_golfer_walk[f]));
-        
-        /* Ground shadow */
-        for (int dy = -2; dy <= 2; ++dy) {
-            for (int dx = -5; dx <= 5; ++dx) {
-                if (dx * dx * 4 + dy * dy * 25 <= 100) {
-                    s_sprite_golfer_walk[f][(30 + dy) * SPRITE_GOLFER_W + (11 + dx)] = COLOR_ARGB(120, 20, 30, 15);
+    for (int f = 0; f < 4; ++f) memcpy(s_sprite_caddy_walk[f], s_sprite_caddy, sizeof(s_sprite_caddy));
+    
+    /* 22. Spectators (5 shirt colors) */
+    uint32_t spec_colors[5] = {
+        COLOR_RGB(225, 65, 65),   /* Red */
+        COLOR_RGB(55, 125, 225),  /* Royal Blue */
+        COLOR_RGB(235, 195, 45),  /* Gold */
+        COLOR_RGB(55, 165, 85),   /* Emerald */
+        COLOR_RGB(240, 240, 245)  /* Crisp White */
+    };
+    for (int c = 0; c < 5; ++c) {
+        for (int f = 0; f < 4; ++f) {
+            memset(s_sprite_spec[c][f], 0, sizeof(s_sprite_spec[0][0]));
+            for (int y = 0; y < SPRITE_SPEC_H; ++y) {
+                for (int x = 0; x < SPRITE_SPEC_W; ++x) {
+                    int idx = y * SPRITE_SPEC_W + x;
+                    int cx = 9;
+                    /* Hair */
+                    if (y >= 2 && y <= 4 && abs(x - cx) <= 3) s_sprite_spec[c][f][idx] = COLOR_RGB(95, 65, 45);
+                    /* Face */
+                    if (y >= 5 && y <= 8 && abs(x - cx) <= 2) s_sprite_spec[c][f][idx] = COLOR_RGB(235, 190, 150);
+                    /* Colorful Shirt */
+                    if (y >= 9 && y <= 16 && abs(x - cx) <= 4) s_sprite_spec[c][f][idx] = spec_colors[c];
+                    /* Arms / Cheering / Clapping */
+                    if (f == 1 && y >= 6 && y <= 12 && (abs(x - (cx - 5)) <= 1 || abs(x - (cx + 5)) <= 1)) {
+                        s_sprite_spec[c][f][idx] = COLOR_RGB(235, 190, 150); /* raised arms cheering */
+                    }
+                    /* Trousers */
+                    if (y >= 17 && y <= 23 && abs(x - cx) <= 3) s_sprite_spec[c][f][idx] = COLOR_RGB(50, 60, 75);
+                    /* Shoes */
+                    if (y >= 24 && y <= 26 && (x == cx - 2 || x == cx + 2)) s_sprite_spec[c][f][idx] = COLOR_RGB(40, 40, 40);
                 }
             }
-        }
-        
-        /* Bobbing offset: body bobs up 1px on passing steps (frames 1 & 3) */
-        int bob = (f == 1 || f == 3) ? -1 : 0;
-        
-        /* White Visor/Cap */
-        for (int y = 4 + bob; y <= 6 + bob; ++y) {
-            for (int x = 9; x <= 14; ++x) {
-                s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x] = (y == 4 + bob) ? COLOR_RGB(250, 250, 250) : COLOR_RGB(220, 220, 220);
-            }
-        }
-        /* Face & Hair */
-        for (int y = 7 + bob; y <= 9 + bob; ++y) {
-            for (int x = 10; x <= 13; ++x) {
-                s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x] = COLOR_RGB(235, 190, 145);
-            }
-            s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + 9] = COLOR_RGB(90, 60, 35);
-        }
-        /* Red Polo Shirt */
-        for (int y = 10 + bob; y <= 18 + bob; ++y) {
-            for (int x = 8; x <= 15; ++x) {
-                int lit = (x < 11) ? 25 : -20;
-                s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + x] = COLOR_RGB(200 + lit, 35 + lit / 2, 35 + lit / 2);
-            }
-        }
-        
-        /* Arm swing */
-        int arm_dx = (f == 0) ? -2 : (f == 2) ? 2 : 0;
-        s_sprite_golfer_walk[f][(16 + bob) * SPRITE_GOLFER_W + (8 + arm_dx)] = COLOR_RGB(235, 190, 145);
-        s_sprite_golfer_walk[f][(17 + bob) * SPRITE_GOLFER_W + (8 + arm_dx)] = COLOR_RGB(240, 240, 240);
-        
-        /* Golf Club slung diagonally behind */
-        for (int i = 0; i < 11; ++i) {
-            int cx = 13 + i / 2;
-            int cy = 11 + bob + i;
-            if (cx < SPRITE_GOLFER_W && cy < SPRITE_GOLFER_H && cy >= 0) {
-                s_sprite_golfer_walk[f][cy * SPRITE_GOLFER_W + cx] = COLOR_RGB(205, 210, 215);
-            }
-        }
-        
-        /* Trousers & Legs animated for 4-phase stride */
-        int l_leg_x = 9, r_leg_x = 13;
-        int l_shoe_y = 28, r_shoe_y = 28;
-        if (f == 0) {
-            l_leg_x = 8; r_leg_x = 14;
-            l_shoe_y = 28; r_shoe_y = 27;
-        } else if (f == 1) {
-            l_leg_x = 10; r_leg_x = 12;
-            l_shoe_y = 27; r_shoe_y = 28;
-        } else if (f == 2) {
-            l_leg_x = 14; r_leg_x = 8;
-            l_shoe_y = 27; r_shoe_y = 28;
-        } else if (f == 3) {
-            l_leg_x = 12; r_leg_x = 10;
-            l_shoe_y = 28; r_shoe_y = 27;
-        }
-        
-        /* Khaki legs */
-        for (int y = 19 + bob; y <= 26; ++y) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                int px1 = l_leg_x + dx;
-                int px2 = r_leg_x + dx;
-                if (px1 >= 0 && px1 < SPRITE_GOLFER_W)
-                    s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + px1] = COLOR_RGB(190, 170, 130);
-                if (px2 >= 0 && px2 < SPRITE_GOLFER_W)
-                    s_sprite_golfer_walk[f][y * SPRITE_GOLFER_W + px2] = COLOR_RGB(165, 145, 110);
-            }
-        }
-        
-        /* White shoes with black saddle */
-        for (int dx = -2; dx <= 1; ++dx) {
-            int px1 = l_leg_x + dx;
-            int px2 = r_leg_x + dx;
-            if (px1 >= 0 && px1 < SPRITE_GOLFER_W && l_shoe_y < SPRITE_GOLFER_H)
-                s_sprite_golfer_walk[f][l_shoe_y * SPRITE_GOLFER_W + px1] = (dx == 0) ? COLOR_RGB(40, 40, 40) : COLOR_RGB(230, 230, 230);
-            if (px2 >= 0 && px2 < SPRITE_GOLFER_W && r_shoe_y < SPRITE_GOLFER_H)
-                s_sprite_golfer_walk[f][r_shoe_y * SPRITE_GOLFER_W + px2] = (dx == 0) ? COLOR_RGB(40, 40, 40) : COLOR_RGB(230, 230, 230);
         }
     }
 }
 
+/* Initialization */
 void render_init(RenderContext *rc, uint32_t *buffer) {
     rc->framebuffer = buffer;
-    rc->camera_x = SCREEN_W / 2 - 32;
-    rc->camera_y = 60;
-    rc->mouse_gx = -1;
-    rc->mouse_gy = -1;
-    rc->mouse_sx = -1;
-    rc->mouse_sy = -1;
+    rc->camera_x = 0;
+    rc->camera_y = 0;
+    rc->mouse_gx = 0;
+    rc->mouse_gy = 0;
+    rc->mouse_sx = 0;
+    rc->mouse_sy = 0;
     rc->mouse_valid = false;
     rc->tick_count = 0;
+    
     generate_procedural_graphics();
-    generate_splash_background(s_splash_art);
 }
 
 void render_free(RenderContext *rc) {
     (void)rc;
 }
 
-/* Projection conversions */
+/* Coordinate conversions */
 void grid_to_screen(int32_t gx, int32_t gy, int32_t elevation, int32_t cam_x, int32_t cam_y, int32_t *sx, int32_t *sy) {
     *sx = (gx - gy) * TILE_HALF_W + cam_x;
     *sy = (gx + gy) * TILE_HALF_H - (elevation * HEIGHT_STEP_PX) + cam_y;
 }
 
 bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, int32_t *out_gx, int32_t *out_gy) {
-    /* Multi-tier inverse isometric raycast test (from highest elevation 3 down to 0) */
-    for (int elev = 3; elev >= 0; --elev) {
-        int32_t unshifted_y = sy - cam_y + (elev * HEIGHT_STEP_PX) - TILE_HALF_H;
-        int32_t unshifted_x = sx - cam_x - TILE_HALF_W;
+    for (int elev = MAX_ELEVATION_TIER; elev >= 0; --elev) {
+        int32_t adj_sy = sy + (elev * HEIGHT_STEP_PX) - cam_y;
+        int32_t adj_sx = sx - cam_x;
         
-        /* 2:1 isometric inverse transformation */
-        int32_t fx = (unshifted_x * 16 + unshifted_y * 32);
-        int32_t fy = (unshifted_y * 32 - unshifted_x * 16);
-        
-        int32_t gx = fx / (TILE_W * TILE_H / 2);
-        int32_t gy = fy / (TILE_W * TILE_H / 2);
-        
-        if (fx < 0) gx--;
-        if (fy < 0) gy--;
+        int32_t gx = (adj_sx / TILE_HALF_W + adj_sy / TILE_HALF_H) / 2;
+        int32_t gy = (adj_sy / TILE_HALF_H - adj_sx / TILE_HALF_W) / 2;
         
         if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
-            if (gs->grid[gx][gy].elevation == (uint8_t)elev) {
+            if (gs->grid[gx][gy].elevation == elev) {
                 *out_gx = gx;
                 *out_gy = gy;
                 return true;
@@ -676,11 +683,11 @@ bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, 
         }
     }
     
-    /* Fallback to lowland plane (elev 1) */
-    int32_t unshifted_y = sy - cam_y + (1 * HEIGHT_STEP_PX) - TILE_HALF_H;
-    int32_t unshifted_x = sx - cam_x - TILE_HALF_W;
-    int32_t gx = (unshifted_x * 16 + unshifted_y * 32) / (TILE_W * TILE_H / 2);
-    int32_t gy = (unshifted_y * 32 - unshifted_x * 16) / (TILE_W * TILE_H / 2);
+    /* Fallback at elevation 0 */
+    int32_t adj_sy = sy - cam_y;
+    int32_t adj_sx = sx - cam_x;
+    int32_t gx = (adj_sx / TILE_HALF_W + adj_sy / TILE_HALF_H) / 2;
+    int32_t gy = (adj_sy / TILE_HALF_H - adj_sx / TILE_HALF_W) / 2;
     if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
         *out_gx = gx;
         *out_gy = gy;
@@ -690,46 +697,10 @@ bool screen_to_grid(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, 
 }
 
 bool screen_to_world_fixed(const GolfState *gs, int32_t sx, int32_t sy, int32_t cam_x, int32_t cam_y, fixed *out_fx, fixed *out_fy) {
-    /* Multi-tier inverse isometric raycast test (from highest elevation 3 down to 0) */
-    for (int elev = 3; elev >= 0; --elev) {
-        int32_t unshifted_y = sy - cam_y + (elev * HEIGHT_STEP_PX) - TILE_HALF_H;
-        int32_t unshifted_x = sx - cam_x - TILE_HALF_W;
-        
-        int32_t fx = (unshifted_x * 16 + unshifted_y * 32);
-        int32_t fy = (unshifted_y * 32 - unshifted_x * 16);
-        
-        int32_t gx = fx / (TILE_W * TILE_H / 2);
-        int32_t gy = fy / (TILE_W * TILE_H / 2);
-        
-        if (fx < 0) gx--;
-        if (fy < 0) gy--;
-        
-        if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
-            if (gs->grid[gx][gy].elevation == (uint8_t)elev) {
-                int32_t rem_x = fx - gx * (TILE_W * TILE_H / 2);
-                int32_t rem_y = fy - gy * (TILE_W * TILE_H / 2);
-                *out_fx = TO_FIXED(gx) + (rem_x << 6);
-                *out_fy = TO_FIXED(gy) + (rem_y << 6);
-                return true;
-            }
-        }
-    }
-    
-    /* Fallback to lowland plane (elev 1) */
-    int32_t unshifted_y = sy - cam_y + (1 * HEIGHT_STEP_PX) - TILE_HALF_H;
-    int32_t unshifted_x = sx - cam_x - TILE_HALF_W;
-    int32_t fx = (unshifted_x * 16 + unshifted_y * 32);
-    int32_t fy = (unshifted_y * 32 - unshifted_x * 16);
-    int32_t gx = fx / (TILE_W * TILE_H / 2);
-    int32_t gy = fy / (TILE_W * TILE_H / 2);
-    if (fx < 0) gx--;
-    if (fy < 0) gy--;
-    
-    if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
-        int32_t rem_x = fx - gx * (TILE_W * TILE_H / 2);
-        int32_t rem_y = fy - gy * (TILE_W * TILE_H / 2);
-        *out_fx = TO_FIXED(gx) + (rem_x << 6);
-        *out_fy = TO_FIXED(gy) + (rem_y << 6);
+    int32_t gx, gy;
+    if (screen_to_grid(gs, sx, sy, cam_x, cam_y, &gx, &gy)) {
+        *out_fx = TO_FIXED(gx) + FIXED_HALF;
+        *out_fy = TO_FIXED(gy) + FIXED_HALF;
         return true;
     }
     return false;
@@ -747,62 +718,61 @@ void render_pan_camera(RenderContext *rc, int32_t dx, int32_t dy) {
     rc->camera_y += dy;
 }
 
-/* Fast Pixel Blitters */
-static inline void set_pixel(RenderContext *rc, int x, int y, uint32_t color) {
-    if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H) {
-        rc->framebuffer[y * SCREEN_W + x] = color;
-    }
-}
-
-static inline void blend_pixel(RenderContext *rc, int x, int y, uint32_t color) {
-    if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H) {
-        uint32_t bg = rc->framebuffer[y * SCREEN_W + x];
-        int a = (color >> 24) & 0xFF;
-        if (a == 255) {
-            rc->framebuffer[y * SCREEN_W + x] = color;
-        } else if (a > 0) {
-            rc->framebuffer[y * SCREEN_W + x] = blend_color(bg, color, a);
+/* UI Blitting Helpers */
+void draw_rect(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color) {
+    for (int dy = 0; dy < h; ++dy) {
+        int py = y + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int dx = 0; dx < w; ++dx) {
+            int px = x + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            rc->framebuffer[py * SCREEN_W + px] = color;
         }
     }
 }
 
-void draw_rect(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color) {
-    int x1 = FMAX(0, x), x2 = FMIN(SCREEN_W, x + w);
-    int y1 = FMAX(0, y), y2 = FMIN(SCREEN_H, y + h);
-    for (int py = y1; py < y2; ++py) {
-        uint32_t *row = &rc->framebuffer[py * SCREEN_W + x1];
-        for (int px = x1; px < x2; ++px) {
-            *row++ = color;
+void draw_rect_alpha(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color, uint8_t alpha) {
+    for (int dy = 0; dy < h; ++dy) {
+        int py = y + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int dx = 0; dx < w; ++dx) {
+            int px = x + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            int idx = py * SCREEN_W + px;
+            rc->framebuffer[idx] = alpha_blend_pixel(rc->framebuffer[idx], color, alpha);
         }
     }
 }
 
 void draw_rect_border(RenderContext *rc, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color) {
-    for (int px = x; px < x + w; ++px) {
-        set_pixel(rc, px, y, color);
-        set_pixel(rc, px, y + h - 1, color);
-    }
-    for (int py = y; py < y + h; ++py) {
-        set_pixel(rc, x, py, color);
-        set_pixel(rc, x + w - 1, py, color);
-    }
+    draw_rect(rc, x, y, w, 1, color);
+    draw_rect(rc, x, y + h - 1, w, 1, color);
+    draw_rect(rc, x, y, 1, h, color);
+    draw_rect(rc, x + w - 1, y, 1, h, color);
 }
 
 void draw_text(RenderContext *rc, int32_t x, int32_t y, const char *str, uint32_t color, bool shadow) {
     if (!str) return;
     int cur_x = x;
     while (*str) {
-        char c = *str++;
-        if (c < 32 || c > 126) c = '?';
-        const uint8_t *glyph = g_font8x8[c - 32];
-        for (int gy = 0; gy < 8; ++gy) {
-            uint8_t row = glyph[gy];
-            for (int gx = 0; gx < 8; ++gx) {
-                if (row & (1 << (7 - gx))) {
-                    if (shadow) {
-                        set_pixel(rc, cur_x + gx + 1, y + gy + 1, COLOR_RGB(10, 10, 10));
+        char ch = *str++;
+        if (ch >= 32 && ch <= 126) {
+            const uint8_t *glyph = g_font8x8[ch - 32];
+            for (int gy = 0; gy < 8; ++gy) {
+                uint8_t row = glyph[gy];
+                for (int gx = 0; gx < 8; ++gx) {
+                    if (row & (0x80 >> gx)) {
+                        int px = cur_x + gx;
+                        int py = y + gy;
+                        if (shadow) {
+                            if (px + 1 < SCREEN_W && py + 1 < SCREEN_H) {
+                                rc->framebuffer[(py + 1) * SCREEN_W + px + 1] = COLOR_RGB(10, 15, 20);
+                            }
+                        }
+                        if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                            rc->framebuffer[py * SCREEN_W + px] = color;
+                        }
                     }
-                    set_pixel(rc, cur_x + gx, y + gy, color);
                 }
             }
         }
@@ -810,321 +780,163 @@ void draw_text(RenderContext *rc, int32_t x, int32_t y, const char *str, uint32_
     }
 }
 
-/* Blits a 64x32 tile diamond sprite with transparency */
-static void blit_tile_diamond(RenderContext *rc, int sx, int sy, const uint32_t *sprite) {
-    for (int py = 0; py < TILE_H; ++py) {
-        int screen_y = sy + py;
-        if (screen_y < 0 || screen_y >= SCREEN_H) continue;
-        
-        const uint32_t *src = &sprite[py * TILE_W];
-        uint32_t *dst = &rc->framebuffer[screen_y * SCREEN_W];
-        
-        for (int px = 0; px < TILE_W; ++px) {
-            int screen_x = sx + px;
-            if (screen_x >= 0 && screen_x < SCREEN_W) {
-                uint32_t col = src[px];
-                if (col != 0) {
-                    dst[screen_x] = col;
+static void draw_text_2x(RenderContext *rc, int32_t x, int32_t y, const char *str, uint32_t color, bool shadow) {
+    if (!str) return;
+    int cur_x = x;
+    while (*str) {
+        char ch = *str++;
+        if (ch >= 32 && ch <= 126) {
+            const uint8_t *glyph = g_font8x8[ch - 32];
+            for (int gy = 0; gy < 8; ++gy) {
+                uint8_t row = glyph[gy];
+                for (int gx = 0; gx < 8; ++gx) {
+                    if (row & (0x80 >> gx)) {
+                        for (int dy = 0; dy < 2; ++dy) {
+                            for (int dx = 0; dx < 2; ++dx) {
+                                int px = cur_x + gx * 2 + dx;
+                                int py = y + gy * 2 + dy;
+                                if (shadow) {
+                                    if (px + 2 < SCREEN_W && py + 2 < SCREEN_H) {
+                                        rc->framebuffer[(py + 2) * SCREEN_W + px + 2] = COLOR_RGB(10, 15, 20);
+                                    }
+                                }
+                                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                    rc->framebuffer[py * SCREEN_W + px] = color;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+        cur_x += 16;
     }
 }
 
-/* Draws vertical cliff skirts to seal gaps */
-static void blit_cliff_skirt(RenderContext *rc, int sx, int sy, int h_sw, int h_se) {
-    /* SW Cliff Face (lit by ambient light) */
-    if (h_sw > 0) {
-        for (int step = 0; step < 32; ++step) {
-            int base_x = sx + step;
-            int base_y = sy + 16 + (step / 2);
-            for (int dy = 0; dy < h_sw; ++dy) {
-                int py = base_y + dy;
-                int px = base_x;
-                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
-                    int tex_idx = (dy % 48) * 64 + (step % 64);
-                    rc->framebuffer[py * SCREEN_W + px] = s_cliff_sw[tex_idx];
-                }
+/* Render Stately 4x3 Country Club Clubhouse */
+static void render_clubhouse(RenderContext *rc, int32_t sx, int32_t sy) {
+    /* Large isometric Country Club mansion with slate gables, brick chimneys, and veranda */
+    int b_w = 110;
+    int b_h = 75;
+    int base_x = sx - 24;
+    int base_y = sy - 45;
+    
+    /* Soft ground drop shadow */
+    for (int dy = 35; dy < 60; ++dy) {
+        for (int dx = 20; dx < 105; ++dx) {
+            int px = base_x + dx;
+            int py = base_y + dy;
+            if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                rc->framebuffer[py * SCREEN_W + px] = alpha_blend_pixel(rc->framebuffer[py * SCREEN_W + px], COLOR_RGB(15, 25, 20), 120);
             }
         }
     }
     
-    /* SE Cliff Face (in shadow) */
-    if (h_se > 0) {
-        for (int step = 0; step < 32; ++step) {
-            int base_x = sx + 32 + step;
-            int base_y = sy + 31 - (step / 2);
-            for (int dy = 0; dy < h_se; ++dy) {
-                int py = base_y + dy;
-                int px = base_x;
-                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
-                    int tex_idx = (dy % 48) * 64 + (step % 64);
-                    rc->framebuffer[py * SCREEN_W + px] = s_cliff_se[tex_idx];
-                }
-            }
-        }
-    }
-}
-
-/* Blit Sprite with color key 0x00000000 */
-static void blit_sprite(RenderContext *rc, int sx, int sy, const uint32_t *sprite, int w, int h) {
-    for (int py = 0; py < h; ++py) {
-        int screen_y = sy + py;
-        if (screen_y < 0 || screen_y >= SCREEN_H) continue;
-        
-        const uint32_t *src = &sprite[py * w];
-        uint32_t *dst = &rc->framebuffer[screen_y * SCREEN_W];
-        
-        for (int px = 0; px < w; ++px) {
-            int screen_x = sx + px;
-            if (screen_x >= 0 && screen_x < SCREEN_W) {
-                uint32_t col = src[px];
-                if (col != 0) {
-                    dst[screen_x] = col;
-                }
-            }
-        }
-    }
-}
-
-/* Draw a glowing diamond outline around hovered tile */
-static void draw_tile_highlight(RenderContext *rc, int sx, int sy, uint32_t color) {
-    /* 4 diamond edges */
-    for (int i = 0; i < 32; ++i) {
-        set_pixel(rc, sx + 31 - i, sy + (i / 2), color);       /* NW */
-        set_pixel(rc, sx + 32 + i, sy + (i / 2), color);       /* NE */
-        set_pixel(rc, sx + 31 - i, sy + 31 - (i / 2), color);  /* SW */
-        set_pixel(rc, sx + 32 + i, sy + 31 - (i / 2), color);  /* SE */
-    }
-}
-
-/* Bresenham line for wind and aim indicators */
-static void draw_line(RenderContext *rc, int x0, int y0, int x1, int y1, uint32_t color, bool dotted) {
-    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy, e2;
-    int count = 0;
-    
-    while (1) {
-        if (!dotted || (count & 2) == 0) {
-            set_pixel(rc, x0, y0, color);
-        }
-        count++;
-        if (x0 == x1 && y0 == y1) break;
-        e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
-    }
-}
-
-/* Render HUD and UI Controls */
-static void render_hud(RenderContext *rc, const GolfState *gs) {
-    char buf[128];
-    
-    /* 1. Top Beveled Status Bar */
-    draw_rect(rc, 0, 0, SCREEN_W, 28, COLOR_RGB(24, 34, 46));
-    draw_rect_border(rc, 0, 0, SCREEN_W, 28, COLOR_RGB(60, 80, 100));
-    set_pixel(rc, 0, 27, COLOR_RGB(15, 20, 28));
-    
-    /* Hole Number, Par & Yardage */
-    snprintf(buf, sizeof(buf), "HOLE 1  PAR %d  %dYDS", gs->par, gs->hole_yards);
-    draw_text(rc, 8, 10, buf, COLOR_RGB(245, 220, 110), true);
-    
-    /* Current Lie / Status */
-    const char *surf_name = "ROUGH";
-    if (gs->ball.current_surf == SURF_FAIRWAY) surf_name = "FAIRWAY";
-    else if (gs->ball.current_surf == SURF_GREEN) surf_name = "GREEN";
-    else if (gs->ball.current_surf == SURF_SAND) surf_name = "SAND";
-    else if (gs->ball.current_surf == SURF_TEE) surf_name = "TEE";
-    
-    snprintf(buf, sizeof(buf), "LIE: %s", surf_name);
-    draw_text(rc, 190, 10, buf, COLOR_RGB(200, 230, 200), true);
-    
-    /* Wind Indicator */
-    int wind_mph = FROM_FIXED(gs->wind.speed);
-    snprintf(buf, sizeof(buf), "WIND: %d MPH", wind_mph);
-    draw_text(rc, 310, 10, buf, COLOR_RGB(180, 210, 255), true);
-    
-    /* Wind Compass Arrow */
-    int w_cx = 418, w_cy = 13;
-    fixed wx = fixed_cos(gs->wind.angle);
-    fixed wy = fixed_sin(gs->wind.angle);
-    int w_tx = w_cx + FROM_FIXED(wx * 7);
-    int w_ty = w_cy + FROM_FIXED(wy * 7);
-    set_pixel(rc, w_cx, w_cy, COLOR_RGB(255, 200, 50));
-    draw_line(rc, w_cx, w_cy, w_tx, w_ty, COLOR_RGB(255, 255, 120), false);
-    
-    /* Randomize Hole Button */
-    bool hover_rand = (rc->mouse_sy >= 4 && rc->mouse_sy <= 24 && rc->mouse_sx >= 432 && rc->mouse_sx <= 544);
-    uint32_t rand_bg = hover_rand ? COLOR_RGB(55, 82, 115) : COLOR_RGB(38, 52, 74);
-    uint32_t rand_border = hover_rand ? COLOR_RGB(255, 225, 90) : COLOR_RGB(215, 175, 55);
-    
-    draw_rect(rc, 432, 4, 112, 20, rand_bg);
-    draw_rect_border(rc, 432, 4, 112, 20, rand_border);
-    /* 3D bevel highlight */
-    for (int bx = 433; bx < 432 + 111; ++bx) set_pixel(rc, bx, 5, hover_rand ? COLOR_RGB(90, 120, 160) : COLOR_RGB(60, 80, 110));
-    for (int by = 5; by < 4 + 19; ++by) set_pixel(rc, 433, by, hover_rand ? COLOR_RGB(90, 120, 160) : COLOR_RGB(60, 80, 110));
-    draw_text(rc, 444, 10, "RANDOM HOLE", hover_rand ? COLOR_RGB(255, 255, 180) : COLOR_RGB(255, 235, 120), true);
-    
-    /* Mode Badge */
-    bool hover_mode = (rc->mouse_sy >= 4 && rc->mouse_sy <= 24 && rc->mouse_sx >= 552 && rc->mouse_sx <= 630);
-    if (gs->mode == MODE_PLAY) {
-        uint32_t bg = hover_mode ? COLOR_RGB(45, 150, 60) : COLOR_RGB(34, 120, 45);
-        uint32_t bd = hover_mode ? COLOR_RGB(130, 240, 140) : COLOR_RGB(90, 210, 100);
-        draw_rect(rc, 552, 4, 78, 20, bg);
-        draw_rect_border(rc, 552, 4, 78, 20, bd);
-        for (int bx = 553; bx < 552 + 77; ++bx) set_pixel(rc, bx, 5, COLOR_RGB(70, 170, 85));
-        for (int by = 5; by < 4 + 19; ++by) set_pixel(rc, 553, by, COLOR_RGB(70, 170, 85));
-        draw_text(rc, 574, 10, "PLAY", COLOR_RGB(255, 255, 255), false);
-    } else {
-        uint32_t bg = hover_mode ? COLOR_RGB(190, 115, 25) : COLOR_RGB(160, 95, 20);
-        uint32_t bd = hover_mode ? COLOR_RGB(255, 210, 80) : COLOR_RGB(240, 180, 50);
-        draw_rect(rc, 552, 4, 78, 20, bg);
-        draw_rect_border(rc, 552, 4, 78, 20, bd);
-        for (int bx = 553; bx < 552 + 77; ++bx) set_pixel(rc, bx, 5, COLOR_RGB(210, 140, 45));
-        for (int by = 5; by < 4 + 19; ++by) set_pixel(rc, 553, by, COLOR_RGB(210, 140, 45));
-        draw_text(rc, 570, 10, "BUILD", COLOR_RGB(255, 255, 255), false);
-    }
-    
-    /* 2. Bottom Control Bar */
-    draw_rect(rc, 0, SCREEN_H - 58, SCREEN_W, 58, COLOR_RGB(24, 34, 46));
-    draw_rect_border(rc, 0, SCREEN_H - 58, SCREEN_W, 58, COLOR_RGB(60, 80, 100));
-    
-    if (gs->mode == MODE_BUILD) {
-        /* Tool selection palette */
-        static const char *tool_labels[TOOL_COUNT] = {
-            "FAIRWAY", "GREEN", "SAND", "ROUGH", "TEE", "PIN", "PINE", "OAK", "ROCK", "DOZE"
-        };
-        int btn_x = 10;
-        for (int i = 0; i < TOOL_COUNT; ++i) {
-            int bw = (i == TOOL_FAIRWAY || i == TOOL_ROUGH) ? 58 : 46;
-            bool active = (gs->current_tool == (BuildTool)i);
+    /* Main Building Blocks (Colonial clapboard & brick) */
+    for (int y = 0; y < b_h; ++y) {
+        for (int x = 0; x < b_w; ++x) {
+            int px = base_x + x;
+            int py = base_y + y;
+            if (px < 0 || px >= SCREEN_W || py < 0 || py >= SCREEN_H) continue;
             
-            uint32_t bg = active ? COLOR_RGB(70, 110, 150) : COLOR_RGB(38, 50, 68);
-            uint32_t bd = active ? COLOR_RGB(255, 220, 80) : COLOR_RGB(80, 100, 130);
+            uint32_t col = 0;
             
-            draw_rect(rc, btn_x, SCREEN_H - 48, bw, 22, bg);
-            draw_rect_border(rc, btn_x, SCREEN_H - 48, bw, 22, bd);
-            draw_text(rc, btn_x + 4, SCREEN_H - 42, tool_labels[i], active ? COLOR_RGB(255, 255, 255) : COLOR_RGB(180, 190, 200), false);
-            btn_x += bw + 4;
+            /* Slate Roof Gables (Pitched gables) */
+            if (y < 28) {
+                int peak_x = 55;
+                if (abs(x - peak_x) <= (y + 1) * 2) {
+                    int shingle = (y % 3 == 0) ? -20 : 10;
+                    col = COLOR_RGB(55 + shingle, 65 + shingle, 80 + shingle);
+                }
+            }
+            /* Brick Chimney on left */
+            if (x >= 20 && x <= 28 && y >= 6 && y <= 35) {
+                int brick = ((x ^ y) & 2) ? 15 : -15;
+                col = COLOR_RGB(165 + brick, 62 + brick, 45);
+            }
+            /* White Weatherboard Walls */
+            if (y >= 28 && y <= 56 && x >= 15 && x <= 95) {
+                int board = (y % 4 == 0) ? -18 : 8;
+                col = COLOR_RGB(232 + board, 236 + board, 240 + board);
+                
+                /* Dormer & Sash Windows with warm interior light */
+                if (y >= 34 && y <= 46 && ((x >= 28 && x <= 38) || (x >= 72 && x <= 82))) {
+                    col = COLOR_RGB(245, 215, 120); /* warm glow */
+                    if (x == 33 || x == 77 || y == 40) col = COLOR_RGB(45, 50, 55); /* mullion */
+                }
+                /* Grand Front Door */
+                if (y >= 42 && y <= 56 && x >= 50 && x <= 60) {
+                    col = COLOR_RGB(95, 45, 25);
+                }
+            }
+            /* Veranda Porch & Steps */
+            if (y > 56 && y <= 66 && x >= 10 && x <= 100) {
+                col = COLOR_RGB(185, 175, 160);
+                if (y == 58 || y == 62 || y == 66) col = COLOR_RGB(120, 110, 100);
+            }
+            
+            if (col != 0) {
+                rc->framebuffer[py * SCREEN_W + px] = col;
+            }
         }
-        
-        /* Brush toggle & Hints */
-        snprintf(buf, sizeof(buf), "BRUSH: %dx%d [B] | TAB: PLAY HOLE | R-DRAG: CAMERA", gs->brush_size, gs->brush_size);
-        draw_text(rc, 12, SCREEN_H - 18, buf, COLOR_RGB(220, 200, 140), true);
-    } else {
-        /* Play Mode HUD */
-        const ClubData *club = golf_get_club_data(gs->current_club);
-        
-        /* Club Box */
-        draw_rect(rc, 10, SCREEN_H - 50, 150, 42, COLOR_RGB(32, 45, 62));
-        draw_rect_border(rc, 10, SCREEN_H - 50, 150, 42, COLOR_RGB(80, 110, 145));
-        draw_text(rc, 16, SCREEN_H - 45, club->name, COLOR_RGB(255, 225, 100), true);
-        snprintf(buf, sizeof(buf), "%d YARDS  [C]", club->nominal_yards);
-        draw_text(rc, 16, SCREEN_H - 25, buf, COLOR_RGB(180, 210, 240), false);
-        
-        /* Shot & Aim Stats */
-        int dist_pin = golf_distance_to_pin_yards(gs);
-        snprintf(buf, sizeof(buf), "STROKE %d", gs->strokes + 1);
-        draw_text(rc, 172, SCREEN_H - 45, buf, COLOR_RGB(255, 255, 255), true);
-        snprintf(buf, sizeof(buf), "AIM:%dY PIN:%d", gs->aim_distance_yds, dist_pin);
-        draw_text(rc, 172, SCREEN_H - 25, buf, COLOR_RGB(160, 230, 180), true);
-        
-        /* 3-Click Swing Gauge (Retro links-style meter) */
-        int meter_x = 310;
-        int meter_y = SCREEN_H - 45;
-        int meter_w = 200;
-        int meter_h = 24;
-        
-        draw_rect(rc, meter_x, meter_y, meter_w, meter_h, COLOR_RGB(15, 20, 26));
-        draw_rect_border(rc, meter_x, meter_y, meter_w, meter_h, COLOR_RGB(100, 120, 140));
-        
-        /* Color gradient fill based on sweetspot and power */
-        for (int px = 0; px < meter_w - 4; ++px) {
-            int ratio = (px * 256) / (meter_w - 4);
-            int r = (ratio * 240) / 256;
-            int g = 220 - (ratio * 140) / 256;
-            int b = 30;
-            draw_rect(rc, meter_x + 2 + px, meter_y + 2, 1, meter_h - 4, COLOR_RGB(r, g, b));
-        }
-        
-        /* Sweetspot notch at sweetspot_center (12.5% mark) */
-        int inner_w = meter_w - 4;
-        int snap_notch_x = meter_x + 2 + FROM_FIXED(FMUL(gs->swing.sweetspot_center, TO_FIXED(inner_w)));
-        
-        bool in_sweetspot = (gs->swing.state == SWING_STATE_ACCURACY &&
-                             FABS(gs->swing.cursor_pos - gs->swing.sweetspot_center) <= gs->swing.sweetspot_width);
-        uint32_t notch_col = in_sweetspot ? COLOR_RGB(255, 255, 120) : COLOR_RGB(255, 255, 255);
-        
-        for (int ny = meter_y + 1; ny < meter_y + meter_h - 1; ++ny) {
-            set_pixel(rc, snap_notch_x, ny, notch_col);
-            set_pixel(rc, snap_notch_x + 1, ny, notch_col);
-        }
-        /* Top and bottom guide arrows for sweetspot */
-        set_pixel(rc, snap_notch_x - 1, meter_y + 1, COLOR_RGB(255, 220, 60));
-        set_pixel(rc, snap_notch_x + 2, meter_y + 1, COLOR_RGB(255, 220, 60));
-        set_pixel(rc, snap_notch_x - 1, meter_y + meter_h - 2, COLOR_RGB(255, 220, 60));
-        set_pixel(rc, snap_notch_x + 2, meter_y + meter_h - 2, COLOR_RGB(255, 220, 60));
-        
-        /* Current Needle Position */
-        fixed needle_ratio = gs->swing.cursor_pos;
-        if (needle_ratio < 0) needle_ratio = 0;
-        if (needle_ratio > FIXED_ONE) needle_ratio = FIXED_ONE;
-        int needle_px = meter_x + 2 + FROM_FIXED(FMUL(needle_ratio, TO_FIXED(inner_w)));
-        
-        for (int ny = meter_y - 2; ny < meter_y + meter_h + 2; ++ny) {
-            set_pixel(rc, needle_px - 1, ny, COLOR_RGB(20, 20, 20));
-            set_pixel(rc, needle_px,     ny, COLOR_RGB(255, 255, 255));
-            set_pixel(rc, needle_px + 1, ny, COLOR_RGB(20, 20, 20));
-        }
-        
-        /* Gauge action hint */
-        const char *gauge_hint = "CLICK MAP: AIM | BAR: SWING";
-        if (gs->swing.state == SWING_STATE_POWER) gauge_hint = "CLICK: SET POWER";
-        else if (gs->swing.state == SWING_STATE_ACCURACY) gauge_hint = in_sweetspot ? ">> SNAP SWEET SPOT NOW! <<" : "CLICK: SNAP SWEET SPOT";
-        else if (gs->swing.state == SWING_STATE_RESOLVED) gauge_hint = "BALL IN PLAY...";
-        
-        draw_text(rc, 310, SCREEN_H - 16, gauge_hint, in_sweetspot ? COLOR_RGB(255, 255, 120) : COLOR_RGB(240, 220, 120), true);
-        
-        /* Aim rotate hints */
-        draw_text(rc, 525, SCREEN_H - 45, "[<] [>] AIM", COLOR_RGB(200, 210, 230), false);
-        draw_text(rc, 525, SCREEN_H - 25, "TAB: BUILD", COLOR_RGB(160, 180, 200), false);
     }
     
-    /* 3. Center Notification Banner */
-    if (gs->banner_timer > 0 && gs->banner_text[0] != '\0') {
-        int text_len = (int)strlen(gs->banner_text);
-        int bw = text_len * 8 + 32;
-        int bh = 32;
-        int bx = (SCREEN_W - bw) / 2;
-        int by = 60;
-        
-        draw_rect(rc, bx, by, bw, bh, COLOR_RGB(20, 28, 40));
-        draw_rect_border(rc, bx, by, bw, bh, COLOR_RGB(230, 190, 70));
-        draw_text(rc, bx + 16, by + 12, gs->banner_text, COLOR_RGB(255, 235, 120), true);
+    /* Club Pennant Flag on Roof Peak */
+    int flag_x = base_x + 55;
+    int flag_y = base_y + 1;
+    draw_rect(rc, flag_x, flag_y - 12, 1, 14, COLOR_RGB(220, 225, 230));
+    draw_rect(rc, flag_x + 1, flag_y - 12, 10, 6, COLOR_RGB(215, 45, 45));
+}
+
+/* Modern Minimap Radar */
+static void render_minimap(RenderContext *rc, const GolfState *gs) {
+    int mm_x = SCREEN_W - 170;
+    int mm_y = 52;
+    int mm_w = 156;
+    int mm_h = 130;
+    
+    /* Dark glass backing */
+    draw_rect_alpha(rc, mm_x, mm_y, mm_w, mm_h, COLOR_RGB(18, 26, 34), 215);
+    draw_rect_border(rc, mm_x, mm_y, mm_w, mm_h, COLOR_RGB(70, 95, 125));
+    draw_text(rc, mm_x + 8, mm_y + 6, "COURSE RADAR", COLOR_RGB(215, 185, 95), true);
+    
+    /* Map scaling: 32 columns x 64 rows into 140x95 px */
+    int map_x = mm_x + 8;
+    int map_y = mm_y + 24;
+    int mw = 140;
+    int mh = 98;
+    
+    for (int gy = 0; gy < GRID_H; ++gy) {
+        int py = map_y + (gy * mh) / GRID_H;
+        for (int gx = 0; gx < GRID_W; ++gx) {
+            int px = map_x + (gx * mw) / GRID_W;
+            uint8_t surf = gs->grid[gx][gy].surface;
+            uint32_t col = COLOR_RGB(45, 85, 35); /* Rough */
+            if (surf == SURF_WATER) col = COLOR_RGB(45, 115, 195);
+            else if (surf == SURF_FAIRWAY) col = COLOR_RGB(85, 175, 45);
+            else if (surf == SURF_GREEN) col = COLOR_RGB(125, 225, 65);
+            else if (surf == SURF_SAND) col = COLOR_RGB(215, 195, 125);
+            else if (surf == SURF_TEE) col = COLOR_RGB(220, 220, 220);
+            else if (surf == SURF_BRIDGE) col = COLOR_RGB(145, 95, 55);
+            
+            rc->framebuffer[py * SCREEN_W + px] = col;
+        }
     }
+    
+    /* Pin blip (Red pulsing) */
+    if (gs->has_pin) {
+        int px = map_x + (gs->pin_gx * mw) / GRID_W;
+        int py = map_y + (gs->pin_gy * mh) / GRID_H;
+        draw_rect(rc, px - 1, py - 1, 3, 3, COLOR_RGB(245, 45, 45));
+    }
+    
+    /* Player / Ball blip (Yellow) */
+    int bx = map_x + (FROM_FIXED(gs->ball.x) * mw) / GRID_W;
+    int by = map_y + (FROM_FIXED(gs->ball.y) * mh) / GRID_H;
+    draw_rect(rc, bx - 1, by - 1, 3, 3, COLOR_RGB(255, 235, 45));
 }
 
-/* Splash Screen Presentation */
-void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
-    memcpy(rc->framebuffer, s_splash_art, sizeof(s_splash_art));
-    
-    /* Subtitle in green ribbon */
-    draw_text(rc, 270, 122, "* A 90s RETRO ISOMETRIC GOLF ENGINE *", COLOR_RGB(255, 235, 110), true);
-    
-    /* Blinking prompt at bottom */
-    draw_rect(rc, 150, 426, 340, 30, COLOR_RGB(18, 26, 36));
-    draw_rect_border(rc, 150, 426, 340, 30, COLOR_RGB(235, 195, 65));
-    
-    bool pulse = (tick_count / 30) & 1;
-    uint32_t txt_col = pulse ? COLOR_RGB(255, 245, 130) : COLOR_RGB(200, 180, 80);
-    draw_text(rc, 172, 437, "[ CLICK OR PRESS SPACE TO TEE OFF ]", txt_col, true);
-    
-    /* Bottom status info */
-    draw_text(rc, 16, SCREEN_H - 16, "DUFFER V1.0 - 100% ANSI C99 FIXED-POINT ENGINE", COLOR_RGB(200, 230, 200), true);
-}
-
-/* Main Frame Render Function */
+/* Main Draw Entrypoint */
 void render_frame(RenderContext *rc, const GolfState *gs) {
     rc->tick_count++;
     
@@ -1133,372 +945,665 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         return;
     }
     
-    /* 1. Clear background to atmospheric sky color (classic soft retro blue) */
-    draw_rect(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(138, 172, 204));
+    /* 1. Clear Framebuffer to Sky Backdrop */
+    uint32_t sky_col = COLOR_RGB(34, 46, 58);
+    for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
+        rc->framebuffer[i] = sky_col;
+    }
     
-    /* 2. Pass 1: Painter's Algorithm Back-to-Front Isometric Ground Surface */
-    for (int gy = 0; gy < GRID_H; ++gy) {
-        for (int gx = 0; gx < GRID_W; ++gx) {
-            const GolfTile *tile = &gs->grid[gx][gy];
-            int elevation = tile->elevation;
+    /* 2. Painter's Algorithm: Back to Front (row 0 to 63) */
+    for (int y = 0; y < GRID_H; ++y) {
+        for (int x = 0; x < GRID_W; ++x) {
+            const GolfTile *tile = &gs->grid[x][y];
+            int32_t sx, sy;
+            grid_to_screen(x, y, tile->elevation, rc->camera_x, rc->camera_y, &sx, &sy);
             
-            int sx, sy;
-            grid_to_screen(gx, gy, elevation, rc->camera_x, rc->camera_y, &sx, &sy);
-            
-            /* Screen frustum culling */
-            if (sx + TILE_W < 0 || sx >= SCREEN_W || sy + TILE_H + 48 < 0 || sy >= SCREEN_H) {
+            /* View frustum clipping */
+            if (sx < -140 || sx > SCREEN_W + 140 || sy < -140 || sy > SCREEN_H + 140) {
                 continue;
             }
             
-            /* Vertical Cliff Skirt Check */
-            int h_sw = 0, h_se = 0;
-            if (gx > 0 && gs->grid[gx - 1][gy].elevation < elevation) {
-                h_sw = (elevation - gs->grid[gx - 1][gy].elevation) * HEIGHT_STEP_PX;
-            }
-            if (gy < GRID_H - 1 && gs->grid[gx][gy + 1].elevation < elevation) {
-                h_se = (elevation - gs->grid[gx][gy + 1].elevation) * HEIGHT_STEP_PX;
-            }
-            if (h_sw > 0 || h_se > 0) {
-                blit_cliff_skirt(rc, sx, sy, h_sw, h_se);
-            }
-            
-            /* Blit Diamond Surface */
-            const uint32_t *sprite = NULL;
-            switch (tile->surface) {
-                case SURF_WATER:
-                    sprite = s_tile_water[(rc->tick_count / 6 + tile->variant) % 4];
-                    break;
-                case SURF_FAIRWAY:
-                    sprite = s_tile_fairway[tile->autotile_mask & 15];
-                    break;
-                case SURF_GREEN:
-                    sprite = s_tile_green[tile->autotile_mask & 15];
-                    break;
-                case SURF_SAND:
-                    sprite = s_tile_sand[tile->autotile_mask & 15];
-                    break;
-                case SURF_TEE:
-                    sprite = s_tile_tee;
-                    break;
-                case SURF_ROUGH:
-                default:
-                    sprite = s_tile_rough[tile->variant % 4];
-                    break;
-            }
-            blit_tile_diamond(rc, sx, sy, sprite);
-            
-            /* Mouse hover highlight */
-            if (rc->mouse_valid && rc->mouse_gx == gx && rc->mouse_gy == gy) {
-                draw_tile_highlight(rc, sx, sy, (gs->mode == MODE_BUILD) ? COLOR_RGB(255, 230, 60) : COLOR_RGB(200, 240, 255));
-            }
-        }
-    }
-    
-    /* 3. Pass 2: Depth-Sorted Entities (Scenery, Pin Flag, Golfer & Ball)
-     * All entities are rendered ON TOP of the terrain surface and sorted by ground contact Y,
-     * ensuring the golfer always walks smoothly OVER the terrain and never sinks into it.
-     */
-    typedef enum {
-        RENT_FLAG = 0,
-        RENT_PINE,
-        RENT_OAK,
-        RENT_ROCK,
-        RENT_GOLFER,
-        RENT_BALL
-    } RenderEntityType;
-
-    typedef struct {
-        int32_t base_sy;
-        int32_t draw_sx;
-        int32_t draw_sy;
-        RenderEntityType type;
-        const uint32_t *sprite;
-        int w, h;
-    } RenderEntityItem;
-
-    #define MAX_RENDER_ENTITIES 512
-    static RenderEntityItem s_entities[MAX_RENDER_ENTITIES];
-    int num_entities = 0;
-
-    /* Collect visible stationary scenery & pin flag */
-    for (int gy = 0; gy < GRID_H; ++gy) {
-        for (int gx = 0; gx < GRID_W; ++gx) {
-            const GolfTile *tile = &gs->grid[gx][gy];
-            int elevation = tile->elevation;
-            
-            int sx, sy;
-            grid_to_screen(gx, gy, elevation, rc->camera_x, rc->camera_y, &sx, &sy);
-            
-            if (sx + 64 < 0 || sx - 32 >= SCREEN_W || sy + 64 < 0 || sy - 48 >= SCREEN_H) {
-                continue;
-            }
-            
-            /* Cup & Pin Flag (4-frame waving pennant) */
-            if (gs->has_pin && gs->pin_gx == gx && gs->pin_gy == gy && num_entities < MAX_RENDER_ENTITIES) {
-                s_entities[num_entities++] = (RenderEntityItem){
-                    .base_sy = sy + 16,
-                    .draw_sx = sx + 24,
-                    .draw_sy = sy - 12,
-                    .type = RENT_FLAG,
-                    .sprite = s_sprite_flag[(rc->tick_count / 8) % 4],
-                    .w = SPRITE_FLAG_W,
-                    .h = SPRITE_FLAG_H
-                };
-            }
-            
-            /* Natural Obstacles */
-            if (tile->feature == FEAT_PINE && num_entities < MAX_RENDER_ENTITIES) {
-                s_entities[num_entities++] = (RenderEntityItem){
-                    .base_sy = sy + 16,
-                    .draw_sx = sx + 16,
-                    .draw_sy = sy - 28,
-                    .type = RENT_PINE,
-                    .sprite = s_sprite_pine,
-                    .w = SPRITE_PINE_W,
-                    .h = SPRITE_PINE_H
-                };
-            } else if (tile->feature == FEAT_OAK && num_entities < MAX_RENDER_ENTITIES) {
-                s_entities[num_entities++] = (RenderEntityItem){
-                    .base_sy = sy + 16,
-                    .draw_sx = sx + 13,
-                    .draw_sy = sy - 26,
-                    .type = RENT_OAK,
-                    .sprite = s_sprite_oak,
-                    .w = SPRITE_OAK_W,
-                    .h = SPRITE_OAK_H
-                };
-            } else if (tile->feature == FEAT_ROCK && num_entities < MAX_RENDER_ENTITIES) {
-                s_entities[num_entities++] = (RenderEntityItem){
-                    .base_sy = sy + 16,
-                    .draw_sx = sx + 20,
-                    .draw_sy = sy + 4,
-                    .type = RENT_ROCK,
-                    .sprite = s_sprite_rock,
-                    .w = SPRITE_ROCK_W,
-                    .h = SPRITE_ROCK_H
-                };
-            }
-        }
-    }
-    
-    /* Collect Golfer Entity */
-    if (gs->mode == MODE_PLAY && num_entities < MAX_RENDER_ENTITIES) {
-        fixed gfx = gs->golfer.x;
-        fixed gfy = gs->golfer.y;
-        fixed gz = (gs->golfer.current_z > 0) ? gs->golfer.current_z : golf_get_ground_z_fixed(gs, gfx, gfy);
-        if (gz < TO_FIXED(HEIGHT_STEP_PX)) gz = TO_FIXED(HEIGHT_STEP_PX);
-        
-        int32_t g_sx = FROM_FIXED(FMUL(gfx - gfy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        int32_t g_sy = FROM_FIXED(FMUL(gfx + gfy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + rc->camera_y + TILE_HALF_H;
-        
-        if (g_sx + SPRITE_GOLFER_W >= 0 && g_sx - SPRITE_GOLFER_W < SCREEN_W &&
-            g_sy >= 0 && g_sy - SPRITE_GOLFER_H < SCREEN_H) {
-            
-            const uint32_t *golfer_spr = s_sprite_golfer;
-            if (gs->golfer.state == GOLFER_STATE_WALKING) {
-                golfer_spr = s_sprite_golfer_walk[gs->golfer.walk_anim_frame & 3];
-            }
-            s_entities[num_entities++] = (RenderEntityItem){
-                .base_sy = g_sy,
-                .draw_sx = g_sx - 11,
-                .draw_sy = g_sy - 30,
-                .type = RENT_GOLFER,
-                .sprite = golfer_spr,
-                .w = SPRITE_GOLFER_W,
-                .h = SPRITE_GOLFER_H
-            };
-        }
-    }
-    
-    /* Collect Ball & Drop Shadow Entity */
-    int32_t ball_ground_sx = 0, ball_ground_sy = 0, ball_screen_y = 0;
-    if (gs->mode == MODE_PLAY && num_entities < MAX_RENDER_ENTITIES) {
-        fixed fx = gs->ball.x;
-        fixed fy = gs->ball.y;
-        ball_ground_sx = FROM_FIXED(FMUL(fx - fy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        ball_ground_sy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
-        ball_screen_y = ball_ground_sy - FROM_FIXED(gs->ball.z - gs->ball.ground_z);
-        
-        if (ball_ground_sx >= -10 && ball_ground_sx < SCREEN_W + 10 &&
-            (ball_ground_sy >= -10 || ball_screen_y >= -10) && ball_screen_y < SCREEN_H + 10) {
-            s_entities[num_entities++] = (RenderEntityItem){
-                .base_sy = ball_ground_sy,
-                .draw_sx = ball_ground_sx,
-                .draw_sy = ball_screen_y,
-                .type = RENT_BALL,
-                .sprite = NULL,
-                .w = 0,
-                .h = 0
-            };
-        }
-    }
-    
-    /* Fast insertion sort by ground contact base_sy */
-    for (int i = 1; i < num_entities; ++i) {
-        RenderEntityItem key = s_entities[i];
-        int j = i - 1;
-        while (j >= 0 && s_entities[j].base_sy > key.base_sy) {
-            s_entities[j + 1] = s_entities[j];
-            j--;
-        }
-        s_entities[j + 1] = key;
-    }
-    
-    /* Render sorted entities from back to front */
-    for (int i = 0; i < num_entities; ++i) {
-        const RenderEntityItem *e = &s_entities[i];
-        if (e->type == RENT_BALL) {
-            /* Draw Ball Ground Drop Shadow */
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dx = -2; dx <= 2; ++dx) {
-                    blend_pixel(rc, ball_ground_sx + dx, ball_ground_sy + dy, COLOR_ARGB(140, 20, 20, 20));
+            /* Cliff Skirt Walls */
+            /* SW Edge: check neighbor (x-1, y) */
+            int32_t sw_elev = (x > 0) ? gs->grid[x - 1][y].elevation : 0;
+            if (tile->elevation > sw_elev) {
+                int drop_h = (tile->elevation - sw_elev) * HEIGHT_STEP_PX;
+                for (int dy = 0; dy < drop_h; ++dy) {
+                    for (int dx = 0; dx < TILE_HALF_W; ++dx) {
+                        int r_py = 16 + (dx / 2) + dy;
+                        int px = sx + dx;
+                        int py = sy + r_py;
+                        if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                            rc->framebuffer[py * SCREEN_W + px] = s_cliff_sw[(dy % 72) * 64 + dx];
+                        }
+                    }
                 }
             }
-            /* Draw Ball (crisp 3x3 white sphere) */
-            set_pixel(rc, ball_ground_sx - 1, ball_screen_y - 1, COLOR_RGB(255, 255, 255));
-            set_pixel(rc, ball_ground_sx,     ball_screen_y - 1, COLOR_RGB(255, 255, 255));
-            set_pixel(rc, ball_ground_sx + 1, ball_screen_y - 1, COLOR_RGB(220, 220, 220));
-            set_pixel(rc, ball_ground_sx - 1, ball_screen_y,     COLOR_RGB(255, 255, 255));
-            set_pixel(rc, ball_ground_sx,     ball_screen_y,     COLOR_RGB(255, 255, 255));
-            set_pixel(rc, ball_ground_sx + 1, ball_screen_y,     COLOR_RGB(200, 200, 200));
-            set_pixel(rc, ball_ground_sx - 1, ball_screen_y + 1, COLOR_RGB(200, 200, 200));
-            set_pixel(rc, ball_ground_sx,     ball_screen_y + 1, COLOR_RGB(180, 180, 180));
-            set_pixel(rc, ball_ground_sx + 1, ball_screen_y + 1, COLOR_RGB(150, 150, 150));
-        } else {
-            blit_sprite(rc, e->draw_sx, e->draw_sy, e->sprite, e->w, e->h);
+            
+            /* SE Edge: check neighbor (x, y+1) */
+            int32_t se_elev = (y < GRID_H - 1) ? gs->grid[x][y + 1].elevation : 0;
+            if (tile->elevation > se_elev) {
+                int drop_h = (tile->elevation - se_elev) * HEIGHT_STEP_PX;
+                for (int dy = 0; dy < drop_h; ++dy) {
+                    for (int dx = 0; dx < TILE_HALF_W; ++dx) {
+                        int r_py = 31 - (dx / 2) + dy;
+                        int px = sx + TILE_HALF_W + dx;
+                        int py = sy + r_py;
+                        if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                            rc->framebuffer[py * SCREEN_W + px] = s_cliff_se[(dy % 72) * 64 + dx];
+                        }
+                    }
+                }
+            }
+            
+            /* Surface Tile Blit */
+            const uint32_t *tile_pixels = s_tile_rough[tile->variant % 4];
+            if (tile->surface == SURF_FAIRWAY) tile_pixels = s_tile_fairway[tile->autotile_mask];
+            else if (tile->surface == SURF_GREEN) tile_pixels = s_tile_green[tile->autotile_mask];
+            else if (tile->surface == SURF_SAND) tile_pixels = s_tile_sand[tile->autotile_mask];
+            else if (tile->surface == SURF_WATER) tile_pixels = s_tile_water[(rc->tick_count / 8) % 4];
+            else if (tile->surface == SURF_CARTPATH) tile_pixels = s_tile_cartpath[tile->autotile_mask];
+            else if (tile->surface == SURF_BRIDGE) tile_pixels = s_tile_bridge[tile->variant % 4];
+            else if (tile->surface == SURF_TEE) tile_pixels = s_tile_tee;
+            
+            /* Slope lighting modifier */
+            float slope_factor = 1.0f;
+            if (x > 0 && x < GRID_W - 1 && y > 0 && y < GRID_H - 1) {
+                int de_x = gs->grid[x + 1][y].elevation - gs->grid[x - 1][y].elevation;
+                int de_y = gs->grid[x][y + 1].elevation - gs->grid[x][y - 1].elevation;
+                slope_factor += (float)(de_x - de_y) * 0.05f;
+                if (slope_factor < 0.75f) slope_factor = 0.75f;
+                if (slope_factor > 1.25f) slope_factor = 1.25f;
+            }
+            
+            for (int py = 0; py < TILE_H; ++py) {
+                int f_py = sy + py;
+                if (f_py < 0 || f_py >= SCREEN_H) continue;
+                for (int px = 0; px < TILE_W; ++px) {
+                    int f_px = sx + px;
+                    if (f_px < 0 || f_px >= SCREEN_W) continue;
+                    uint32_t col = tile_pixels[py * TILE_W + px];
+                    if (col != 0) {
+                        if (slope_factor != 1.0f) col = shade_color(col, slope_factor);
+                        rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            }
+            
+            /* Mouse Hover Cursor in Build Mode */
+            if (gs->mode == MODE_BUILD && rc->mouse_valid) {
+                int rad = (gs->brush_size == 2) ? 1 : 0;
+                if (abs(x - rc->mouse_gx) <= rad && abs(y - rc->mouse_gy) <= rad) {
+                    for (int py = 0; py < TILE_H; ++py) {
+                        int f_py = sy + py;
+                        if (f_py < 0 || f_py >= SCREEN_H) continue;
+                        for (int px = 0; px < TILE_W; ++px) {
+                            int f_px = sx + px;
+                            if (f_px < 0 || f_px >= SCREEN_W) continue;
+                            if (is_in_diamond(px, py, NULL)) {
+                                rc->framebuffer[f_py * SCREEN_W + f_px] = alpha_blend_pixel(rc->framebuffer[f_py * SCREEN_W + f_px], COLOR_RGB(255, 235, 90), 85);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            /* Scenery Features */
+            if (tile->feature == FEAT_CLUBHOUSE) {
+                if (x == gs->clubhouse_gx && y == gs->clubhouse_gy) {
+                    render_clubhouse(rc, sx, sy);
+                }
+            } else if (tile->feature == FEAT_PINE) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_PINE_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_PINE_H + 4;
+                for (int py = 0; py < SPRITE_PINE_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_PINE_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_pine[py * SPRITE_PINE_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_OAK) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_OAK_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_OAK_H + 6;
+                for (int py = 0; py < SPRITE_OAK_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_OAK_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_oak[py * SPRITE_OAK_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_PALM) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_PALM_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_PALM_H + 4;
+                for (int py = 0; py < SPRITE_PALM_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_PALM_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_palm[py * SPRITE_PALM_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_FLOWERING) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_FLOWERING_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_FLOWERING_H + 4;
+                for (int py = 0; py < SPRITE_FLOWERING_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_FLOWERING_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_flowering[py * SPRITE_FLOWERING_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_BUSH) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_BUSH_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_BUSH_H + 2;
+                for (int py = 0; py < SPRITE_BUSH_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_BUSH_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_bush[py * SPRITE_BUSH_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_FLOWERS) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_FLOWERS_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_FLOWERS_H;
+                for (int py = 0; py < SPRITE_FLOWERS_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_FLOWERS_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_flowers[py * SPRITE_FLOWERS_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_ROCK) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_ROCK_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_ROCK_H + 2;
+                for (int py = 0; py < SPRITE_ROCK_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_ROCK_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_rock[py * SPRITE_ROCK_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_BENCH) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_BENCH_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_BENCH_H;
+                for (int py = 0; py < SPRITE_BENCH_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_BENCH_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_bench[py * SPRITE_BENCH_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            } else if (tile->feature == FEAT_CART) {
+                int sp_x = sx + TILE_HALF_W - SPRITE_CART_W / 2;
+                int sp_y = sy + TILE_HALF_H - SPRITE_CART_H + 2;
+                for (int py = 0; py < SPRITE_CART_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_CART_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_cart[py * SPRITE_CART_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            }
+            
+            /* Pin Flag */
+            if (gs->has_pin && x == gs->pin_gx && y == gs->pin_gy) {
+                int sp_x = sx + TILE_HALF_W - 4;
+                int sp_y = sy + TILE_HALF_H - SPRITE_FLAG_H + 2;
+                int anim_f = (rc->tick_count / 10) % 4;
+                for (int py = 0; py < SPRITE_FLAG_H; ++py) {
+                    int f_py = sp_y + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_FLAG_W; ++px) {
+                        int f_px = sp_x + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = s_sprite_flag[anim_f][py * SPRITE_FLAG_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            }
+            
+            /* Spectators standing at this tile */
+            for (int i = 0; i < gs->spectator_count; ++i) {
+                const SpectatorEntity *sp = &gs->spectators[i];
+                if (sp->active && sp->gx == x && sp->gy == y) {
+                    int sp_x = sx + TILE_HALF_W - SPRITE_SPEC_W / 2;
+                    int sp_y = sy + TILE_HALF_H - SPRITE_SPEC_H + 2;
+                    int anim_f = (sp->state == SPEC_STATE_CHEERING) ? sp->anim_frame : 0;
+                    for (int py = 0; py < SPRITE_SPEC_H; ++py) {
+                        int f_py = sp_y + py;
+                        if (f_py < 0 || f_py >= SCREEN_H) continue;
+                        for (int px = 0; px < SPRITE_SPEC_W; ++px) {
+                            int f_px = sp_x + px;
+                            if (f_px < 0 || f_px >= SCREEN_W) continue;
+                            uint32_t col = s_sprite_spec[sp->shirt_color_idx % 5][anim_f % 4][py * SPRITE_SPEC_W + px];
+                            if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                        }
+                    }
+                }
+            }
+            
+            /* Caddy */
+            if (gs->mode == MODE_PLAY && FROM_FIXED(gs->caddy.x) == x && FROM_FIXED(gs->caddy.y) == y) {
+                int c_sx = FROM_FIXED(FMUL(gs->caddy.x - gs->caddy.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W - SPRITE_CADDY_W / 2;
+                int c_sy = FROM_FIXED(FMUL(gs->caddy.x + gs->caddy.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->caddy.current_z) + rc->camera_y + TILE_HALF_H - SPRITE_CADDY_H;
+                const uint32_t *c_spr = (gs->caddy.state == CADDY_STATE_FOLLOWING) ? s_sprite_caddy_walk[gs->caddy.walk_anim_frame % 4] : s_sprite_caddy;
+                for (int py = 0; py < SPRITE_CADDY_H; ++py) {
+                    int f_py = c_sy + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_CADDY_W; ++px) {
+                        int f_px = c_sx + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = c_spr[py * SPRITE_CADDY_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            }
+            
+            /* Golfer Character */
+            if (gs->mode == MODE_PLAY && FROM_FIXED(gs->golfer.x) == x && FROM_FIXED(gs->golfer.y) == y) {
+                int g_sx = FROM_FIXED(FMUL(gs->golfer.x - gs->golfer.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W - SPRITE_GOLFER_W / 2;
+                int g_sy = FROM_FIXED(FMUL(gs->golfer.x + gs->golfer.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->golfer.current_z) + rc->camera_y + TILE_HALF_H - SPRITE_GOLFER_H;
+                
+                const uint32_t *g_spr = (gs->golfer.state == GOLFER_STATE_WALKING) ? s_sprite_golfer_walk[gs->golfer.walk_anim_frame % 4] : s_sprite_golfer;
+                for (int py = 0; py < SPRITE_GOLFER_H; ++py) {
+                    int f_py = g_sy + py;
+                    if (f_py < 0 || f_py >= SCREEN_H) continue;
+                    for (int px = 0; px < SPRITE_GOLFER_W; ++px) {
+                        int f_px = g_sx + px;
+                        if (f_px < 0 || f_px >= SCREEN_W) continue;
+                        uint32_t col = g_spr[py * SPRITE_GOLFER_W + px];
+                        if (col != 0) rc->framebuffer[f_py * SCREEN_W + f_px] = col;
+                    }
+                }
+            }
+            
+            /* Ball Shadow & Ball */
+            if (FROM_FIXED(gs->ball.x) == x && FROM_FIXED(gs->ball.y) == y) {
+                int bsx = FROM_FIXED(FMUL(gs->ball.x - gs->ball.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+                int bsy = FROM_FIXED(FMUL(gs->ball.x + gs->ball.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
+                
+                /* Ground Drop Shadow */
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -2; dx <= 2; ++dx) {
+                        int px = bsx + dx;
+                        int py = bsy + dy;
+                        if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                            rc->framebuffer[py * SCREEN_W + px] = alpha_blend_pixel(rc->framebuffer[py * SCREEN_W + px], COLOR_RGB(10, 15, 20), 120);
+                        }
+                    }
+                }
+                
+                /* Elevated Ball */
+                int ball_screen_y = bsy - FROM_FIXED(gs->ball.z - gs->ball.ground_z);
+                for (int dy = -2; dy <= 2; ++dy) {
+                    for (int dx = -2; dx <= 2; ++dx) {
+                        if (dx * dx + dy * dy <= 4) {
+                            int px = bsx + dx;
+                            int py = ball_screen_y + dy;
+                            if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                uint32_t bcol = (dx == -1 && dy == -1) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(220, 225, 230);
+                                rc->framebuffer[py * SCREEN_W + px] = bcol;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
-    /* 3. Aim Line & Landing Reticle in Play Mode */
+    /* 3. Aim Line & Reticle in Play Mode */
     if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE) {
-        fixed start_fx = gs->ball.x;
-        fixed start_fy = gs->ball.y;
-        fixed end_fx = gs->aim_target_x;
-        fixed end_fy = gs->aim_target_y;
+        int bsx = FROM_FIXED(FMUL(gs->ball.x - gs->ball.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        int bsy = FROM_FIXED(FMUL(gs->ball.x + gs->ball.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
         
-        fixed start_gz = golf_get_ground_z_fixed(gs, start_fx, start_fy);
-        fixed end_gz = golf_get_ground_z_fixed(gs, end_fx, end_fy);
+        fixed gz_aim = golf_get_ground_z_fixed(gs, gs->aim_target_x, gs->aim_target_y);
+        int asx = FROM_FIXED(FMUL(gs->aim_target_x - gs->aim_target_y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        int asy = FROM_FIXED(FMUL(gs->aim_target_x + gs->aim_target_y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz_aim) + rc->camera_y + TILE_HALF_H;
         
-        int32_t sx0 = FROM_FIXED(FMUL(start_fx - start_fy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        int32_t sy0 = FROM_FIXED(FMUL(start_fx + start_fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(start_gz) + rc->camera_y + TILE_HALF_H;
-        
-        int32_t sx1 = FROM_FIXED(FMUL(end_fx - end_fy, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
-        int32_t sy1 = FROM_FIXED(FMUL(end_fx + end_fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(end_gz) + rc->camera_y + TILE_HALF_H;
-        
-        /* Draw dual-layer dotted trajectory line */
-        draw_line(rc, sx0, sy0, sx1, sy1, COLOR_RGB(255, 235, 80), true);
-        
-        /* Target Reticle at aim landing spot */
-        /* Outer ring */
-        for (int dy = -6; dy <= 6; ++dy) {
-            for (int dx = -6; dx <= 6; ++dx) {
-                int r2 = dx * dx + dy * dy;
-                if (r2 >= 28 && r2 <= 36) {
-                    set_pixel(rc, sx1 + dx, sy1 + dy, COLOR_RGB(255, 255, 255));
-                }
+        /* Dashed Line */
+        int steps = 24;
+        for (int i = 0; i <= steps; ++i) {
+            if ((i % 2) == 0) continue;
+            int px = bsx + ((asx - bsx) * i) / steps;
+            int py = bsy + ((asy - bsy) * i) / steps;
+            if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 235, 90);
             }
         }
-        /* Inner ring */
-        for (int dy = -3; dy <= 3; ++dy) {
-            for (int dx = -3; dx <= 3; ++dx) {
-                int r2 = dx * dx + dy * dy;
-                if (r2 >= 7 && r2 <= 11) {
-                    set_pixel(rc, sx1 + dx, sy1 + dy, COLOR_RGB(255, 225, 40));
-                }
+        
+        /* Landing Reticle Ring */
+        for (int a = 0; a < 256; a += 16) {
+            int rx = asx + FROM_FIXED(FMUL(TO_FIXED(8), fixed_cos((uint8_t)a)));
+            int ry = asy + FROM_FIXED(FMUL(TO_FIXED(4), fixed_sin((uint8_t)a)));
+            if (rx >= 0 && rx < SCREEN_W && ry >= 0 && ry < SCREEN_H) {
+                rc->framebuffer[ry * SCREEN_W + rx] = COLOR_RGB(255, 235, 90);
             }
         }
-        /* Center bullseye */
-        set_pixel(rc, sx1, sy1, COLOR_RGB(255, 60, 60));
-        set_pixel(rc, sx1 - 1, sy1, COLOR_RGB(255, 200, 60));
-        set_pixel(rc, sx1 + 1, sy1, COLOR_RGB(255, 200, 60));
-        set_pixel(rc, sx1, sy1 - 1, COLOR_RGB(255, 200, 60));
-        set_pixel(rc, sx1, sy1 + 1, COLOR_RGB(255, 200, 60));
         
-        /* Crosshairs */
-        set_pixel(rc, sx1 - 8, sy1, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1 - 7, sy1, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1 + 7, sy1, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1 + 8, sy1, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1, sy1 - 8, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1, sy1 - 7, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1, sy1 + 7, COLOR_RGB(255, 240, 80));
-        set_pixel(rc, sx1, sy1 + 8, COLOR_RGB(255, 240, 80));
+        char aim_buf[32];
+        snprintf(aim_buf, sizeof(aim_buf), "%d YDS", gs->aim_distance_yds);
+        draw_text(rc, asx - 18, asy - 14, aim_buf, COLOR_RGB(255, 245, 120), true);
+    }
+    
+    /* 4. Minimap Radar */
+    render_minimap(rc, gs);
+    
+    /* 5. Modern Glassmorphism HUD Overlay */
+    /* Top Status Bar (0..46 px) */
+    draw_rect_alpha(rc, 0, 0, SCREEN_W, 46, COLOR_RGB(16, 24, 32), 225);
+    draw_rect(rc, 0, 46, SCREEN_W, 1, COLOR_RGB(65, 85, 110));
+    
+    /* Title Badge */
+    draw_text_2x(rc, 14, 8, "DUFFER PRO", COLOR_RGB(235, 195, 65), true);
+    draw_text(rc, 14, 30, "CHAMPIONSHIP GOLF CLUB", COLOR_RGB(155, 185, 215), false);
+    
+    /* Hole & Score Panel */
+    char stat_buf[128];
+    snprintf(stat_buf, sizeof(stat_buf), "HOLE 1  |  PAR %d  |  %d YDS", gs->par, gs->hole_yards);
+    draw_text(rc, 210, 10, stat_buf, COLOR_RGB(240, 245, 250), true);
+    char stroke_buf[64];
+    snprintf(stroke_buf, sizeof(stroke_buf), "STROKE %d", gs->strokes);
+    draw_text(rc, 210, 26, stroke_buf, COLOR_RGB(200, 220, 240), true);
+    
+    /* SimGolf Fun Rating Stars */
+    int stars = (gs->fun_rating * 5) / 100;
+    char star_buf[64];
+    snprintf(star_buf, sizeof(star_buf), "FUN: %d/5 STARS (%d%%)", stars, gs->fun_rating);
+    draw_text(rc, 460, 10, star_buf, COLOR_RGB(255, 215, 65), true);
+    
+    /* Economy Funds */
+    char fund_buf[64];
+    snprintf(fund_buf, sizeof(fund_buf), "FUNDS: $%d", gs->club_funds);
+    draw_text(rc, 460, 26, fund_buf, COLOR_RGB(115, 225, 115), true);
+    
+    /* Top Bar Buttons: Randomize Hole and Mode Selector */
+    int btn_rand_x = SCREEN_W - 275;
+    draw_rect_alpha(rc, btn_rand_x, 8, 125, 30, COLOR_RGB(35, 55, 75), 210);
+    draw_rect_border(rc, btn_rand_x, 8, 125, 30, COLOR_RGB(85, 125, 165));
+    draw_text(rc, btn_rand_x + 10, 17, "RANDOM HOLE", COLOR_RGB(255, 255, 255), true);
+    
+    int btn_mode_x = SCREEN_W - 140;
+    uint32_t mode_col = (gs->mode == MODE_PLAY) ? COLOR_RGB(45, 135, 65) : COLOR_RGB(175, 115, 35);
+    draw_rect_alpha(rc, btn_mode_x, 8, 125, 30, mode_col, 225);
+    draw_rect_border(rc, btn_mode_x, 8, 125, 30, COLOR_RGB(255, 255, 255));
+    draw_text(rc, btn_mode_x + 18, 17, (gs->mode == MODE_PLAY) ? "PLAY MODE" : "DESIGN MODE", COLOR_RGB(255, 255, 255), true);
+    
+    /* 6. Bottom Control Deck (Height 70 px) */
+    int btm_y = SCREEN_H - 70;
+    draw_rect_alpha(rc, 0, btm_y, SCREEN_W, 70, COLOR_RGB(16, 24, 32), 235);
+    draw_rect(rc, 0, btm_y, SCREEN_W, 1, COLOR_RGB(65, 85, 110));
+    
+    if (gs->mode == MODE_BUILD) {
+        /* Design Mode: Category Tabs at Top of Deck */
+        int tab_w = 110;
+        for (int c = 0; c < BUILD_CAT_COUNT; ++c) {
+            int tx = 10 + c * (tab_w + 6);
+            int ty = btm_y - 24;
+            bool active = (gs->build_category == (BuildCategory)c);
+            draw_rect_alpha(rc, tx, ty, tab_w, 24, active ? COLOR_RGB(45, 75, 105) : COLOR_RGB(25, 35, 45), 220);
+            draw_rect_border(rc, tx, ty, tab_w, 24, active ? COLOR_RGB(235, 195, 65) : COLOR_RGB(60, 75, 90));
+            const char *cat_names[3] = { "1. TERRAIN", "2. COURSE", "3. SCENERY" };
+            draw_text(rc, tx + 12, ty + 7, cat_names[c], active ? COLOR_RGB(255, 255, 255) : COLOR_RGB(165, 175, 185), true);
+        }
         
-        /* Floating yardage badge above aiming spot */
-        char badge_buf[32];
-        snprintf(badge_buf, sizeof(badge_buf), "%d YDS", gs->aim_distance_yds);
-        int b_len = (int)strlen(badge_buf);
-        int b_w = b_len * 8 + 8;
-        int b_x = sx1 - b_w / 2;
-        int b_y = sy1 - 22;
-        if (b_x >= 4 && b_x + b_w < SCREEN_W - 4 && b_y >= 32) {
-            draw_rect(rc, b_x, b_y, b_w, 13, COLOR_RGB(16, 24, 34));
-            draw_rect_border(rc, b_x, b_y, b_w, 13, COLOR_RGB(255, 220, 70));
-            draw_text(rc, b_x + 4, b_y + 3, badge_buf, COLOR_RGB(255, 245, 150), false);
+        /* Tool buttons based on active tab */
+        int btn_x = 10;
+        int btn_y = btm_y + 8;
+        int bw = 85;
+        int bh = 32;
+        
+        if (gs->build_category == BUILD_CAT_TERRAIN) {
+            BuildTool t_list[8] = { TOOL_FAIRWAY, TOOL_GREEN, TOOL_SAND, TOOL_ROUGH, TOOL_WATER, TOOL_CARTPATH, TOOL_RAISE, TOOL_LOWER };
+            const char *t_names[8] = { "FAIRWAY", "GREEN", "SAND", "ROUGH", "WATER", "PATH", "RAISE +", "LOWER -" };
+            for (int i = 0; i < 8; ++i) {
+                bool sel = (gs->current_tool == t_list[i]);
+                draw_rect_alpha(rc, btn_x, btn_y, bw, bh, sel ? COLOR_RGB(55, 105, 75) : COLOR_RGB(28, 42, 54), 210);
+                draw_rect_border(rc, btn_x, btn_y, bw, bh, sel ? COLOR_RGB(255, 235, 90) : COLOR_RGB(70, 90, 110));
+                draw_text(rc, btn_x + 12, btn_y + 11, t_names[i], COLOR_RGB(255, 255, 255), true);
+                btn_x += bw + 8;
+            }
+            /* Bulldoze button */
+            bool sel_b = (gs->current_tool == TOOL_BULLDOZE);
+            draw_rect_alpha(rc, btn_x, btn_y, bw, bh, sel_b ? COLOR_RGB(165, 45, 45) : COLOR_RGB(45, 25, 25), 210);
+            draw_rect_border(rc, btn_x, btn_y, bw, bh, sel_b ? COLOR_RGB(255, 120, 120) : COLOR_RGB(95, 50, 50));
+            draw_text(rc, btn_x + 10, btn_y + 11, "BULLDOZE", COLOR_RGB(255, 255, 255), true);
+        } else if (gs->build_category == BUILD_CAT_COURSE) {
+            BuildTool t_list[5] = { TOOL_TEE, TOOL_PIN, TOOL_BRIDGE, TOOL_BENCH, TOOL_CART };
+            const char *t_names[5] = { "TEE BOX", "CUP / PIN", "BRIDGE", "BENCH", "GOLF CART" };
+            for (int i = 0; i < 5; ++i) {
+                bool sel = (gs->current_tool == t_list[i]);
+                draw_rect_alpha(rc, btn_x, btn_y, bw + 10, bh, sel ? COLOR_RGB(55, 105, 75) : COLOR_RGB(28, 42, 54), 210);
+                draw_rect_border(rc, btn_x, btn_y, bw + 10, bh, sel ? COLOR_RGB(255, 235, 90) : COLOR_RGB(70, 90, 110));
+                draw_text(rc, btn_x + 10, btn_y + 11, t_names[i], COLOR_RGB(255, 255, 255), true);
+                btn_x += bw + 18;
+            }
+        } else if (gs->build_category == BUILD_CAT_SCENERY) {
+            BuildTool t_list[8] = { TOOL_PINE, TOOL_OAK, TOOL_PALM, TOOL_FLOWERING, TOOL_BUSH, TOOL_FLOWERS, TOOL_ROCK, TOOL_CLUBHOUSE };
+            const char *t_names[8] = { "PINE", "OAK", "PALM", "CHERRY", "AZALEA", "FLOWERS", "ROCK", "CLUBHOUSE" };
+            for (int i = 0; i < 8; ++i) {
+                bool sel = (gs->current_tool == t_list[i]);
+                int w_btn = (i == 7) ? 95 : bw;
+                draw_rect_alpha(rc, btn_x, btn_y, w_btn, bh, sel ? COLOR_RGB(55, 105, 75) : COLOR_RGB(28, 42, 54), 210);
+                draw_rect_border(rc, btn_x, btn_y, w_btn, bh, sel ? COLOR_RGB(255, 235, 90) : COLOR_RGB(70, 90, 110));
+                draw_text(rc, btn_x + 8, btn_y + 11, t_names[i], COLOR_RGB(255, 255, 255), true);
+                btn_x += w_btn + 6;
+            }
+        }
+        
+        /* Brush Size toggle right */
+        int brush_x = SCREEN_W - 130;
+        draw_rect_alpha(rc, brush_x, btn_y, 115, bh, COLOR_RGB(35, 55, 75), 210);
+        draw_rect_border(rc, brush_x, btn_y, 115, bh, COLOR_RGB(105, 145, 185));
+        char b_buf[32];
+        snprintf(b_buf, sizeof(b_buf), "BRUSH: %s", (gs->brush_size == 1) ? "1x1" : "3x3");
+        draw_text(rc, brush_x + 12, btn_y + 11, b_buf, COLOR_RGB(255, 255, 255), true);
+        
+        /* Tooltip Guidance */
+        draw_text(rc, 14, btm_y + 48, "LEFT CLICK to paint / sculpt / place  |  RIGHT DRAG to pan camera  |  TAB to switch modes", COLOR_RGB(145, 175, 195), false);
+    } else {
+        /* Play Mode HUD: Club Card, Aim Info, and Modern Swing Gauge */
+        /* Club Card */
+        draw_rect_alpha(rc, 14, btm_y + 8, 160, 52, COLOR_RGB(25, 38, 52), 220);
+        draw_rect_border(rc, 14, btm_y + 8, 160, 52, COLOR_RGB(75, 115, 155));
+        const ClubData *cdata = golf_get_club_data(gs->current_club);
+        draw_text(rc, 24, btm_y + 14, cdata->name, COLOR_RGB(255, 235, 90), true);
+        char c_yds[32];
+        snprintf(c_yds, sizeof(c_yds), "MAX: %d YARDS", cdata->nominal_yards);
+        draw_text(rc, 24, btm_y + 28, c_yds, COLOR_RGB(215, 225, 235), false);
+        draw_text(rc, 24, btm_y + 42, "[C] CHANGE CLUB", COLOR_RGB(135, 175, 205), false);
+        
+        /* Wind & Target Card */
+        draw_rect_alpha(rc, 184, btm_y + 8, 150, 52, COLOR_RGB(25, 38, 52), 220);
+        draw_rect_border(rc, 184, btm_y + 8, 150, 52, COLOR_RGB(75, 115, 155));
+        char w_buf[32];
+        snprintf(w_buf, sizeof(w_buf), "WIND: %d MPH", gs->wind.speed);
+        draw_text(rc, 194, btm_y + 14, w_buf, COLOR_RGB(135, 215, 255), true);
+        char pin_buf[32];
+        snprintf(pin_buf, sizeof(pin_buf), "TO PIN: %d YDS", golf_distance_to_pin_yards(gs));
+        draw_text(rc, 194, btm_y + 28, pin_buf, COLOR_RGB(240, 245, 250), false);
+        draw_text(rc, 194, btm_y + 42, "CLICK MAP TO AIM", COLOR_RGB(135, 175, 205), false);
+        
+        /* 3-Click Precision Swing Gauge */
+        int sg_x = 350;
+        int sg_y = btm_y + 10;
+        int sg_w = 340;
+        int sg_h = 48;
+        draw_rect_alpha(rc, sg_x, sg_y, sg_w, sg_h, COLOR_RGB(22, 32, 44), 235);
+        draw_rect_border(rc, sg_x, sg_y, sg_w, sg_h, COLOR_RGB(95, 135, 175));
+        
+        /* Power meter track */
+        int trk_x = sg_x + 15;
+        int trk_y = sg_y + 10;
+        int trk_w = 310;
+        int trk_h = 16;
+        draw_rect(rc, trk_x, trk_y, trk_w, trk_h, COLOR_RGB(35, 45, 55));
+        draw_rect_border(rc, trk_x, trk_y, trk_w, trk_h, COLOR_RGB(75, 90, 110));
+        
+        /* Golden Sweet Spot Zone */
+        int sw_x = trk_x + (trk_w * gs->swing.sweetspot_center) / FIXED_ONE;
+        int sw_w = (trk_w * gs->swing.sweetspot_width * 2) / FIXED_ONE;
+        draw_rect(rc, sw_x - sw_w / 2, trk_y + 1, sw_w, trk_h - 2, COLOR_RGB(235, 195, 45));
+        
+        /* Locked Power fill if locked */
+        if (gs->swing.state >= SWING_STATE_ACCURACY) {
+            int fill_w = (trk_w * gs->swing.locked_power) / FIXED_ONE;
+            draw_rect_alpha(rc, trk_x + 1, trk_y + 1, fill_w, trk_h - 2, COLOR_RGB(65, 185, 95), 180);
+        }
+        
+        /* Moving Needle Cursor */
+        int needle_x = trk_x + (trk_w * gs->swing.cursor_pos) / FIXED_ONE;
+        draw_rect(rc, needle_x - 1, trk_y - 3, 3, trk_h + 6, COLOR_RGB(255, 255, 255));
+        
+        /* Status prompt text */
+        if (gs->swing.state == SWING_STATE_READY) {
+            draw_text(rc, sg_x + 55, sg_y + 32, "SPACE OR CLICK BALL TO START SWING", COLOR_RGB(255, 235, 90), true);
+        } else if (gs->swing.state == SWING_STATE_POWER) {
+            draw_text(rc, sg_x + 85, sg_y + 32, "CLICK TO LOCK POWER (0-100%)", COLOR_RGB(255, 245, 120), true);
+        } else if (gs->swing.state == SWING_STATE_ACCURACY) {
+            draw_text(rc, sg_x + 75, sg_y + 32, "CLICK IN GOLD TO SNAP SWEET SPOT!", COLOR_RGB(255, 205, 45), true);
+        } else {
+            draw_text(rc, sg_x + 115, sg_y + 32, "BALL IN FLIGHT...", COLOR_RGB(165, 215, 255), true);
         }
     }
     
-    /* 4. Render HUD & UI */
-    render_hud(rc, gs);
+    /* 7. Floating Notification Banner */
+    if (gs->banner_timer > 0) {
+        int ban_w = 480;
+        int ban_h = 36;
+        int ban_x = SCREEN_W / 2 - ban_w / 2;
+        int ban_y = 65;
+        draw_rect_alpha(rc, ban_x, ban_y, ban_w, ban_h, COLOR_RGB(15, 25, 35), 235);
+        draw_rect_border(rc, ban_x, ban_y, ban_w, ban_h, COLOR_RGB(255, 215, 65));
+        int text_len = (int)strlen(gs->banner_text);
+        int tx = ban_x + (ban_w - text_len * 8) / 2;
+        draw_text(rc, tx, ban_y + 13, gs->banner_text, COLOR_RGB(255, 245, 120), true);
+    }
 }
 
-bool render_save_bmp(const RenderContext *rc, const char *filename) {
-    if (!rc || !rc->framebuffer || !filename) return false;
+/* Splash Screen Renderer scaled to 1024x768 */
+void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
+    /* Background Gradient */
+    for (int y = 0; y < SCREEN_H; ++y) {
+        float t = (float)y / (float)SCREEN_H;
+        int r = (int)(25.0f * (1.0f - t) + 15.0f * t);
+        int g = (int)(55.0f * (1.0f - t) + 35.0f * t);
+        int b = (int)(95.0f * (1.0f - t) + 50.0f * t);
+        uint32_t col = COLOR_RGB(r, g, b);
+        for (int x = 0; x < SCREEN_W; ++x) {
+            rc->framebuffer[y * SCREEN_W + x] = col;
+        }
+    }
     
+    /* Bilinear / Nearest Scale of Retro Splash Art into Center */
+    static uint32_t s_art_buf[640 * 480];
+    static bool s_art_init = false;
+    if (!s_art_init) {
+        generate_splash_background(s_art_buf);
+        s_art_init = true;
+    }
+    
+    int dst_x0 = 80;
+    int dst_y0 = 60;
+    int dst_w = 864;
+    int dst_h = 600;
+    
+    for (int dy = 0; dy < dst_h; ++dy) {
+        int py = dst_y0 + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        int src_y = (dy * 480) / dst_h;
+        for (int dx = 0; dx < dst_w; ++dx) {
+            int px = dst_x0 + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            int src_x = (dx * 640) / dst_w;
+            rc->framebuffer[py * SCREEN_W + px] = s_art_buf[src_y * 640 + src_x];
+        }
+    }
+    
+    /* Frame border */
+    draw_rect_border(rc, dst_x0, dst_y0, dst_w, dst_h, COLOR_RGB(235, 195, 65));
+    
+    /* Pulsing Prompt */
+    if ((tick_count / 30) % 2 == 0) {
+        const char *prompt = "--- CLICK ANYWHERE OR PRESS SPACE TO ENTER DUFFER PRO ---";
+        int tx = SCREEN_W / 2 - (int)strlen(prompt) * 8 / 2;
+        draw_rect_alpha(rc, tx - 16, SCREEN_H - 72, (int)strlen(prompt) * 8 + 32, 28, COLOR_RGB(15, 20, 25), 220);
+        draw_rect_border(rc, tx - 16, SCREEN_H - 72, (int)strlen(prompt) * 8 + 32, 28, COLOR_RGB(255, 215, 65));
+        draw_text(rc, tx, SCREEN_H - 63, prompt, COLOR_RGB(255, 245, 120), true);
+    }
+}
+
+/* BMP Screenshot Saver (1024x768) */
+bool render_save_bmp(const RenderContext *rc, const char *filename) {
     FILE *f = fopen(filename, "wb");
     if (!f) return false;
     
-    int w = SCREEN_W;
-    int h = SCREEN_H;
-    int row_bytes = w * 3; /* 640 * 3 = 1920 (multiple of 4) */
-    int img_size = row_bytes * h;
-    int file_size = 54 + img_size;
+    uint16_t bfType = 0x4D42;
+    uint32_t bfSize = 54 + (SCREEN_W * SCREEN_H * 3);
+    uint32_t bfReserved = 0;
+    uint32_t bfOffBits = 54;
     
-    uint8_t header[54];
-    memset(header, 0, 54);
+    fwrite(&bfType, 2, 1, f);
+    fwrite(&bfSize, 4, 1, f);
+    fwrite(&bfReserved, 4, 1, f);
+    fwrite(&bfOffBits, 4, 1, f);
     
-    /* BMP Magic */
-    header[0] = 'B';
-    header[1] = 'M';
-    /* File size */
-    header[2] = (uint8_t)(file_size);
-    header[3] = (uint8_t)(file_size >> 8);
-    header[4] = (uint8_t)(file_size >> 16);
-    header[5] = (uint8_t)(file_size >> 24);
-    /* Offset to pixels */
-    header[10] = 54;
-    /* DIB Header Size */
-    header[14] = 40;
-    /* Width */
-    header[18] = (uint8_t)(w);
-    header[19] = (uint8_t)(w >> 8);
-    header[20] = (uint8_t)(w >> 16);
-    header[21] = (uint8_t)(w >> 24);
-    /* Height (positive = bottom-up) */
-    header[22] = (uint8_t)(h);
-    header[23] = (uint8_t)(h >> 8);
-    header[24] = (uint8_t)(h >> 16);
-    header[25] = (uint8_t)(h >> 24);
-    /* Color planes */
-    header[26] = 1;
-    /* Bits per pixel */
-    header[28] = 24;
-    /* Image size */
-    header[34] = (uint8_t)(img_size);
-    header[35] = (uint8_t)(img_size >> 8);
-    header[36] = (uint8_t)(img_size >> 16);
-    header[37] = (uint8_t)(img_size >> 24);
+    uint32_t biSize = 40;
+    int32_t biWidth = SCREEN_W;
+    int32_t biHeight = SCREEN_H;
+    uint16_t biPlanes = 1;
+    uint16_t biBitCount = 24;
+    uint32_t biCompression = 0;
+    uint32_t biSizeImage = SCREEN_W * SCREEN_H * 3;
+    int32_t biXPelsPerMeter = 2835;
+    int32_t biYPelsPerMeter = 2835;
+    uint32_t biClrUsed = 0;
+    uint32_t biClrImportant = 0;
     
-    fwrite(header, 1, 54, f);
+    fwrite(&biSize, 4, 1, f);
+    fwrite(&biWidth, 4, 1, f);
+    fwrite(&biHeight, 4, 1, f);
+    fwrite(&biPlanes, 2, 1, f);
+    fwrite(&biBitCount, 2, 1, f);
+    fwrite(&biCompression, 4, 1, f);
+    fwrite(&biSizeImage, 4, 1, f);
+    fwrite(&biXPelsPerMeter, 4, 1, f);
+    fwrite(&biYPelsPerMeter, 4, 1, f);
+    fwrite(&biClrUsed, 4, 1, f);
+    fwrite(&biClrImportant, 4, 1, f);
     
-    /* Write rows bottom-up in BGR format */
-    for (int y = h - 1; y >= 0; --y) {
-        const uint32_t *src_row = &rc->framebuffer[y * w];
-        for (int x = 0; x < w; ++x) {
-            uint32_t pixel = src_row[x];
-            uint8_t b = (uint8_t)(pixel & 0xFF);
-            uint8_t g = (uint8_t)((pixel >> 8) & 0xFF);
-            uint8_t r = (uint8_t)((pixel >> 16) & 0xFF);
+    for (int y = SCREEN_H - 1; y >= 0; --y) {
+        for (int x = 0; x < SCREEN_W; ++x) {
+            uint32_t p = rc->framebuffer[y * SCREEN_W + x];
+            uint8_t b = p & 0xFF;
+            uint8_t g = (p >> 8) & 0xFF;
+            uint8_t r = (p >> 16) & 0xFF;
             fputc(b, f);
             fputc(g, f);
             fputc(r, f);
@@ -1508,4 +1613,3 @@ bool render_save_bmp(const RenderContext *rc, const char *filename) {
     fclose(f);
     return true;
 }
-

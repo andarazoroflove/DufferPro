@@ -10,6 +10,7 @@ bool golf_audio_init(void) { return true; }
 void golf_audio_shutdown(void) {}
 void golf_audio_play_sfx(GolfSfxType sfx) { (void)sfx; }
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) { (void)wind_speed; (void)water_proximity_percent; }
+void golf_audio_update_ambient_pro(fixed wind_speed, int water_proximity_percent, int clubhouse_proximity_percent) { (void)wind_speed; (void)water_proximity_percent; (void)clubhouse_proximity_percent; }
 #else
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_audio.h>
@@ -17,7 +18,7 @@ void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) { 
 #define AUDIO_SAMPLE_RATE    44100
 #define AUDIO_CHANNELS       2
 #define AUDIO_BUFFER_SAMPLES 1024
-#define MAX_ACTIVE_VOICES    16
+#define MAX_ACTIVE_VOICES    24
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -29,8 +30,6 @@ typedef struct {
     GolfSfxType type;
     uint32_t sample_pos;
     uint32_t total_samples;
-    float param1;
-    float param2;
     float volume;
     float pan; /* -1.0 (left) to +1.0 (right) */
 } SfxVoice;
@@ -48,8 +47,11 @@ static float s_water_current_vol = 0.0f;
 static float s_water_phase1 = 0.0f;
 static float s_water_phase2 = 0.0f;
 
+static float s_clubhouse_target_vol = 0.0f;
+static float s_clubhouse_current_vol = 0.0f;
+
 /* Bird Chirp Generator */
-static int32_t s_bird_timer_samples = 44100 * 3; /* First chirp in 3s */
+static int32_t s_bird_timer_samples = 44100 * 2; /* First chirp in 2s */
 static bool s_bird_active = false;
 static uint32_t s_bird_pos = 0;
 static uint32_t s_bird_dur = 0;
@@ -65,7 +67,6 @@ static bool s_audio_ready = false;
 /* Synthesis helper for single SFX sample */
 static float synthesize_sfx_sample(SfxVoice *v) {
     float t = (float)v->sample_pos / (float)AUDIO_SAMPLE_RATE;
-    float total_t = (float)v->total_samples / (float)AUDIO_SAMPLE_RATE;
     float progress = (float)v->sample_pos / (float)v->total_samples;
     float out = 0.0f;
     
@@ -195,17 +196,25 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             break;
         }
         
+        case SFX_FOOTSTEP_WOOD: {
+            /* Hollow oak plank thud + gentle creak on bridge */
+            float env = expf(-progress * 20.0f);
+            float plank = sinf(2.0f * (float)M_PI * 140.0f * t) * env * 0.7f;
+            float creak = sinf(2.0f * (float)M_PI * 420.0f * t) * expf(-progress * 35.0f) * 0.35f;
+            float tap = audio_noise() * env * 0.35f;
+            out = (plank + creak + tap) * v->volume * 0.65f;
+            break;
+        }
+        
         case SFX_CUP_SINK: {
             /* Rich authentic golf cup sink: hollow plop -> plastic liner bounce -> pin flag rattle */
             if (t < 0.12f) {
-                /* Initial hollow plop into plastic cup (resonant 320 Hz swept to 150 Hz + dull thud) */
                 float p_env = expf(-t * 22.0f);
                 float freq = 320.0f * expf(-t * 20.0f) + 150.0f;
                 float plop = sinf(2.0f * (float)M_PI * freq * t) * p_env * 1.1f;
                 float thud = audio_noise() * p_env * 0.45f;
                 out = (plop + thud);
             } else if (t < 0.28f) {
-                /* Secondary plastic rim bounce inside bottom of cup */
                 float rel_t = t - 0.12f;
                 float r_env = expf(-rel_t * 22.0f);
                 float clatter = (sinf(2.0f * (float)M_PI * 860.0f * rel_t) * 0.7f +
@@ -213,7 +222,6 @@ static float synthesize_sfx_sample(SfxVoice *v) {
                 float tap = audio_noise() * r_env * 0.5f;
                 out = (clatter + tap) * 1.15f;
             } else {
-                /* Settling rattle against metal cup liner and pin pole */
                 float rel_t = t - 0.28f;
                 float s_env = expf(-rel_t * 16.0f);
                 float rattle = (sinf(2.0f * (float)M_PI * 680.0f * rel_t) * 0.6f +
@@ -234,11 +242,64 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             break;
         }
         
+        case SFX_APPLAUSE_GOLF: {
+            /* Polite, rhythmic golf gallery applause */
+            float clap_pulse1 = expf(-fmodf(t * 8.5f, 1.0f) * 12.0f);
+            float clap_pulse2 = expf(-fmodf((t + 0.06f) * 7.8f, 1.0f) * 14.0f);
+            float clap_pulse3 = expf(-fmodf((t + 0.11f) * 9.2f, 1.0f) * 11.0f);
+            float envelope = (t < 0.2f) ? (t / 0.2f) : expf(-(t - 0.2f) * 1.8f);
+            float noise = audio_noise();
+            float bandpass = sinf(2.0f * (float)M_PI * 1100.0f * t) * noise;
+            out = (clap_pulse1 * 0.45f + clap_pulse2 * 0.35f + clap_pulse3 * 0.4f) * (noise * 0.6f + bandpass * 0.4f) * envelope * v->volume * 1.25f;
+            break;
+        }
+        
+        case SFX_CROWD_CHEER: {
+            /* Enthusiastic gallery cheer & roar for birdie / hole-in-one */
+            float env = (t < 0.35f) ? (t / 0.35f) : expf(-(t - 0.35f) * 1.6f);
+            float roar_mod = sinf(2.0f * (float)M_PI * 6.5f * t) * 0.15f + 1.0f;
+            float vocal1 = sinf(2.0f * (float)M_PI * (480.0f + 60.0f * sinf(t * 4.0f)) * t);
+            float vocal2 = sinf(2.0f * (float)M_PI * 720.0f * t) * 0.5f;
+            float noise = audio_noise() * 0.65f;
+            float clap = expf(-fmodf(t * 11.0f, 1.0f) * 10.0f) * audio_noise() * 0.5f;
+            out = ((vocal1 + vocal2) * 0.45f + noise + clap) * env * roar_mod * v->volume * 1.35f;
+            break;
+        }
+        
+        case SFX_CROWD_OOH: {
+            /* Collective gallery gasp / groan */
+            float env = (t < 0.15f) ? (t / 0.15f) : expf(-(t - 0.15f) * 2.5f);
+            float freq = 340.0f * expf(-t * 2.2f) + 180.0f;
+            float vocal = sinf(2.0f * (float)M_PI * freq * t) * 0.6f +
+                          sinf(2.0f * (float)M_PI * (freq * 1.5f) * t) * 0.35f;
+            float breath = audio_noise() * expf(-t * 3.0f) * 0.3f;
+            out = (vocal + breath) * env * v->volume * 1.1f;
+            break;
+        }
+        
+        case SFX_BUILD_PLACE: {
+            /* Crisp wooden mallet / construction placement tap */
+            float env = expf(-progress * 28.0f);
+            float pop = sinf(2.0f * (float)M_PI * 380.0f * t) * env * 0.85f;
+            float snap = audio_noise() * expf(-progress * 45.0f) * 0.65f;
+            out = (pop + snap) * v->volume * 0.95f;
+            break;
+        }
+        
+        case SFX_TERRAIN_SCULPT: {
+            /* Earth/stone shift and rumble when raising/lowering elevation */
+            float env = sinf(progress * (float)M_PI);
+            float rumble_freq = 65.0f + 25.0f * sinf(t * 30.0f);
+            float rumble = sinf(2.0f * (float)M_PI * rumble_freq * t) * 0.75f;
+            float gravel = audio_noise() * 0.45f;
+            out = (rumble + gravel) * env * v->volume * 0.9f;
+            break;
+        }
+        
         default:
             break;
     }
     
-    (void)total_t;
     v->sample_pos++;
     if (v->sample_pos >= v->total_samples) {
         v->active = false;
@@ -255,11 +316,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
     for (int i = 0; i < num_samples; ++i) {
         /* 1. Update smooth ambient volume transitions */
         s_water_current_vol += (s_water_target_vol - s_water_current_vol) * 0.0005f;
+        s_clubhouse_current_vol += (s_clubhouse_target_vol - s_clubhouse_current_vol) * 0.0005f;
         
-        /* 2. Wind ambient removed per request (no helicopter flutter) */
-        float wind_sample = 0.0f;
-        
-        /* 3. Synthesize Water Ambient (gentle subtle ripple when near water) */
+        /* 2. Water Ambient (gentle ripple when near water) */
         float water_sample = 0.0f;
         if (s_water_current_vol > 0.001f) {
             s_water_phase1 += 0.0035f;
@@ -270,14 +329,19 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
             water_sample = w_sine * s_water_current_vol * 0.35f;
         }
         
-        /* 4. Synthesize Procedural Bird Chirps */
+        /* 3. Clubhouse Ambient (soft patio murmur & faint glasses) */
+        float clubhouse_sample = 0.0f;
+        if (s_clubhouse_current_vol > 0.001f) {
+            float murmur = audio_noise() * 0.12f;
+            clubhouse_sample = murmur * s_clubhouse_current_vol * 0.4f;
+        }
+        
+        /* 4. Procedural Bird Chirps */
         float bird_left = 0.0f;
         float bird_right = 0.0f;
         
         if (s_bird_active) {
             float b_prog = (float)s_bird_pos / (float)s_bird_dur;
-            
-            /* Two rapid frequency sweeps (chirp-chirp) */
             float freq_mod = sinf(b_prog * 4.0f * (float)M_PI) * 500.0f;
             float freq = s_bird_base_freq + freq_mod;
             s_bird_phase += 2.0f * (float)M_PI * freq / (float)AUDIO_SAMPLE_RATE;
@@ -294,7 +358,6 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
             s_bird_pos++;
             if (s_bird_pos >= s_bird_dur) {
                 s_bird_active = false;
-                /* Next chirp in 2.5 to 6.5 seconds */
                 s_bird_timer_samples = AUDIO_SAMPLE_RATE * 2 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 4));
             }
         } else {
@@ -302,9 +365,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
             if (s_bird_timer_samples <= 0) {
                 s_bird_active = true;
                 s_bird_pos = 0;
-                s_bird_dur = AUDIO_SAMPLE_RATE / 6 + (s_audio_rand % (AUDIO_SAMPLE_RATE / 8)); /* ~0.18s to 0.28s */
+                s_bird_dur = AUDIO_SAMPLE_RATE / 6 + (s_audio_rand % (AUDIO_SAMPLE_RATE / 8));
                 s_bird_base_freq = 2400.0f + (float)(s_audio_rand % 1200);
-                s_bird_pan = audio_noise(); /* Panned across stereo field */
+                s_bird_pan = audio_noise();
                 s_bird_phase = 0.0f;
             }
         }
@@ -324,10 +387,10 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
         }
         
         /* Master Mix */
-        float left = (wind_sample * 0.7f + water_sample * 0.6f + bird_left + sfx_mix_left);
-        float right = (wind_sample * 0.7f + water_sample * 0.6f + bird_right + sfx_mix_right);
+        float left = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_left + sfx_mix_left);
+        float right = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_right + sfx_mix_right);
         
-        /* Soft Limiting / Clipping Protection */
+        /* Soft Limiting */
         if (left > 0.95f) left = 0.95f;
         if (left < -0.95f) left = -0.95f;
         if (right > 0.95f) right = 0.95f;
@@ -356,7 +419,6 @@ bool golf_audio_init(void) {
     
     s_audio_device = SDL_OpenAudioDevice(NULL, 0, &desired, &obtained, 0);
     if (s_audio_device == 0) {
-        /* Fallback: try legacy SDL_OpenAudio */
         if (SDL_OpenAudio(&desired, &obtained) < 0) {
             fprintf(stderr, "SDL Audio Init Warning: %s\n", SDL_GetError());
             s_audio_ready = false;
@@ -415,19 +477,25 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
         v->pan = 0.0f;
         
         switch (sfx) {
-            case SFX_SWING_DRIVER: v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.35f; break;
-            case SFX_SWING_IRON:   v->total_samples = AUDIO_SAMPLE_RATE * 30 / 100; v->volume = 1.25f; break;
-            case SFX_SWING_WEDGE:  v->total_samples = AUDIO_SAMPLE_RATE * 26 / 100; v->volume = 1.20f; break;
-            case SFX_SWING_PUTTER: v->total_samples = AUDIO_SAMPLE_RATE * 18 / 100; v->volume = 1.15f; break;
-            case SFX_BALL_BOUNCE:  v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.80f; break;
-            case SFX_TREE_HIT:     v->total_samples = AUDIO_SAMPLE_RATE * 42 / 100; v->volume = 1.25f; break;
-            case SFX_ROCK_HIT:     v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.25f; break;
-            case SFX_WATER_SPLASH: v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.20f; break;
+            case SFX_SWING_DRIVER:   v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.35f; break;
+            case SFX_SWING_IRON:     v->total_samples = AUDIO_SAMPLE_RATE * 30 / 100; v->volume = 1.25f; break;
+            case SFX_SWING_WEDGE:    v->total_samples = AUDIO_SAMPLE_RATE * 26 / 100; v->volume = 1.20f; break;
+            case SFX_SWING_PUTTER:   v->total_samples = AUDIO_SAMPLE_RATE * 18 / 100; v->volume = 1.15f; break;
+            case SFX_BALL_BOUNCE:    v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.80f; break;
+            case SFX_TREE_HIT:       v->total_samples = AUDIO_SAMPLE_RATE * 42 / 100; v->volume = 1.25f; break;
+            case SFX_ROCK_HIT:       v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.25f; break;
+            case SFX_WATER_SPLASH:   v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.20f; break;
             case SFX_FOOTSTEP_GRASS: v->total_samples = AUDIO_SAMPLE_RATE * 10 / 100; v->volume = 0.50f; break;
             case SFX_FOOTSTEP_SAND:  v->total_samples = AUDIO_SAMPLE_RATE * 13 / 100; v->volume = 0.55f; break;
             case SFX_FOOTSTEP_ROUGH: v->total_samples = AUDIO_SAMPLE_RATE * 15 / 100; v->volume = 0.55f; break;
-            case SFX_CUP_SINK:     v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.45f; break;
-            case SFX_SWEETSPOT:    v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 0.95f; break;
+            case SFX_FOOTSTEP_WOOD:  v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.65f; break;
+            case SFX_CUP_SINK:       v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.45f; break;
+            case SFX_SWEETSPOT:      v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 0.95f; break;
+            case SFX_APPLAUSE_GOLF:  v->total_samples = AUDIO_SAMPLE_RATE * 160 / 100; v->volume = 1.25f; break;
+            case SFX_CROWD_CHEER:    v->total_samples = AUDIO_SAMPLE_RATE * 220 / 100; v->volume = 1.35f; break;
+            case SFX_CROWD_OOH:      v->total_samples = AUDIO_SAMPLE_RATE * 90 / 100; v->volume = 1.15f; break;
+            case SFX_BUILD_PLACE:    v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.95f; break;
+            case SFX_TERRAIN_SCULPT: v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 0.90f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }
@@ -440,15 +508,22 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
 }
 
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) {
+    golf_audio_update_ambient_pro(wind_speed, water_proximity_percent, 0);
+}
+
+void golf_audio_update_ambient_pro(fixed wind_speed, int water_proximity_percent, int clubhouse_proximity_percent) {
     if (!s_audio_ready) return;
     (void)wind_speed;
     
-    /* Water proximity: 0..100% -> subtle lake ambient 0.0 to 0.15 */
-    float prox = (float)water_proximity_percent / 100.0f;
-    if (prox < 0.0f) prox = 0.0f;
-    if (prox > 1.0f) prox = 1.0f;
-    s_water_target_vol = prox * 0.15f;
+    float w_prox = (float)water_proximity_percent / 100.0f;
+    if (w_prox < 0.0f) w_prox = 0.0f;
+    if (w_prox > 1.0f) w_prox = 1.0f;
+    s_water_target_vol = w_prox * 0.15f;
+    
+    float c_prox = (float)clubhouse_proximity_percent / 100.0f;
+    if (c_prox < 0.0f) c_prox = 0.0f;
+    if (c_prox > 1.0f) c_prox = 1.0f;
+    s_clubhouse_target_vol = c_prox * 0.22f;
 }
 
 #endif /* !USE_WIN32_GDI */
-

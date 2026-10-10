@@ -10,32 +10,45 @@
 #define GRID_H              64
 #define YARDS_PER_TILE      7      /* ~7 yards per tile (32x64 hole spans ~150-450 yds) */
 #define HEIGHT_STEP_PX      12     /* 12 pixels per discrete elevation tier */
+#define MAX_ELEVATION_TIER  6      /* 0..6 discrete tiers */
 
 /* Elevation Tiers */
 typedef enum {
-    ELEV_WATER   = 0,
-    ELEV_LOWLAND = 1,
-    ELEV_RIDGE   = 2,
-    ELEV_PLATEAU = 3
+    ELEV_WATER      = 0,
+    ELEV_LOWLAND    = 1,
+    ELEV_VALLEY     = 2,
+    ELEV_RIDGE      = 3,
+    ELEV_PLATEAU    = 4,
+    ELEV_HILLTOP    = 5,
+    ELEV_PEAK       = 6
 } ElevationTier;
 
 /* Surface Materials */
 typedef enum {
-    SURF_WATER   = 0,
-    SURF_ROUGH   = 1,
-    SURF_FAIRWAY = 2,
-    SURF_GREEN   = 3,
-    SURF_SAND    = 4,
-    SURF_TEE     = 5,
+    SURF_WATER    = 0,
+    SURF_ROUGH    = 1,
+    SURF_FAIRWAY  = 2,
+    SURF_GREEN    = 3,
+    SURF_SAND     = 4,
+    SURF_TEE      = 5,
+    SURF_CARTPATH = 6,
+    SURF_BRIDGE   = 7,
     SURF_COUNT
 } SurfaceType;
 
-/* Natural Features / Obstacles */
+/* Natural Features / Buildings / Obstacles */
 typedef enum {
     FEAT_NONE = 0,
-    FEAT_PINE,
-    FEAT_OAK,
-    FEAT_ROCK,
+    FEAT_PINE = 1,
+    FEAT_OAK = 2,
+    FEAT_PALM = 3,
+    FEAT_FLOWERING = 4,
+    FEAT_BUSH = 5,
+    FEAT_FLOWERS = 6,
+    FEAT_ROCK = 7,
+    FEAT_BENCH = 8,
+    FEAT_CART = 9,
+    FEAT_CLUBHOUSE = 10,  /* Occupied by clubhouse */
     FEAT_COUNT
 } FeatureType;
 
@@ -48,7 +61,7 @@ typedef enum {
 
 /* Tile representation */
 typedef struct {
-    uint8_t elevation;      /* 0..3 */
+    uint8_t elevation;      /* 0..MAX_ELEVATION_TIER */
     uint8_t surface;        /* SurfaceType */
     uint8_t feature;        /* FeatureType */
     uint8_t autotile_mask;  /* 0..15 edge transition mask */
@@ -62,18 +75,44 @@ typedef enum {
     MODE_BUILD
 } GameMode;
 
+/* Build Category Tabs for Design Mode */
+typedef enum {
+    BUILD_CAT_TERRAIN = 0,
+    BUILD_CAT_COURSE,
+    BUILD_CAT_SCENERY,
+    BUILD_CAT_COUNT
+} BuildCategory;
+
 /* Build Tools */
 typedef enum {
+    /* Terrain Tab */
     TOOL_FAIRWAY = 0,
     TOOL_GREEN,
     TOOL_SAND,
     TOOL_ROUGH,
+    TOOL_WATER,
+    TOOL_CARTPATH,
+    TOOL_RAISE,
+    TOOL_LOWER,
+    TOOL_BULLDOZE,
+    
+    /* Course Tab */
     TOOL_TEE,
     TOOL_PIN,
+    TOOL_BRIDGE,
+    TOOL_BENCH,
+    TOOL_CART,
+    
+    /* Scenery Tab */
     TOOL_PINE,
     TOOL_OAK,
+    TOOL_PALM,
+    TOOL_FLOWERING,
+    TOOL_BUSH,
+    TOOL_FLOWERS,
     TOOL_ROCK,
-    TOOL_BULLDOZE,
+    TOOL_CLUBHOUSE,
+    
     TOOL_COUNT
 } BuildTool;
 
@@ -159,22 +198,67 @@ typedef struct {
     int32_t step_timer;
 } GolferEntity;
 
+/* Caddy Character Entity */
+typedef enum {
+    CADDY_STATE_READY = 0,
+    CADDY_STATE_FOLLOWING,
+    CADDY_STATE_CELEBRATING,
+    CADDY_STATE_DISAPPOINTED
+} CaddyState;
+
+typedef struct {
+    fixed x, y;
+    fixed current_z;
+    CaddyState state;
+    uint8_t facing_angle;
+    int32_t walk_anim_frame;
+    int32_t anim_timer;
+    int32_t mood_timer;
+} CaddyEntity;
+
+/* Spectator / Gallery Entity */
+#define MAX_SPECTATORS 24
+
+typedef enum {
+    SPEC_STATE_IDLE = 0,
+    SPEC_STATE_WATCHING,
+    SPEC_STATE_CLAPPING,
+    SPEC_STATE_CHEERING
+} SpectatorState;
+
+typedef struct {
+    int32_t gx, gy;
+    fixed current_z;
+    SpectatorState state;
+    uint8_t shirt_color_idx; /* 0..5 */
+    uint8_t facing_angle;
+    int32_t anim_frame;
+    int32_t timer;
+    bool active;
+} SpectatorEntity;
+
 /* Audio Events Triggered by Physics & Actions */
 typedef enum {
     AUDIO_EVT_NONE = 0,
-    AUDIO_EVT_SWING_DRIVER,
-    AUDIO_EVT_SWING_IRON,
-    AUDIO_EVT_SWING_WEDGE,
-    AUDIO_EVT_SWING_PUTTER,
-    AUDIO_EVT_BALL_BOUNCE,
-    AUDIO_EVT_TREE_HIT,
-    AUDIO_EVT_ROCK_HIT,
-    AUDIO_EVT_WATER_SPLASH,
-    AUDIO_EVT_FOOTSTEP_GRASS,
-    AUDIO_EVT_FOOTSTEP_SAND,
-    AUDIO_EVT_FOOTSTEP_ROUGH,
-    AUDIO_EVT_CUP_SINK,
-    AUDIO_EVT_SWEETSPOT
+    AUDIO_EVT_SWING_DRIVER = 1,
+    AUDIO_EVT_SWING_IRON = 2,
+    AUDIO_EVT_SWING_WEDGE = 3,
+    AUDIO_EVT_SWING_PUTTER = 4,
+    AUDIO_EVT_BALL_BOUNCE = 5,
+    AUDIO_EVT_TREE_HIT = 6,
+    AUDIO_EVT_ROCK_HIT = 7,
+    AUDIO_EVT_WATER_SPLASH = 8,
+    AUDIO_EVT_FOOTSTEP_GRASS = 9,
+    AUDIO_EVT_FOOTSTEP_SAND = 10,
+    AUDIO_EVT_FOOTSTEP_ROUGH = 11,
+    AUDIO_EVT_FOOTSTEP_WOOD = 12,
+    AUDIO_EVT_CUP_SINK = 13,
+    AUDIO_EVT_SWEETSPOT = 14,
+    AUDIO_EVT_APPLAUSE_GOLF = 15,
+    AUDIO_EVT_CROWD_CHEER = 16,
+    AUDIO_EVT_CROWD_OOH = 17,
+    AUDIO_EVT_BUILD_PLACE = 18,
+    AUDIO_EVT_TERRAIN_SCULPT = 19
 } GolfAudioEvent;
 
 /* Wind system */
@@ -183,7 +267,7 @@ typedef struct {
     fixed speed;            /* 0..30 mph in fixed units */
 } Wind;
 
-/* Full Game Simulation State (Zero OS/Renderer dependencies) */
+/* Full Game Simulation State */
 typedef struct {
     GolfTile grid[GRID_W][GRID_H];
     
@@ -193,6 +277,10 @@ typedef struct {
     bool has_tee;
     bool has_pin;
     
+    /* Clubhouse Footprint */
+    int32_t clubhouse_gx, clubhouse_gy;
+    bool has_clubhouse;
+    
     /* Score & Course Stats */
     int32_t hole_yards;
     int32_t par;
@@ -200,14 +288,20 @@ typedef struct {
     int32_t score_rel_par;  /* strokes - par */
     bool hole_completed;
     
+    /* SimGolf Hole Rating & Economics */
+    int32_t fun_rating;     /* 0..100 (maps to 0..5 stars) */
+    int32_t difficulty_rating; /* 1..10 */
+    int32_t club_funds;     /* Dollars */
+    
     /* Game State */
     GameMode mode;
+    BuildCategory build_category;
     BuildTool current_tool;
     int32_t brush_size;     /* 1 or 2 */
     
     /* Player in Play Mode */
     ClubType current_club;
-    uint8_t aim_angle;      /* 0..255 (0 = East, 64 = South, 128 = West, 192 = North) */
+    uint8_t aim_angle;      /* 0..255 */
     fixed aim_target_x;     /* Aim landing spot in grid units (fixed 16.16) */
     fixed aim_target_y;
     int32_t aim_distance_yds; /* Distance in yards to aim target */
@@ -215,6 +309,10 @@ typedef struct {
     SwingGauge swing;
     BallEntity ball;
     GolferEntity golfer;
+    CaddyEntity caddy;
+    SpectatorEntity spectators[MAX_SPECTATORS];
+    int32_t spectator_count;
+    
     Wind wind;
     GolfAudioEvent audio_event; /* Audio event generated this tick */
     
@@ -233,10 +331,16 @@ void golf_place_default_routing(GolfState *gs);
 void golf_randomize_hole(GolfState *gs, uint32_t seed);
 void golf_update_autotile_masks(GolfState *gs);
 void golf_recalc_hole_stats(GolfState *gs);
+void golf_recalc_course_rating(GolfState *gs);
 
 /* Build Mode Operations */
 bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy);
 void golf_set_tool(GolfState *gs, BuildTool tool);
+void golf_set_build_category(GolfState *gs, BuildCategory cat);
+bool golf_raise_terrain(GolfState *gs, int32_t gx, int32_t gy, int32_t brush_size);
+bool golf_lower_terrain(GolfState *gs, int32_t gx, int32_t gy, int32_t brush_size);
+bool golf_place_clubhouse(GolfState *gs, int32_t gx, int32_t gy);
+void golf_remove_clubhouse(GolfState *gs);
 
 /* Play Mode Operations */
 void golf_set_mode(GolfState *gs, GameMode mode);
@@ -256,7 +360,7 @@ SurfaceType golf_get_surface_at(const GolfState *gs, fixed fx, fixed fy);
 int32_t golf_distance_to_pin_yards(const GolfState *gs);
 const ClubData* golf_get_club_data(ClubType club);
 int golf_get_water_proximity(const GolfState *gs, fixed view_x, fixed view_y);
+int golf_get_clubhouse_proximity(const GolfState *gs, fixed view_x, fixed view_y);
 void golf_golfer_arrive_at_ball(GolfState *gs);
 
 #endif /* GOLF_CORE_H */
-

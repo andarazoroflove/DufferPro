@@ -28,31 +28,7 @@ static int s_prev_mouse_y = 0;
 static bool s_lbutton_down = false;
 static bool s_free_cam = false;
 
-/* Handle bottom tool click in Build Mode */
-static bool handle_build_ui_click(GolfState *gs, int mx, int my) {
-    if (my < SCREEN_H - 58) return false;
-    
-    /* Tool buttons */
-    int btn_x = 10;
-    for (int i = 0; i < TOOL_COUNT; ++i) {
-        int bw = (i == TOOL_FAIRWAY || i == TOOL_ROUGH) ? 58 : 46;
-        if (mx >= btn_x && mx <= btn_x + bw && my >= SCREEN_H - 48 && my <= SCREEN_H - 26) {
-            golf_set_tool(gs, (BuildTool)i);
-            return true;
-        }
-        btn_x += bw + 4;
-    }
-    
-    /* Brush toggle click */
-    if (my >= SCREEN_H - 22 && mx >= 10 && mx <= 120) {
-        gs->brush_size = (gs->brush_size == 1) ? 2 : 1;
-        return true;
-    }
-    
-    return true; /* Consumed by UI */
-}
-
-/* Dispatch any pending procedural audio events immediately */
+/* Dispatch procedural audio events immediately */
 static void dispatch_audio_events(void) {
     if (s_game_state.audio_event != AUDIO_EVT_NONE) {
         golf_audio_play_sfx((GolfSfxType)s_game_state.audio_event);
@@ -60,24 +36,90 @@ static void dispatch_audio_events(void) {
     }
 }
 
+/* Handle bottom tool click in Build Mode */
+static bool handle_build_ui_click(GolfState *gs, int mx, int my) {
+    int btm_y = SCREEN_H - 70;
+    
+    /* 1. Category Tabs at y = 674..698 */
+    if (my >= btm_y - 26 && my < btm_y) {
+        int tab_w = 110;
+        for (int c = 0; c < BUILD_CAT_COUNT; ++c) {
+            int tx = 10 + c * (tab_w + 6);
+            if (mx >= tx && mx <= tx + tab_w) {
+                golf_set_build_category(gs, (BuildCategory)c);
+                return true;
+            }
+        }
+        return true;
+    }
+    
+    if (my < btm_y) return false;
+    
+    int btn_y = btm_y + 8;
+    int bh = 32;
+    
+    /* Brush toggle click */
+    int brush_x = SCREEN_W - 130;
+    if (mx >= brush_x && mx <= brush_x + 115 && my >= btn_y && my <= btn_y + bh) {
+        gs->brush_size = (gs->brush_size == 1) ? 2 : 1;
+        return true;
+    }
+    
+    /* Category Tools */
+    int btn_x = 10;
+    int bw = 85;
+    
+    if (gs->build_category == BUILD_CAT_TERRAIN) {
+        BuildTool t_list[8] = { TOOL_FAIRWAY, TOOL_GREEN, TOOL_SAND, TOOL_ROUGH, TOOL_WATER, TOOL_CARTPATH, TOOL_RAISE, TOOL_LOWER };
+        for (int i = 0; i < 8; ++i) {
+            if (mx >= btn_x && mx <= btn_x + bw && my >= btn_y && my <= btn_y + bh) {
+                golf_set_tool(gs, t_list[i]);
+                return true;
+            }
+            btn_x += bw + 8;
+        }
+        /* Bulldoze button */
+        if (mx >= btn_x && mx <= btn_x + bw && my >= btn_y && my <= btn_y + bh) {
+            golf_set_tool(gs, TOOL_BULLDOZE);
+            return true;
+        }
+    } else if (gs->build_category == BUILD_CAT_COURSE) {
+        BuildTool t_list[5] = { TOOL_TEE, TOOL_PIN, TOOL_BRIDGE, TOOL_BENCH, TOOL_CART };
+        for (int i = 0; i < 5; ++i) {
+            if (mx >= btn_x && mx <= btn_x + bw + 10 && my >= btn_y && my <= btn_y + bh) {
+                golf_set_tool(gs, t_list[i]);
+                return true;
+            }
+            btn_x += bw + 18;
+        }
+    } else if (gs->build_category == BUILD_CAT_SCENERY) {
+        BuildTool t_list[8] = { TOOL_PINE, TOOL_OAK, TOOL_PALM, TOOL_FLOWERING, TOOL_BUSH, TOOL_FLOWERS, TOOL_ROCK, TOOL_CLUBHOUSE };
+        for (int i = 0; i < 8; ++i) {
+            int w_btn = (i == 7) ? 95 : bw;
+            if (mx >= btn_x && mx <= btn_x + w_btn && my >= btn_y && my <= btn_y + bh) {
+                golf_set_tool(gs, t_list[i]);
+                return true;
+            }
+            btn_x += w_btn + 6;
+        }
+    }
+    
+    return true; /* Consumed by UI */
+}
+
 /* Handle bottom tool click in Play Mode */
 static bool handle_play_ui_click(GolfState *gs, int mx, int my) {
-    if (my < SCREEN_H - 58) return false;
+    int btm_y = SCREEN_H - 70;
+    if (my < btm_y) return false;
     
     /* Club Box click: cycle club */
-    if (mx >= 10 && mx <= 160 && my >= SCREEN_H - 50 && my <= SCREEN_H - 8) {
+    if (mx >= 14 && mx <= 174 && my >= btm_y + 8 && my <= btm_y + 60) {
         golf_change_club(gs, 1);
         return true;
     }
     
-    /* Build toggle click */
-    if (mx >= 520 && mx <= 630 && my >= SCREEN_H - 35) {
-        golf_set_mode(gs, MODE_BUILD);
-        return true;
-    }
-    
     /* Swing Gauge click (bar + hint prompt area) */
-    if (mx >= 300 && mx <= 518) {
+    if (mx >= 350 && mx <= 690 && my >= btm_y + 8 && my <= btm_y + 60) {
         s_free_cam = false;
         golf_swing_click(gs);
         dispatch_audio_events();
@@ -99,7 +141,7 @@ int main(int argc, char *argv[]) {
     }
     
     SDL_Window *window = SDL_CreateWindow(
-        "Duffer [Retro Golf Engine]",
+        "Duffer-Pro [SimGolf Championship Edition]",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_W,
@@ -119,7 +161,6 @@ int main(int argc, char *argv[]) {
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
     );
     if (!renderer) {
-        /* Fallback to software renderer */
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     }
     
@@ -154,7 +195,7 @@ int main(int argc, char *argv[]) {
     /* Center camera on Tee */
     if (s_game_state.has_tee) {
         render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
-        s_free_cam = false;
+        render_pan_camera(&s_render_ctx, 0, 70);
     }
     
     bool running = true;
@@ -162,7 +203,6 @@ int main(int argc, char *argv[]) {
     uint32_t last_time = SDL_GetTicks();
     
     while (running) {
-        /* Event Processing */
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
                 case SDL_QUIT:
@@ -171,14 +211,10 @@ int main(int argc, char *argv[]) {
                     
                 case SDL_KEYDOWN:
                     if (s_game_state.mode == MODE_SPLASH) {
-                        if (event.key.keysym.sym == SDLK_ESCAPE) {
-                            running = false;
-                        } else {
-                            golf_set_mode(&s_game_state, MODE_PLAY);
-                            if (s_game_state.has_tee) {
-                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
-                                s_free_cam = false;
-                            }
+                        golf_set_mode(&s_game_state, MODE_PLAY);
+                        if (s_game_state.has_tee) {
+                            render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                            s_free_cam = false;
                         }
                         break;
                     }
@@ -188,7 +224,6 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_TAB:
-                            /* Toggle Mode */
                             golf_set_mode(&s_game_state, (s_game_state.mode == MODE_PLAY) ? MODE_BUILD : MODE_PLAY);
                             break;
                             
@@ -210,7 +245,7 @@ int main(int argc, char *argv[]) {
                             if (s_game_state.mode == MODE_PLAY) {
                                 golf_adjust_aim(&s_game_state, -4);
                             } else {
-                                render_pan_camera(&s_render_ctx, 16, 0);
+                                render_pan_camera(&s_render_ctx, 20, 0);
                             }
                             break;
                             
@@ -219,7 +254,7 @@ int main(int argc, char *argv[]) {
                             if (s_game_state.mode == MODE_PLAY) {
                                 golf_adjust_aim(&s_game_state, 4);
                             } else {
-                                render_pan_camera(&s_render_ctx, -16, 0);
+                                render_pan_camera(&s_render_ctx, -20, 0);
                             }
                             break;
                             
@@ -228,7 +263,7 @@ int main(int argc, char *argv[]) {
                             if (s_game_state.mode == MODE_PLAY) {
                                 golf_change_club(&s_game_state, -1);
                             } else {
-                                render_pan_camera(&s_render_ctx, 0, 16);
+                                render_pan_camera(&s_render_ctx, 0, 20);
                             }
                             break;
                             
@@ -237,7 +272,7 @@ int main(int argc, char *argv[]) {
                             if (s_game_state.mode == MODE_PLAY) {
                                 golf_change_club(&s_game_state, 1);
                             } else {
-                                render_pan_camera(&s_render_ctx, 0, -16);
+                                render_pan_camera(&s_render_ctx, 0, -20);
                             }
                             break;
                             
@@ -258,7 +293,7 @@ int main(int argc, char *argv[]) {
                             break;
                             
                         case SDLK_F12:
-                            render_save_bmp(&s_render_ctx, "retrosimgolf.bmp");
+                            render_save_bmp(&s_render_ctx, "duffer_pro.bmp");
                             break;
                             
                         case SDLK_g:
@@ -269,16 +304,9 @@ int main(int argc, char *argv[]) {
                             }
                             break;
                             
-                        case SDLK_1: golf_set_tool(&s_game_state, TOOL_FAIRWAY); break;
-                        case SDLK_2: golf_set_tool(&s_game_state, TOOL_GREEN); break;
-                        case SDLK_3: golf_set_tool(&s_game_state, TOOL_SAND); break;
-                        case SDLK_4: golf_set_tool(&s_game_state, TOOL_ROUGH); break;
-                        case SDLK_5: golf_set_tool(&s_game_state, TOOL_TEE); break;
-                        case SDLK_6: golf_set_tool(&s_game_state, TOOL_PIN); break;
-                        case SDLK_7: golf_set_tool(&s_game_state, TOOL_PINE); break;
-                        case SDLK_8: golf_set_tool(&s_game_state, TOOL_OAK); break;
-                        case SDLK_9: golf_set_tool(&s_game_state, TOOL_ROCK); break;
-                        case SDLK_0: golf_set_tool(&s_game_state, TOOL_BULLDOZE); break;
+                        case SDLK_1: golf_set_build_category(&s_game_state, BUILD_CAT_TERRAIN); break;
+                        case SDLK_2: golf_set_build_category(&s_game_state, BUILD_CAT_COURSE); break;
+                        case SDLK_3: golf_set_build_category(&s_game_state, BUILD_CAT_SCENERY); break;
                         default: break;
                     }
                     break;
@@ -313,12 +341,13 @@ int main(int argc, char *argv[]) {
                         );
                         
                         /* Continuous brush painting on left-drag */
-                        if (s_lbutton_down && s_game_state.mode == MODE_BUILD && s_render_ctx.mouse_valid && my < SCREEN_H - 58 && my > 28) {
+                        if (s_lbutton_down && s_game_state.mode == MODE_BUILD && s_render_ctx.mouse_valid && my < SCREEN_H - 70 && my > 48) {
                             golf_build_apply_tool(&s_game_state, s_render_ctx.mouse_gx, s_render_ctx.mouse_gy);
+                            dispatch_audio_events();
                         }
                         
-                        /* Dynamic drag-aiming in Play Mode */
-                        if (s_lbutton_down && s_game_state.mode == MODE_PLAY && s_game_state.swing.state == SWING_STATE_READY && my < SCREEN_H - 58 && my > 28) {
+                        /* Drag-aiming in Play Mode */
+                        if (s_lbutton_down && s_game_state.mode == MODE_PLAY && s_game_state.swing.state == SWING_STATE_READY && my < SCREEN_H - 70 && my > 48) {
                             fixed target_fx, target_fy;
                             if (screen_to_world_fixed(&s_game_state, mx, my, s_render_ctx.camera_x, s_render_ctx.camera_y, &target_fx, &target_fy)) {
                                 golf_set_aim_target(&s_game_state, target_fx, target_fy);
@@ -345,23 +374,25 @@ int main(int argc, char *argv[]) {
                         int mx = event.button.x;
                         int my = event.button.y;
                         
-                        /* Check Randomize Hole Button click at top bar */
-                        if (my <= 28 && mx >= 432 && mx <= 544) {
-                            golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
-                            if (s_game_state.has_tee) {
-                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
-                                render_pan_camera(&s_render_ctx, 0, 70);
+                        /* Top bar clicks */
+                        if (my <= 46) {
+                            int btn_rand_x = SCREEN_W - 275;
+                            if (mx >= btn_rand_x && mx <= btn_rand_x + 125) {
+                                golf_randomize_hole(&s_game_state, SDL_GetTicks() ^ (uint32_t)rand());
+                                if (s_game_state.has_tee) {
+                                    render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                    render_pan_camera(&s_render_ctx, 0, 70);
+                                }
+                                break;
                             }
-                            break;
+                            int btn_mode_x = SCREEN_W - 140;
+                            if (mx >= btn_mode_x && mx <= btn_mode_x + 125) {
+                                golf_set_mode(&s_game_state, (s_game_state.mode == MODE_PLAY) ? MODE_BUILD : MODE_PLAY);
+                                break;
+                            }
                         }
                         
-                        /* Check Mode Badge click at top right */
-                        if (my <= 28 && mx >= 552) {
-                            golf_set_mode(&s_game_state, (s_game_state.mode == MODE_PLAY) ? MODE_BUILD : MODE_PLAY);
-                            break;
-                        }
-                        
-                        /* Check bottom UI click */
+                        /* Bottom UI click */
                         bool handled = false;
                         if (s_game_state.mode == MODE_BUILD) {
                             handled = handle_build_ui_click(&s_game_state, mx, my);
@@ -370,15 +401,16 @@ int main(int argc, char *argv[]) {
                         }
                         
                         /* World click */
-                        if (!handled && my > 28 && my < SCREEN_H - 58) {
+                        if (!handled && my > 48 && my < SCREEN_H - 70) {
                             if (s_game_state.mode == MODE_BUILD) {
                                 if (s_render_ctx.mouse_valid) {
                                     golf_build_apply_tool(&s_game_state, s_render_ctx.mouse_gx, s_render_ctx.mouse_gy);
+                                    dispatch_audio_events();
                                 }
                             } else {
                                 /* Play Mode */
                                 if (s_game_state.swing.state == SWING_STATE_READY) {
-                                    /* Check if clicking directly on the golfer / ball (within 18 pixels) to start swing */
+                                    /* Check if clicking golfer or ball to swing */
                                     fixed fx = s_game_state.ball.x;
                                     fixed fy = s_game_state.ball.y;
                                     fixed gz = s_game_state.ball.ground_z;
@@ -386,19 +418,19 @@ int main(int argc, char *argv[]) {
                                     int32_t bsy = FROM_FIXED(FMUL(fx + fy, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gz) + s_render_ctx.camera_y + TILE_HALF_H - 10;
                                     int cdx = mx - bsx;
                                     int cdy = my - bsy;
-                                    if (cdx * cdx + cdy * cdy <= 18 * 18) {
+                                    if (cdx * cdx + cdy * cdy <= 22 * 22) {
                                         s_free_cam = false;
                                         golf_swing_click(&s_game_state);
                                         dispatch_audio_events();
                                     } else {
-                                        /* Clicked terrain: set aiming target spot! */
+                                        /* Clicked terrain: set aiming spot */
                                         fixed target_fx, target_fy;
                                         if (screen_to_world_fixed(&s_game_state, mx, my, s_render_ctx.camera_x, s_render_ctx.camera_y, &target_fx, &target_fy)) {
                                             golf_set_aim_target(&s_game_state, target_fx, target_fy);
                                         }
                                     }
                                 } else {
-                                    /* Swing in progress: click anywhere to lock power or accuracy */
+                                    /* Swing in progress: click to lock power / accuracy */
                                     s_free_cam = false;
                                     golf_swing_click(&s_game_state);
                                     dispatch_audio_events();
@@ -418,13 +450,13 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        /* Edge Scrolling: Pan gently when mouse moves to screen border */
+        /* Edge Scrolling */
         if (s_game_state.mode != MODE_SPLASH) {
             int mouse_x, mouse_y;
             SDL_GetMouseState(&mouse_x, &mouse_y);
             if (mouse_x >= 0 && mouse_x < SCREEN_W && mouse_y >= 0 && mouse_y < SCREEN_H) {
                 const int margin = 20;
-                const int scroll_speed = 3; /* gentle, smooth scroll */
+                const int scroll_speed = 4;
                 bool edge_scrolled = false;
                 
                 if (mouse_x < margin) {
@@ -435,11 +467,10 @@ int main(int argc, char *argv[]) {
                     edge_scrolled = true;
                 }
                 
-                /* Top edge (avoid buttons) */
-                if (mouse_y < margin && !(mouse_x >= 430 && mouse_x <= 630)) {
+                if (mouse_y < margin && !(mouse_x >= SCREEN_W - 300)) {
                     render_pan_camera(&s_render_ctx, 0, scroll_speed);
                     edge_scrolled = true;
-                } else if (mouse_y >= SCREEN_H - margin && !(mouse_x >= 300 && mouse_x <= 518)) {
+                } else if (mouse_y >= SCREEN_H - margin) {
                     render_pan_camera(&s_render_ctx, 0, -scroll_speed);
                     edge_scrolled = true;
                 }
@@ -456,17 +487,18 @@ int main(int argc, char *argv[]) {
         /* Audio SFX Dispatch */
         dispatch_audio_events();
         
-        /* Audio Ambient Soundscape Update (Wind + Water Proximity) */
+        /* Audio Ambient Soundscape (Wind + Water + Clubhouse Proximity) */
         if (s_game_state.mode == MODE_PLAY || s_game_state.mode == MODE_BUILD) {
             fixed ear_x = (s_game_state.golfer.state == GOLFER_STATE_WALKING) ? s_game_state.golfer.x : s_game_state.ball.x;
             fixed ear_y = (s_game_state.golfer.state == GOLFER_STATE_WALKING) ? s_game_state.golfer.y : s_game_state.ball.y;
-            float water_prox = golf_get_water_proximity(&s_game_state, ear_x, ear_y);
-            golf_audio_update_ambient(s_game_state.wind.speed, water_prox);
+            int water_prox = golf_get_water_proximity(&s_game_state, ear_x, ear_y);
+            int club_prox = golf_get_clubhouse_proximity(&s_game_state, ear_x, ear_y);
+            golf_audio_update_ambient_pro(s_game_state.wind.speed, water_prox, club_prox);
         } else {
-            golf_audio_update_ambient(0, 0.0f);
+            golf_audio_update_ambient_pro(0, 0, 0);
         }
         
-        /* Camera Tracking: Keep player and ball centered in Play Mode */
+        /* Camera Tracking in Play Mode */
         if (s_game_state.mode == MODE_PLAY) {
             bool in_action = (s_game_state.ball.state == BALL_IN_FLIGHT || 
                               s_game_state.ball.state == BALL_ROLLING || 
@@ -479,7 +511,6 @@ int main(int argc, char *argv[]) {
             if (!s_free_cam) {
                 fixed focus_x, focus_y, focus_gz;
                 if (s_game_state.golfer.state == GOLFER_STATE_WALKING) {
-                    /* Track golfer smoothly as he walks to ball */
                     focus_x = s_game_state.golfer.x;
                     focus_y = s_game_state.golfer.y;
                     focus_gz = (s_game_state.golfer.current_z > 0) ? s_game_state.golfer.current_z : golf_get_ground_z_fixed(&s_game_state, focus_x, focus_y);
@@ -502,11 +533,11 @@ int main(int argc, char *argv[]) {
             }
         }
         
-        /* Clamp camera to keep course bounded on screen */
-        if (s_render_ctx.camera_x < -1400) s_render_ctx.camera_x = -1400;
-        if (s_render_ctx.camera_x > 1800)  s_render_ctx.camera_x = 1800;
-        if (s_render_ctx.camera_y < -1200) s_render_ctx.camera_y = -1200;
-        if (s_render_ctx.camera_y > 400)   s_render_ctx.camera_y = 400;
+        /* Clamp camera to keep course bounded */
+        if (s_render_ctx.camera_x < -1800) s_render_ctx.camera_x = -1800;
+        if (s_render_ctx.camera_x > 2200)  s_render_ctx.camera_x = 2200;
+        if (s_render_ctx.camera_y < -1500) s_render_ctx.camera_y = -1500;
+        if (s_render_ctx.camera_y > 600)   s_render_ctx.camera_y = 600;
         
         /* Render Frame */
         render_frame(&s_render_ctx, &s_game_state);
@@ -517,7 +548,7 @@ int main(int argc, char *argv[]) {
         SDL_RenderCopy(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
         
-        /* Frame Rate Limiting (prevent CPU runaway while letting VSync maintain silky 60 Hz) */
+        /* Frame Rate Limiting */
         uint32_t current_time = SDL_GetTicks();
         uint32_t elapsed = current_time - last_time;
         if (elapsed < 12) {

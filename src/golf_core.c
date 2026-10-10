@@ -81,7 +81,7 @@ const ClubData* golf_get_club_data(ClubType club) {
     return &s_clubs[club];
 }
 
-/* Simple fast LCG PRNG for determinism */
+/* Fast PRNG */
 static uint32_t s_rng_state = 123456789;
 static uint32_t core_rand(void) {
     s_rng_state = s_rng_state * 1103515245 + 12345;
@@ -94,7 +94,7 @@ static void core_srand(uint32_t seed) {
 /* Physics parameters in 16.16 fixed point */
 #define GRAVITY_FIXED        5200   /* ~0.079 pixels/tick^2 downward */
 #define AIR_DRAG_FIXED      65405   /* ~0.998 air drag on horizontal velocity */
-#define WIND_FACTOR_FIXED        2   /* Realistic wind drift (~5 yds in 15 mph crosswind) */
+#define WIND_FACTOR_FIXED        2   /* Wind drift multiplier */
 #define SLOPE_ACCEL_FIXED     300   /* Elevation slope acceleration */
 #define STOP_SPEED_THRESHOLD  800   /* Threshold to stop rolling */
 #define CUP_RADIUS_FIXED    28000   /* Cup capture radius (~0.42 tiles) */
@@ -136,19 +136,16 @@ void golf_update_autotile_masks(GolfState *gs) {
             uint8_t surf = gs->grid[x][y].surface;
             uint8_t mask = 0;
             
-            /* Cardinal edges in diamond isometric:
-             * NW: (x, y-1), NE: (x+1, y), SE: (x, y+1), SW: (x-1, y) */
             uint8_t nw_surf = (y > 0) ? gs->grid[x][y - 1].surface : surf;
             uint8_t ne_surf = (x < GRID_W - 1) ? gs->grid[x + 1][y].surface : surf;
             uint8_t se_surf = (y < GRID_H - 1) ? gs->grid[x][y + 1].surface : surf;
             uint8_t sw_surf = (x > 0) ? gs->grid[x - 1][y].surface : surf;
             
             if (surf == SURF_FAIRWAY || surf == SURF_TEE) {
-                /* Fairway connects with Fairway, Green, or Tee */
-                if (nw_surf == SURF_FAIRWAY || nw_surf == SURF_GREEN || nw_surf == SURF_TEE) mask |= MASK_NW;
-                if (ne_surf == SURF_FAIRWAY || ne_surf == SURF_GREEN || ne_surf == SURF_TEE) mask |= MASK_NE;
-                if (se_surf == SURF_FAIRWAY || se_surf == SURF_GREEN || se_surf == SURF_TEE) mask |= MASK_SE;
-                if (sw_surf == SURF_FAIRWAY || sw_surf == SURF_GREEN || sw_surf == SURF_TEE) mask |= MASK_SW;
+                if (nw_surf == SURF_FAIRWAY || nw_surf == SURF_GREEN || nw_surf == SURF_TEE || nw_surf == SURF_BRIDGE) mask |= MASK_NW;
+                if (ne_surf == SURF_FAIRWAY || ne_surf == SURF_GREEN || ne_surf == SURF_TEE || ne_surf == SURF_BRIDGE) mask |= MASK_NE;
+                if (se_surf == SURF_FAIRWAY || se_surf == SURF_GREEN || se_surf == SURF_TEE || se_surf == SURF_BRIDGE) mask |= MASK_SE;
+                if (sw_surf == SURF_FAIRWAY || sw_surf == SURF_GREEN || sw_surf == SURF_TEE || sw_surf == SURF_BRIDGE) mask |= MASK_SW;
             } else if (surf == SURF_GREEN) {
                 if (nw_surf == SURF_GREEN) mask |= MASK_NW;
                 if (ne_surf == SURF_GREEN) mask |= MASK_NE;
@@ -159,13 +156,11 @@ void golf_update_autotile_masks(GolfState *gs) {
                 if (ne_surf == SURF_SAND) mask |= MASK_NE;
                 if (se_surf == SURF_SAND) mask |= MASK_SE;
                 if (sw_surf == SURF_SAND) mask |= MASK_SW;
-            } else if (surf == SURF_WATER) {
-                if (nw_surf == SURF_WATER) mask |= MASK_NW;
-                if (ne_surf == SURF_WATER) mask |= MASK_NE;
-                if (se_surf == SURF_WATER) mask |= MASK_SE;
-                if (sw_surf == SURF_WATER) mask |= MASK_SW;
-            } else {
-                mask = 15;
+            } else if (surf == SURF_CARTPATH) {
+                if (nw_surf == SURF_CARTPATH || nw_surf == SURF_BRIDGE) mask |= MASK_NW;
+                if (ne_surf == SURF_CARTPATH || ne_surf == SURF_BRIDGE) mask |= MASK_NE;
+                if (se_surf == SURF_CARTPATH || se_surf == SURF_BRIDGE) mask |= MASK_SE;
+                if (sw_surf == SURF_CARTPATH || sw_surf == SURF_BRIDGE) mask |= MASK_SW;
             }
             
             gs->grid[x][y].autotile_mask = mask;
@@ -180,20 +175,79 @@ void golf_recalc_hole_stats(GolfState *gs) {
         return;
     }
     
-    int32_t dx = gs->pin_gx - gs->tee_gx;
-    int32_t dy = gs->pin_gy - gs->tee_gy;
-    fixed fdx = TO_FIXED(dx);
-    fixed fdy = TO_FIXED(dy);
-    fixed dist_tiles = fixed_sqrt(FMUL(fdx, fdx) + FMUL(fdy, fdy));
+    fixed dx = TO_FIXED(gs->pin_gx - gs->tee_gx);
+    fixed dy = TO_FIXED(gs->pin_gy - gs->tee_gy);
+    fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
     gs->hole_yards = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
     
-    if (gs->hole_yards < 225) {
+    if (gs->hole_yards < 220) {
         gs->par = 3;
-    } else if (gs->hole_yards < 450) {
-        gs->par = 4;
-    } else {
+    } else if (gs->hole_yards > 430) {
         gs->par = 5;
+    } else {
+        gs->par = 4;
     }
+    
+    golf_recalc_course_rating(gs);
+}
+
+void golf_recalc_course_rating(GolfState *gs) {
+    int32_t scenery_score = 0;
+    int32_t water_tiles = 0;
+    int32_t sand_tiles = 0;
+    int32_t fairway_tiles = 0;
+    int32_t elevation_diversity = 0;
+    uint8_t elev_seen[MAX_ELEVATION_TIER + 1] = {0};
+    
+    for (int y = 0; y < GRID_H; ++y) {
+        for (int x = 0; x < GRID_W; ++x) {
+            uint8_t s = gs->grid[x][y].surface;
+            uint8_t f = gs->grid[x][y].feature;
+            uint8_t e = gs->grid[x][y].elevation;
+            
+            if (e <= MAX_ELEVATION_TIER) elev_seen[e] = 1;
+            if (s == SURF_WATER) water_tiles++;
+            if (s == SURF_SAND) sand_tiles++;
+            if (s == SURF_FAIRWAY) fairway_tiles++;
+            
+            if (f == FEAT_PINE || f == FEAT_OAK || f == FEAT_PALM || f == FEAT_FLOWERING) scenery_score += 2;
+            else if (f == FEAT_FLOWERS || f == FEAT_BUSH) scenery_score += 3;
+            else if (f == FEAT_BENCH || f == FEAT_CART) scenery_score += 4;
+            else if (f == FEAT_ROCK) scenery_score += 1;
+        }
+    }
+    
+    for (int i = 0; i <= MAX_ELEVATION_TIER; ++i) {
+        if (elev_seen[i]) elevation_diversity += 8;
+    }
+    
+    int32_t rating = 25; /* Baseline */
+    if (gs->has_clubhouse) rating += 25;
+    if (gs->has_tee && gs->has_pin) rating += 10;
+    
+    rating += (scenery_score > 30) ? 30 : scenery_score;
+    rating += (elevation_diversity > 30) ? 30 : elevation_diversity;
+    if (water_tiles > 20) rating += 10;
+    if (sand_tiles >= 8) rating += 10;
+    if (fairway_tiles > 60) rating += 15;
+    
+    /* Normalize to 0..100 (maps to 0..5 stars) */
+    if (rating > 100) rating = 100;
+    if (rating < 10) rating = 10;
+    gs->fun_rating = rating;
+    
+    /* Difficulty Rating (1..10) */
+    int32_t diff = 1;
+    if (gs->hole_yards > 380) diff += 3;
+    else if (gs->hole_yards > 280) diff += 2;
+    else diff += 1;
+    
+    if (water_tiles > 35) diff += 3;
+    else if (water_tiles > 10) diff += 2;
+    
+    if (sand_tiles > 15) diff += 2;
+    if (diff > 10) diff = 10;
+    gs->difficulty_rating = diff;
 }
 
 static void set_banner(GolfState *gs, const char *msg, int32_t ticks) {
@@ -202,118 +256,20 @@ static void set_banner(GolfState *gs, const char *msg, int32_t ticks) {
     gs->banner_timer = ticks;
 }
 
-void golf_reset_ball_to_tee(GolfState *gs) {
-    if (!gs->has_tee) return;
-    gs->ball.x = TO_FIXED(gs->tee_gx) + FIXED_HALF;
-    gs->ball.y = TO_FIXED(gs->tee_gy) + FIXED_HALF;
-    gs->ball.ground_z = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
-    gs->ball.z = gs->ball.ground_z;
-    gs->ball.vx = 0;
-    gs->ball.vy = 0;
-    gs->ball.vz = 0;
-    gs->ball.state = BALL_IDLE;
-    gs->ball.current_surf = (SurfaceType)gs->grid[gs->tee_gx][gs->tee_gy].surface;
-    gs->ball.bounce_count = 0;
-    gs->ball.air_ticks = 0;
-    
-    gs->prev_ball_gx = gs->tee_gx;
-    gs->prev_ball_gy = gs->tee_gy;
-    gs->strokes = 0;
-    gs->hole_completed = false;
-    
-    /* Reset swing gauge to ready state */
-    gs->swing.state = SWING_STATE_READY;
-    gs->swing.cursor_pos = gs->swing.sweetspot_center;
-    gs->swing.locked_power = 0;
-    gs->swing.locked_accuracy = 0;
-    gs->swing.moving_up = true;
-    
-    /* Reset golfer character */
-    gs->golfer.x = gs->ball.x;
-    gs->golfer.y = gs->ball.y;
-    gs->golfer.target_x = gs->ball.x;
-    gs->golfer.target_y = gs->ball.y;
-    gs->golfer.state = GOLFER_STATE_READY;
-    gs->golfer.facing_angle = 192;
-    gs->golfer.walk_anim_frame = 0;
-    gs->golfer.walk_ticks = 0;
-    gs->golfer.step_timer = 0;
-    gs->golfer.current_z = gs->ball.ground_z;
-    gs->audio_event = AUDIO_EVT_NONE;
-    
-    /* Turn aim toward pin */
-    if (gs->has_pin) {
-        gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
-        gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
-        fixed dx = gs->aim_target_x - gs->ball.x;
-        fixed dy = gs->aim_target_y - gs->ball.y;
-        gs->aim_angle = fixed_atan2(dy, dx);
-        gs->golfer.facing_angle = gs->aim_angle;
-        fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
-        gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
-    } else {
-        gs->aim_angle = 192; /* North */
-        fixed dist_tiles = TO_FIXED(40);
-        gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
-        gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
-        gs->aim_distance_yds = 200;
-    }
-    gs->has_custom_aim = false;
-    
-    /* Recommend club */
-    int32_t yds = golf_distance_to_pin_yards(gs);
-    if (yds > 210) gs->current_club = CLUB_1W;
-    else if (yds > 165) gs->current_club = CLUB_3W;
-    else if (yds > 120) gs->current_club = CLUB_5I;
-    else if (yds > 70) gs->current_club = CLUB_9I;
-    else gs->current_club = CLUB_PW;
-}
-
-/* Procedural terrain generation using integer noise and cellular smoothing */
 void golf_generate_terrain(GolfState *gs, uint32_t seed) {
     core_srand(seed);
     
-    /* Step 1: Low-resolution height lattice (9x17) */
-    #define LAT_W 9
-    #define LAT_H 17
-    int32_t lattice[LAT_W][LAT_H];
-    
-    for (int ly = 0; ly < LAT_H; ++ly) {
-        for (int lx = 0; lx < LAT_W; ++lx) {
-            /* Create natural basin towards bottom-left or center */
-            int32_t val = (core_rand() % 100);
-            
-            /* Gradient: higher ground towards north/east, water/basin towards south/west */
-            int32_t bias = (lx * 25) / LAT_W + ((LAT_H - ly) * 20) / LAT_H;
-            val = (val * 6 + bias * 4) / 10;
-            lattice[lx][ly] = val;
-        }
-    }
-    
-    /* Step 2: Bilinear interpolation across 32x64 grid */
-    int32_t temp_height[GRID_W][GRID_H];
+    /* 1. Value noise height generation (0..5 tiers) */
+    int32_t noise[GRID_W][GRID_H];
     for (int y = 0; y < GRID_H; ++y) {
         for (int x = 0; x < GRID_W; ++x) {
-            int32_t lx = (x * (LAT_W - 1)) / (GRID_W - 1);
-            int32_t ly = (y * (LAT_H - 1)) / (GRID_H - 1);
-            int32_t fx = ((x * (LAT_W - 1)) % (GRID_W - 1)) * 256 / (GRID_W - 1);
-            int32_t fy = ((y * (LAT_H - 1)) % (GRID_H - 1)) * 256 / (GRID_H - 1);
-            
-            int32_t v00 = lattice[lx][ly];
-            int32_t v10 = (lx + 1 < LAT_W) ? lattice[lx + 1][ly] : v00;
-            int32_t v01 = (ly + 1 < LAT_H) ? lattice[lx][ly + 1] : v00;
-            int32_t v11 = (lx + 1 < LAT_W && ly + 1 < LAT_H) ? lattice[lx + 1][ly + 1] : v00;
-            
-            int32_t top = v00 + ((v10 - v00) * fx) / 256;
-            int32_t bot = v01 + ((v11 - v01) * fx) / 256;
-            int32_t h = top + ((bot - top) * fy) / 256;
-            temp_height[x][y] = h;
+            noise[x][y] = (int32_t)(core_rand() % 100);
         }
     }
     
-    /* Step 3: Cellular smoothing filter (3 passes) */
+    /* 3 passes of 3x3 box smoothing */
     for (int pass = 0; pass < 3; ++pass) {
-        int32_t smoothed[GRID_W][GRID_H];
+        int32_t temp[GRID_W][GRID_H];
         for (int y = 0; y < GRID_H; ++y) {
             for (int x = 0; x < GRID_W; ++x) {
                 int32_t sum = 0;
@@ -323,31 +279,34 @@ void golf_generate_terrain(GolfState *gs, uint32_t seed) {
                         int nx = x + dx;
                         int ny = y + dy;
                         if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
-                            sum += temp_height[nx][ny];
+                            sum += noise[nx][ny];
                             count++;
                         }
                     }
                 }
-                smoothed[x][y] = sum / count;
+                temp[x][y] = sum / count;
             }
         }
-        memcpy(temp_height, smoothed, sizeof(temp_height));
+        memcpy(noise, temp, sizeof(noise));
     }
     
-    /* Step 4: Quantize into 4 discrete elevation tiers */
+    /* Map noise to discrete elevation tiers (0..4) */
     for (int y = 0; y < GRID_H; ++y) {
         for (int x = 0; x < GRID_W; ++x) {
-            int32_t h = temp_height[x][y];
+            int32_t v = noise[x][y];
             uint8_t elev;
             uint8_t surf;
             
-            if (h < 26) {
+            if (v < 32) {
                 elev = ELEV_WATER;
                 surf = SURF_WATER;
-            } else if (h < 56) {
+            } else if (v < 48) {
                 elev = ELEV_LOWLAND;
                 surf = SURF_ROUGH;
-            } else if (h < 78) {
+            } else if (v < 66) {
+                elev = ELEV_VALLEY;
+                surf = SURF_ROUGH;
+            } else if (v < 82) {
                 elev = ELEV_RIDGE;
                 surf = SURF_ROUGH;
             } else {
@@ -358,387 +317,472 @@ void golf_generate_terrain(GolfState *gs, uint32_t seed) {
             gs->grid[x][y].elevation = elev;
             gs->grid[x][y].surface = surf;
             gs->grid[x][y].feature = FEAT_NONE;
+            gs->grid[x][y].autotile_mask = 0;
             gs->grid[x][y].variant = (uint8_t)(core_rand() % 4);
         }
     }
     
-    /* Step 5: Natural features (trees & rocks) on rough areas & slopes */
+    /* Populate natural features in rough areas */
     for (int y = 2; y < GRID_H - 2; ++y) {
         for (int x = 2; x < GRID_W - 2; ++x) {
-            if (gs->grid[x][y].surface != SURF_ROUGH) continue;
-            
-            /* Clustered feature generation */
-            int roll = core_rand() % 100;
-            if (roll < 9) {
-                /* Pine cluster or Oak cluster */
-                gs->grid[x][y].feature = (core_rand() % 2 == 0) ? FEAT_PINE : FEAT_OAK;
-            } else if (roll == 10) {
-                /* Granite boulder */
-                gs->grid[x][y].feature = FEAT_ROCK;
+            if (gs->grid[x][y].surface == SURF_ROUGH) {
+                uint32_t r = core_rand() % 100;
+                if (r < 4) {
+                    gs->grid[x][y].feature = FEAT_PINE;
+                } else if (r < 7) {
+                    gs->grid[x][y].feature = FEAT_OAK;
+                } else if (r < 9) {
+                    gs->grid[x][y].feature = FEAT_FLOWERING;
+                } else if (r < 11) {
+                    gs->grid[x][y].feature = FEAT_BUSH;
+                } else if (r < 13 && gs->grid[x][y].elevation >= ELEV_RIDGE) {
+                    gs->grid[x][y].feature = FEAT_ROCK;
+                }
             }
         }
     }
     
-    gs->has_tee = false;
-    gs->has_pin = false;
     golf_update_autotile_masks(gs);
 }
 
-/* Places a scenic, well-sculpted default golf hole routing */
 void golf_place_default_routing(GolfState *gs) {
-    /* Find dry land for Tee near south (gy ~ 54..58, gx ~ 12..16) */
-    int tee_x = 14, tee_y = 56;
-    while (tee_y > 40 && gs->grid[tee_x][tee_y].elevation == ELEV_WATER) {
-        tee_y--;
-    }
-    
-    /* Find dry land for Pin near north (gy ~ 8..12, gx ~ 16..20) */
-    int pin_x = 18, pin_y = 10;
-    while (pin_y < 30 && gs->grid[pin_x][pin_y].elevation == ELEV_WATER) {
-        pin_y++;
-    }
-    
-    gs->tee_gx = tee_x;
-    gs->tee_gy = tee_y;
+    /* 1. Tee Box Placement */
+    gs->tee_gx = 10;
+    gs->tee_gy = 55;
     gs->has_tee = true;
-    gs->grid[tee_x][tee_y].surface = SURF_TEE;
-    gs->grid[tee_x][tee_y].feature = FEAT_NONE;
-    if (tee_x > 0) gs->grid[tee_x - 1][tee_y].surface = SURF_TEE;
     
-    gs->pin_gx = pin_x;
-    gs->pin_gy = pin_y;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int tx = gs->tee_gx + dx;
+            int ty = gs->tee_gy + dy;
+            if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                if (gs->grid[tx][ty].elevation == 0) gs->grid[tx][ty].elevation = ELEV_LOWLAND;
+                gs->grid[tx][ty].surface = SURF_TEE;
+                gs->grid[tx][ty].feature = FEAT_NONE;
+            }
+        }
+    }
+    
+    /* 2. Green & Cup Placement */
+    gs->pin_gx = 16;
+    gs->pin_gy = 8;
     gs->has_pin = true;
     
-    /* Green around pin (3x3 circular) */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -2; dx <= 2; ++dx) {
-            int gx = pin_x + dx;
-            int gy = pin_y + dy;
-            if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
-                if (dx * dx + dy * dy <= 4 && gs->grid[gx][gy].elevation > ELEV_WATER) {
-                    gs->grid[gx][gy].surface = SURF_GREEN;
-                    gs->grid[gx][gy].feature = FEAT_NONE;
+    for (int dy = -3; dy <= 3; ++dy) {
+        for (int dx = -3; dx <= 3; ++dx) {
+            if (dx * dx + dy * dy <= 10) {
+                int px = gs->pin_gx + dx;
+                int py = gs->pin_gy + dy;
+                if (px >= 0 && px < GRID_W && py >= 0 && py < GRID_H) {
+                    if (gs->grid[px][py].elevation == 0) gs->grid[px][py].elevation = ELEV_VALLEY;
+                    gs->grid[px][py].surface = SURF_GREEN;
+                    gs->grid[px][py].feature = FEAT_NONE;
                 }
             }
         }
     }
     
-    /* Fairway connecting Tee to Green in a natural sweeping curve */
-    int steps = 100;
-    for (int i = 0; i <= steps; ++i) {
-        int cx = tee_x + ((pin_x - tee_x) * i) / steps;
-        int cy = tee_y + ((pin_y - tee_y) * i) / steps;
+    /* 3. Fairway Routing corridor */
+    for (int y = gs->pin_gy + 4; y < gs->tee_gy - 1; ++y) {
+        float t = (float)(y - (gs->pin_gy + 4)) / (float)(gs->tee_gy - 1 - (gs->pin_gy + 4));
+        int center_x = (int)((1.0f - t) * gs->pin_gx + t * gs->tee_gx);
+        int half_w = 2 + (int)((core_rand() % 3));
         
-        /* Slight dogleg curve */
-        if (i > 25 && i < 75) {
-            cx += (i < 50) ? -2 : -1;
-        }
-        
-        /* Paint fairway ribbon (radius 2) */
-        for (int rdy = -2; rdy <= 2; ++rdy) {
-            for (int rdx = -2; rdx <= 2; ++rdx) {
-                int fx = cx + rdx;
-                int fy = cy + rdy;
-                if (fx >= 0 && fx < GRID_W && fy >= 0 && fy < GRID_H) {
-                    if (gs->grid[fx][fy].surface == SURF_ROUGH) {
-                        gs->grid[fx][fy].surface = SURF_FAIRWAY;
-                        gs->grid[fx][fy].feature = FEAT_NONE;
+        for (int x = center_x - half_w; x <= center_x + half_w; ++x) {
+            if (x >= 1 && x < GRID_W - 1) {
+                if (gs->grid[x][y].surface != SURF_GREEN && gs->grid[x][y].surface != SURF_TEE) {
+                    if (gs->grid[x][y].elevation == 0) {
+                        /* Bridge across water hazard! */
+                        gs->grid[x][y].surface = SURF_BRIDGE;
+                    } else {
+                        gs->grid[x][y].surface = SURF_FAIRWAY;
                     }
+                    gs->grid[x][y].feature = FEAT_NONE;
                 }
             }
         }
     }
     
-    /* Strategic Sand Bunkers */
-    int b1x = pin_x - 3, b1y = pin_y + 1;
-    if (b1x >= 0 && gs->grid[b1x][b1y].elevation > ELEV_WATER) {
-        gs->grid[b1x][b1y].surface = SURF_SAND;
-        gs->grid[b1x][b1y].feature = FEAT_NONE;
-        if (b1y + 1 < GRID_H) gs->grid[b1x][b1y + 1].surface = SURF_SAND;
+    /* 4. Strategic Green-side Bunker */
+    for (int dy = -1; dy <= 2; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int bx = gs->pin_gx + 4 + dx;
+            int by = gs->pin_gy + 1 + dy;
+            if (bx >= 0 && bx < GRID_W && by >= 0 && by < GRID_H) {
+                if (gs->grid[bx][by].elevation == 0) gs->grid[bx][by].elevation = ELEV_VALLEY;
+                gs->grid[bx][by].surface = SURF_SAND;
+                gs->grid[bx][by].feature = FEAT_NONE;
+            }
+        }
     }
-    int b2x = tee_x + 3, b2y = (tee_y + pin_y) / 2;
-    if (b2x < GRID_W && gs->grid[b2x][b2y].elevation > ELEV_WATER) {
-        gs->grid[b2x][b2y].surface = SURF_SAND;
-        gs->grid[b2x][b2y].feature = FEAT_NONE;
+    
+    /* 5. Cart Path from Clubhouse to Tee */
+    for (int y = gs->tee_gy - 4; y <= gs->tee_gy + 2; ++y) {
+        int x = gs->tee_gx - 3;
+        if (x >= 0 && x < GRID_W && y >= 0 && y < GRID_H) {
+            if (gs->grid[x][y].elevation == 0) gs->grid[x][y].elevation = ELEV_LOWLAND;
+            gs->grid[x][y].surface = SURF_CARTPATH;
+            gs->grid[x][y].feature = FEAT_NONE;
+        }
+    }
+    
+    /* 6. Place Stately Golf Clubhouse */
+    golf_place_clubhouse(gs, gs->tee_gx - 6, gs->tee_gy - 2);
+    
+    /* 7. Bench & Golf Cart decor */
+    if (gs->tee_gx + 2 < GRID_W) {
+        gs->grid[gs->tee_gx + 2][gs->tee_gy].feature = FEAT_BENCH;
+    }
+    if (gs->tee_gx - 3 >= 0 && gs->tee_gy + 1 < GRID_H) {
+        gs->grid[gs->tee_gx - 3][gs->tee_gy + 1].feature = FEAT_CART;
+    }
+    
+    /* 8. Setup Spectators */
+    gs->spectator_count = 0;
+    
+    /* Clubhouse patio spectators */
+    if (gs->has_clubhouse) {
+        int sx = gs->clubhouse_gx + 2;
+        int sy = gs->clubhouse_gy + 3;
+        for (int i = 0; i < 4; ++i) {
+            if (gs->spectator_count < MAX_SPECTATORS) {
+                SpectatorEntity *sp = &gs->spectators[gs->spectator_count++];
+                sp->gx = sx + (i % 2);
+                sp->gy = sy + (i / 2);
+                sp->current_z = golf_get_ground_z_fixed(gs, TO_FIXED(sp->gx) + FIXED_HALF, TO_FIXED(sp->gy) + FIXED_HALF);
+                sp->state = SPEC_STATE_IDLE;
+                sp->shirt_color_idx = (uint8_t)(i % 5);
+                sp->facing_angle = 192; /* facing North towards course */
+                sp->anim_frame = i % 2;
+                sp->timer = i * 15;
+                sp->active = true;
+            }
+        }
+    }
+    
+    /* Tee box spectators */
+    for (int i = 0; i < 3; ++i) {
+        if (gs->spectator_count < MAX_SPECTATORS) {
+            SpectatorEntity *sp = &gs->spectators[gs->spectator_count++];
+            sp->gx = gs->tee_gx + 3;
+            sp->gy = gs->tee_gy - 1 + i;
+            sp->current_z = golf_get_ground_z_fixed(gs, TO_FIXED(sp->gx) + FIXED_HALF, TO_FIXED(sp->gy) + FIXED_HALF);
+            sp->state = SPEC_STATE_IDLE;
+            sp->shirt_color_idx = (uint8_t)((i + 2) % 5);
+            sp->facing_angle = 192;
+            sp->anim_frame = 0;
+            sp->timer = i * 20;
+            sp->active = true;
+        }
+    }
+    
+    /* Green-side gallery spectators */
+    for (int i = 0; i < 4; ++i) {
+        if (gs->spectator_count < MAX_SPECTATORS) {
+            SpectatorEntity *sp = &gs->spectators[gs->spectator_count++];
+            sp->gx = gs->pin_gx - 4;
+            sp->gy = gs->pin_gy - 2 + i * 2;
+            if (sp->gx >= 0 && sp->gy >= 0 && sp->gy < GRID_H) {
+                sp->current_z = golf_get_ground_z_fixed(gs, TO_FIXED(sp->gx) + FIXED_HALF, TO_FIXED(sp->gy) + FIXED_HALF);
+                sp->state = SPEC_STATE_IDLE;
+                sp->shirt_color_idx = (uint8_t)((i + 1) % 5);
+                sp->facing_angle = 0; /* facing East towards green */
+                sp->anim_frame = 0;
+                sp->timer = i * 10;
+                sp->active = true;
+            }
+        }
     }
     
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
-    set_banner(gs, "DUFFER - READY TO TEE OFF", 180);
 }
 
-/* Completely generates new procedural terrain & sculpts an all-new golf hole */
+bool golf_place_clubhouse(GolfState *gs, int32_t gx, int32_t gy) {
+    if (gx < 0 || gx + 3 >= GRID_W || gy < 0 || gy + 2 >= GRID_H) return false;
+    
+    /* Level the ground for the clubhouse */
+    uint8_t elev = gs->grid[gx][gy].elevation;
+    if (elev == 0) elev = ELEV_LOWLAND;
+    
+    for (int dy = 0; dy <= 2; ++dy) {
+        for (int dx = 0; dx <= 3; ++dx) {
+            int tx = gx + dx;
+            int ty = gy + dy;
+            gs->grid[tx][ty].elevation = elev;
+            gs->grid[tx][ty].surface = SURF_ROUGH;
+            gs->grid[tx][ty].feature = FEAT_CLUBHOUSE;
+        }
+    }
+    
+    gs->clubhouse_gx = gx;
+    gs->clubhouse_gy = gy;
+    gs->has_clubhouse = true;
+    golf_recalc_course_rating(gs);
+    return true;
+}
+
+void golf_remove_clubhouse(GolfState *gs) {
+    if (!gs->has_clubhouse) return;
+    for (int dy = 0; dy <= 2; ++dy) {
+        for (int dx = 0; dx <= 3; ++dx) {
+            int tx = gs->clubhouse_gx + dx;
+            int ty = gs->clubhouse_gy + dy;
+            if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                if (gs->grid[tx][ty].feature == FEAT_CLUBHOUSE) {
+                    gs->grid[tx][ty].feature = FEAT_NONE;
+                }
+            }
+        }
+    }
+    gs->has_clubhouse = false;
+    golf_recalc_course_rating(gs);
+}
+
 void golf_randomize_hole(GolfState *gs, uint32_t seed) {
     golf_generate_terrain(gs, seed);
     
-    /* Find dry land for Tee in south sector */
-    int tee_candidates[64][2];
-    int num_tee_cands = 0;
-    for (int y = 52; y <= 60; ++y) {
-        for (int x = 6; x <= 25; ++x) {
-            if (gs->grid[x][y].elevation > ELEV_WATER) {
-                if (num_tee_cands < 64) {
-                    tee_candidates[num_tee_cands][0] = x;
-                    tee_candidates[num_tee_cands][1] = y;
-                    num_tee_cands++;
-                }
+    /* Find valid dry land for Pin (upper half rows 6..14) */
+    int pin_candidates[32][2];
+    int pin_count = 0;
+    for (int y = 6; y <= 14; ++y) {
+        for (int x = 6; x < GRID_W - 6; ++x) {
+            if (gs->grid[x][y].surface != SURF_WATER && gs->grid[x][y].elevation > 0) {
+                pin_candidates[pin_count][0] = x;
+                pin_candidates[pin_count][1] = y;
+                pin_count++;
+                if (pin_count >= 32) break;
             }
         }
+        if (pin_count >= 32) break;
     }
     
-    int tee_x = 14, tee_y = 56;
-    if (num_tee_cands > 0) {
-        int idx = core_rand() % num_tee_cands;
-        tee_x = tee_candidates[idx][0];
-        tee_y = tee_candidates[idx][1];
+    if (pin_count > 0) {
+        int idx = (int)(core_rand() % pin_count);
+        gs->pin_gx = pin_candidates[idx][0];
+        gs->pin_gy = pin_candidates[idx][1];
+    } else {
+        gs->pin_gx = 16;
+        gs->pin_gy = 8;
     }
     
-    /* Find dry land for Pin in north sector */
-    int pin_candidates[64][2];
-    int num_pin_cands = 0;
-    for (int y = 6; y <= 18; ++y) {
-        for (int x = 6; x <= 25; ++x) {
-            if (gs->grid[x][y].elevation > ELEV_WATER) {
-                if (num_pin_cands < 64) {
-                    pin_candidates[num_pin_cands][0] = x;
-                    pin_candidates[num_pin_cands][1] = y;
-                    num_pin_cands++;
-                }
+    /* Find valid dry land for Tee (lower half rows 50..58) */
+    int tee_candidates[32][2];
+    int tee_count = 0;
+    for (int y = 50; y <= 58; ++y) {
+        for (int x = 4; x < GRID_W - 4; ++x) {
+            if (gs->grid[x][y].surface != SURF_WATER && gs->grid[x][y].elevation > 0) {
+                tee_candidates[tee_count][0] = x;
+                tee_candidates[tee_count][1] = y;
+                tee_count++;
+                if (tee_count >= 32) break;
             }
         }
+        if (tee_count >= 32) break;
     }
     
-    int pin_x = 18, pin_y = 10;
-    if (num_pin_cands > 0) {
-        int idx = core_rand() % num_pin_cands;
-        pin_x = pin_candidates[idx][0];
-        pin_y = pin_candidates[idx][1];
+    if (tee_count > 0) {
+        int idx = (int)(core_rand() % tee_count);
+        gs->tee_gx = tee_candidates[idx][0];
+        gs->tee_gy = tee_candidates[idx][1];
+    } else {
+        gs->tee_gx = 10;
+        gs->tee_gy = 55;
     }
     
-    gs->tee_gx = tee_x;
-    gs->tee_gy = tee_y;
     gs->has_tee = true;
-    gs->grid[tee_x][tee_y].surface = SURF_TEE;
-    gs->grid[tee_x][tee_y].feature = FEAT_NONE;
-    if (tee_x > 0 && gs->grid[tee_x - 1][tee_y].elevation > ELEV_WATER) {
-        gs->grid[tee_x - 1][tee_y].surface = SURF_TEE;
-        gs->grid[tee_x - 1][tee_y].feature = FEAT_NONE;
-    }
-    
-    gs->pin_gx = pin_x;
-    gs->pin_gy = pin_y;
     gs->has_pin = true;
     
-    /* Green around pin (circular radius 2) */
-    for (int dy = -2; dy <= 2; ++dy) {
-        for (int dx = -2; dx <= 2; ++dx) {
-            int gx = pin_x + dx;
-            int gy = pin_y + dy;
-            if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
-                if (dx * dx + dy * dy <= 5 && gs->grid[gx][gy].elevation > ELEV_WATER) {
-                    gs->grid[gx][gy].surface = SURF_GREEN;
-                    gs->grid[gx][gy].feature = FEAT_NONE;
+    /* Stamp Tee Box */
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int tx = gs->tee_gx + dx;
+            int ty = gs->tee_gy + dy;
+            if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                if (gs->grid[tx][ty].elevation == 0) gs->grid[tx][ty].elevation = ELEV_LOWLAND;
+                gs->grid[tx][ty].surface = SURF_TEE;
+                gs->grid[tx][ty].feature = FEAT_NONE;
+            }
+        }
+    }
+    
+    /* Stamp Putting Green */
+    for (int dy = -3; dy <= 3; ++dy) {
+        for (int dx = -3; dx <= 3; ++dx) {
+            if (dx * dx + dy * dy <= 10) {
+                int px = gs->pin_gx + dx;
+                int py = gs->pin_gy + dy;
+                if (px >= 0 && px < GRID_W && py >= 0 && py < GRID_H) {
+                    if (gs->grid[px][py].elevation == 0) gs->grid[px][py].elevation = ELEV_VALLEY;
+                    gs->grid[px][py].surface = SURF_GREEN;
+                    gs->grid[px][py].feature = FEAT_NONE;
                 }
             }
         }
     }
     
-    /* Sculpt Fairway ribbon with randomized dogleg curve */
-    int dogleg = ((int)(core_rand() % 9) - 4); /* -4 to +4 lateral bend */
-    int steps = 120;
-    for (int i = 0; i <= steps; ++i) {
-        int cx = tee_x + ((pin_x - tee_x) * i) / steps;
-        int cy = tee_y + ((pin_y - tee_y) * i) / steps;
+    /* Stamp Fairway Corridor connecting Tee to Green */
+    int start_y = gs->pin_gy + 4;
+    int end_y = gs->tee_gy - 1;
+    for (int y = start_y; y <= end_y; ++y) {
+        float t = (float)(y - start_y) / (float)(end_y - start_y);
+        int center_x = (int)((1.0f - t) * gs->pin_gx + t * gs->tee_gx);
+        int half_w = 2 + (int)(core_rand() % 3);
         
-        /* Smooth parabolic dogleg deviation */
-        if (i > 15 && i < 90) {
-            int t_dev = (i - 15) * (90 - i);
-            cx += (dogleg * t_dev) / 1400;
-        }
-        
-        /* Fairway width: 2 to 3 tiles radius */
-        int f_rad = (i > 30 && i < 70) ? 3 : 2;
-        for (int rdy = -f_rad; rdy <= f_rad; ++rdy) {
-            for (int rdx = -f_rad; rdx <= f_rad; ++rdx) {
-                int fx = cx + rdx;
-                int fy = cy + rdy;
-                if (fx >= 0 && fx < GRID_W && fy >= 0 && fy < GRID_H) {
-                    if (gs->grid[fx][fy].elevation > ELEV_WATER && gs->grid[fx][fy].surface != SURF_GREEN && gs->grid[fx][fy].surface != SURF_TEE) {
-                        gs->grid[fx][fy].surface = SURF_FAIRWAY;
-                        gs->grid[fx][fy].feature = FEAT_NONE;
+        for (int x = center_x - half_w; x <= center_x + half_w; ++x) {
+            if (x >= 1 && x < GRID_W - 1) {
+                if (gs->grid[x][y].surface != SURF_GREEN && gs->grid[x][y].surface != SURF_TEE) {
+                    if (gs->grid[x][y].elevation == 0) {
+                        gs->grid[x][y].surface = SURF_BRIDGE;
+                    } else {
+                        gs->grid[x][y].surface = SURF_FAIRWAY;
                     }
+                    gs->grid[x][y].feature = FEAT_NONE;
                 }
             }
         }
     }
     
-    /* Strategic Sand Bunkers */
-    /* 1. Greenside trap */
-    int g_side = (core_rand() % 2 == 0) ? -3 : 3;
-    int b1x = pin_x + g_side, b1y = pin_y + ((core_rand() % 3) - 1);
-    if (b1x >= 0 && b1x < GRID_W && b1y >= 0 && b1y < GRID_H && gs->grid[b1x][b1y].elevation > ELEV_WATER) {
-        gs->grid[b1x][b1y].surface = SURF_SAND;
-        gs->grid[b1x][b1y].feature = FEAT_NONE;
-        if (b1y + 1 < GRID_H && gs->grid[b1x][b1y + 1].elevation > ELEV_WATER) {
-            gs->grid[b1x][b1y + 1].surface = SURF_SAND;
-            gs->grid[b1x][b1y + 1].feature = FEAT_NONE;
+    /* Sand Bunkers */
+    int bx = gs->pin_gx + 3;
+    int by = gs->pin_gy + 2;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            int tx = bx + dx;
+            int ty = by + dy;
+            if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                if (gs->grid[tx][ty].elevation == 0) gs->grid[tx][ty].elevation = ELEV_VALLEY;
+                gs->grid[tx][ty].surface = SURF_SAND;
+                gs->grid[tx][ty].feature = FEAT_NONE;
+            }
         }
     }
-    /* 2. Fairway landing trap */
-    int mid_i = steps / 2;
-    int mcx = tee_x + ((pin_x - tee_x) * mid_i) / steps + dogleg;
-    int mcy = tee_y + ((pin_y - tee_y) * mid_i) / steps;
-    int b2x = mcx + ((core_rand() % 2 == 0) ? -3 : 3);
-    int b2y = mcy;
-    if (b2x >= 0 && b2x < GRID_W && b2y >= 0 && b2y < GRID_H && gs->grid[b2x][b2y].elevation > ELEV_WATER) {
-        gs->grid[b2x][b2y].surface = SURF_SAND;
-        gs->grid[b2x][b2y].feature = FEAT_NONE;
-    }
     
-    /* Dynamic Wind */
-    gs->wind.angle = (uint8_t)(core_rand() % 256);
-    gs->wind.speed = TO_FIXED(3 + (core_rand() % 16)); /* 3 to 18 mph */
+    /* Clubhouse Placement */
+    int ch_x = (gs->tee_gx >= 8) ? (gs->tee_gx - 6) : (gs->tee_gx + 3);
+    int ch_y = gs->tee_gy - 2;
+    golf_place_clubhouse(gs, ch_x, ch_y);
     
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
-    
-    char msg[64];
-    snprintf(msg, sizeof(msg), "NEW HOLE: %d YDS - PAR %d", gs->hole_yards, gs->par);
-    set_banner(gs, msg, 180);
+    set_banner(gs, "NEW HOLE GENERATED!", 120);
 }
 
 void golf_init(GolfState *gs) {
     memset(gs, 0, sizeof(GolfState));
+    
     gs->mode = MODE_SPLASH;
+    gs->build_category = BUILD_CAT_TERRAIN;
     gs->current_tool = TOOL_FAIRWAY;
     gs->brush_size = 1;
-    gs->current_club = CLUB_1W;
-    gs->wind.angle = 48;
-    gs->wind.speed = TO_FIXED(8); /* 8 mph */
+    gs->club_funds = 150000; /* $150,000 SimGolf initial budget */
     
-    /* Gauge settings: Classic deliberate 90s tempo */
-    gs->swing.sweetspot_center = TO_FIXED(1) / 8; /* 12.5% notch mark */
-    gs->swing.sweetspot_width = 4800;             /* ~7.3% snap tolerance window */
-    gs->swing.cursor_speed = 700;                 /* ~1.55 sec backswing (deliberate & playable) */
-    gs->swing.state = SWING_STATE_READY;
-    gs->swing.cursor_pos = gs->swing.sweetspot_center;
-    gs->swing.moving_up = true;
-    
-    golf_generate_terrain(gs, 42);
+    golf_generate_terrain(gs, 0x51A601F);
     golf_place_default_routing(gs);
-    golf_reset_ball_to_tee(gs);
+    
+    /* Swing Gauge defaults */
+    gs->swing.state = SWING_STATE_READY;
+    gs->swing.cursor_pos = 0;
+    gs->swing.cursor_speed = 1000; /* Smooth SimGolf swing meter speed */
+    gs->swing.locked_power = FIXED_ONE;
+    gs->swing.locked_accuracy = 0;
+    gs->swing.moving_up = true;
+    gs->swing.sweetspot_center = FIXED_ONE / 8;
+    gs->swing.sweetspot_width  = 3200;
+    
+    /* Wind system */
+    gs->wind.angle = 64; /* East-South-East */
+    gs->wind.speed = 12; /* 12 mph gentle breeze */
+    
+    gs->current_club = CLUB_1W;
+    gs->strokes = 0;
+    gs->score_rel_par = 0;
+    gs->hole_completed = false;
+    
+    /* Caddy initialization */
+    gs->caddy.x = gs->golfer.x - TO_FIXED(2);
+    gs->caddy.y = gs->golfer.y;
+    gs->caddy.current_z = gs->golfer.current_z;
+    gs->caddy.state = CADDY_STATE_READY;
+    gs->caddy.facing_angle = gs->golfer.facing_angle;
+    
+    golf_recalc_course_rating(gs);
+    set_banner(gs, "WELCOME TO DUFFER PRO!", 180);
 }
 
-/* Tool execution in Build Mode */
-bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy) {
-    if (gx < 0 || gx >= GRID_W || gy < 0 || gy >= GRID_H) return false;
+void golf_reset_ball_to_tee(GolfState *gs) {
+    if (!gs->has_tee) return;
     
-    if (gs->current_tool == TOOL_TEE) {
-        if (gs->grid[gx][gy].elevation == ELEV_WATER) return false;
-        if (gs->has_tee) {
-            gs->grid[gs->tee_gx][gs->tee_gy].surface = SURF_ROUGH;
-        }
-        gs->tee_gx = gx;
-        gs->tee_gy = gy;
-        gs->has_tee = true;
-        gs->grid[gx][gy].surface = SURF_TEE;
-        gs->grid[gx][gy].feature = FEAT_NONE;
-        golf_recalc_hole_stats(gs);
-        golf_update_autotile_masks(gs);
-        golf_reset_ball_to_tee(gs);
-        set_banner(gs, "TEE MARKER PLACED", 120);
-        return true;
+    gs->ball.x = TO_FIXED(gs->tee_gx) + FIXED_HALF;
+    gs->ball.y = TO_FIXED(gs->tee_gy) + FIXED_HALF;
+    gs->ball.ground_z = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
+    gs->ball.z = gs->ball.ground_z;
+    gs->ball.vx = 0;
+    gs->ball.vy = 0;
+    gs->ball.vz = 0;
+    gs->ball.state = BALL_IDLE;
+    gs->ball.current_surf = SURF_TEE;
+    gs->ball.air_ticks = 0;
+    gs->ball.bounce_count = 0;
+    
+    gs->prev_ball_gx = gs->tee_gx;
+    gs->prev_ball_gy = gs->tee_gy;
+    
+    /* Setup Golfer */
+    gs->golfer.x = gs->ball.x;
+    gs->golfer.y = gs->ball.y;
+    gs->golfer.current_z = gs->ball.ground_z;
+    gs->golfer.target_x = gs->ball.x;
+    gs->golfer.target_y = gs->ball.y;
+    gs->golfer.state = GOLFER_STATE_READY;
+    gs->golfer.walk_ticks = 0;
+    gs->golfer.walk_anim_frame = 0;
+    gs->golfer.step_timer = 0;
+    
+    /* Setup Caddy */
+    gs->caddy.x = gs->golfer.x - TO_FIXED(2);
+    gs->caddy.y = gs->golfer.y;
+    gs->caddy.current_z = gs->golfer.current_z;
+    gs->caddy.state = CADDY_STATE_READY;
+    
+    /* Aim toward cup */
+    if (gs->has_pin) {
+        gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
+        gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
+        fixed dx = gs->aim_target_x - gs->ball.x;
+        fixed dy = gs->aim_target_y - gs->ball.y;
+        gs->aim_angle = fixed_atan2(dy, dx);
+        fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+        gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
+        gs->has_custom_aim = false;
+        gs->golfer.facing_angle = gs->aim_angle;
+        gs->caddy.facing_angle = gs->aim_angle;
     }
     
-    if (gs->current_tool == TOOL_PIN) {
-        if (gs->grid[gx][gy].elevation == ELEV_WATER) return false;
-        gs->pin_gx = gx;
-        gs->pin_gy = gy;
-        gs->has_pin = true;
-        gs->grid[gx][gy].surface = SURF_GREEN;
-        gs->grid[gx][gy].feature = FEAT_NONE;
-        
-        /* Auto create green ring around pin */
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                int nx = gx + dx;
-                int ny = gy + dy;
-                if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
-                    if (gs->grid[nx][ny].elevation > ELEV_WATER && gs->grid[nx][ny].surface != SURF_TEE) {
-                        gs->grid[nx][ny].surface = SURF_GREEN;
-                        gs->grid[nx][ny].feature = FEAT_NONE;
-                    }
-                }
-            }
-        }
-        golf_recalc_hole_stats(gs);
-        golf_update_autotile_masks(gs);
-        set_banner(gs, "PIN CUP PLACED", 120);
-        return true;
-    }
+    /* Club recommendation */
+    int32_t yds = golf_distance_to_pin_yards(gs);
+    if (yds > 215) gs->current_club = CLUB_1W;
+    else if (yds > 175) gs->current_club = CLUB_3W;
+    else if (yds > 130) gs->current_club = CLUB_5I;
+    else if (yds > 80) gs->current_club = CLUB_9I;
+    else gs->current_club = CLUB_PW;
     
-    int b = gs->brush_size;
-    for (int dy = -(b - 1); dy <= (b - 1); ++dy) {
-        for (int dx = -(b - 1); dx <= (b - 1); ++dx) {
-            int tx = gx + dx;
-            int ty = gy + dy;
-            if (tx < 0 || tx >= GRID_W || ty < 0 || ty >= GRID_H) continue;
-            
-            switch (gs->current_tool) {
-                case TOOL_FAIRWAY:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER) {
-                        gs->grid[tx][ty].surface = SURF_FAIRWAY;
-                        gs->grid[tx][ty].feature = FEAT_NONE;
-                    }
-                    break;
-                case TOOL_GREEN:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER) {
-                        gs->grid[tx][ty].surface = SURF_GREEN;
-                        gs->grid[tx][ty].feature = FEAT_NONE;
-                    }
-                    break;
-                case TOOL_SAND:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER) {
-                        gs->grid[tx][ty].surface = SURF_SAND;
-                        gs->grid[tx][ty].feature = FEAT_NONE;
-                    }
-                    break;
-                case TOOL_ROUGH:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER) {
-                        gs->grid[tx][ty].surface = SURF_ROUGH;
-                    }
-                    break;
-                case TOOL_PINE:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER && gs->grid[tx][ty].surface != SURF_GREEN && gs->grid[tx][ty].surface != SURF_TEE) {
-                        gs->grid[tx][ty].feature = FEAT_PINE;
-                    }
-                    break;
-                case TOOL_OAK:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER && gs->grid[tx][ty].surface != SURF_GREEN && gs->grid[tx][ty].surface != SURF_TEE) {
-                        gs->grid[tx][ty].feature = FEAT_OAK;
-                    }
-                    break;
-                case TOOL_ROCK:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER && gs->grid[tx][ty].surface != SURF_GREEN && gs->grid[tx][ty].surface != SURF_TEE) {
-                        gs->grid[tx][ty].feature = FEAT_ROCK;
-                    }
-                    break;
-                case TOOL_BULLDOZE:
-                    if (gs->grid[tx][ty].elevation > ELEV_WATER) {
-                        gs->grid[tx][ty].surface = SURF_ROUGH;
-                        gs->grid[tx][ty].feature = FEAT_NONE;
-                    }
-                    break;
-                default:
-                    break;
-            }
-        }
+    gs->swing.state = SWING_STATE_READY;
+    gs->swing.cursor_pos = gs->swing.sweetspot_center;
+    gs->strokes = 0;
+    gs->score_rel_par = 0;
+    gs->hole_completed = false;
+}
+
+void golf_set_mode(GolfState *gs, GameMode mode) {
+    gs->mode = mode;
+    if (mode == MODE_PLAY) {
+        set_banner(gs, "PLAY MODE - CLICK BALL TO SWING", 120);
+    } else if (mode == MODE_BUILD) {
+        set_banner(gs, "DESIGN MODE - SCULPT & BEAUTIFY COURSE", 120);
     }
-    
-    golf_update_autotile_masks(gs);
-    return true;
 }
 
 void golf_set_tool(GolfState *gs, BuildTool tool) {
@@ -747,13 +791,234 @@ void golf_set_tool(GolfState *gs, BuildTool tool) {
     }
 }
 
-void golf_set_mode(GolfState *gs, GameMode mode) {
-    gs->mode = mode;
-    if (mode == MODE_PLAY) {
-        set_banner(gs, "PLAY MODE - HIT [SPACE] OR CLICK TO SWING", 120);
-    } else {
-        set_banner(gs, "BUILD MODE - SCULPT HOLE ROUTING", 120);
+void golf_set_build_category(GolfState *gs, BuildCategory cat) {
+    if (cat < BUILD_CAT_COUNT) {
+        gs->build_category = cat;
+        if (cat == BUILD_CAT_TERRAIN) gs->current_tool = TOOL_FAIRWAY;
+        else if (cat == BUILD_CAT_COURSE) gs->current_tool = TOOL_TEE;
+        else if (cat == BUILD_CAT_SCENERY) gs->current_tool = TOOL_PINE;
     }
+}
+
+bool golf_raise_terrain(GolfState *gs, int32_t gx, int32_t gy, int32_t brush_size) {
+    int rad = (brush_size == 2) ? 1 : 0;
+    bool changed = false;
+    
+    for (int dy = -rad; dy <= rad; ++dy) {
+        for (int dx = -rad; dx <= rad; ++dx) {
+            int tx = gx + dx;
+            int ty = gy + dy;
+            if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                if (gs->grid[tx][ty].elevation < MAX_ELEVATION_TIER) {
+                    gs->grid[tx][ty].elevation++;
+                    if (gs->grid[tx][ty].surface == SURF_WATER) {
+                        gs->grid[tx][ty].surface = SURF_ROUGH;
+                    }
+                    changed = true;
+                }
+            }
+        }
+    }
+    
+    if (changed) {
+        gs->audio_event = AUDIO_EVT_TERRAIN_SCULPT;
+        gs->club_funds -= 50;
+        golf_update_autotile_masks(gs);
+        golf_recalc_course_rating(gs);
+        set_banner(gs, "TERRAIN ELEVATION RAISED", 60);
+    }
+    return changed;
+}
+
+bool golf_lower_terrain(GolfState *gs, int32_t gx, int32_t gy, int32_t brush_size) {
+    int rad = (brush_size == 2) ? 1 : 0;
+    bool changed = false;
+    
+    for (int dy = -rad; dy <= rad; ++dy) {
+        for (int dx = -rad; dx <= rad; ++dx) {
+            int tx = gx + dx;
+            int ty = gy + dy;
+            if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                if (gs->grid[tx][ty].elevation > 0) {
+                    gs->grid[tx][ty].elevation--;
+                    if (gs->grid[tx][ty].elevation == 0) {
+                        gs->grid[tx][ty].surface = SURF_WATER;
+                        gs->grid[tx][ty].feature = FEAT_NONE;
+                    }
+                    changed = true;
+                }
+            }
+        }
+    }
+    
+    if (changed) {
+        gs->audio_event = AUDIO_EVT_TERRAIN_SCULPT;
+        gs->club_funds -= 50;
+        golf_update_autotile_masks(gs);
+        golf_recalc_course_rating(gs);
+        set_banner(gs, "TERRAIN ELEVATION LOWERED", 60);
+    }
+    return changed;
+}
+
+bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy) {
+    if (gx < 0 || gx >= GRID_W || gy < 0 || gy >= GRID_H) return false;
+    
+    int rad = (gs->brush_size == 2) ? 1 : 0;
+    bool modified = false;
+    
+    switch (gs->current_tool) {
+        case TOOL_RAISE:
+            return golf_raise_terrain(gs, gx, gy, gs->brush_size);
+            
+        case TOOL_LOWER:
+            return golf_lower_terrain(gs, gx, gy, gs->brush_size);
+            
+        case TOOL_FAIRWAY:
+        case TOOL_GREEN:
+        case TOOL_SAND:
+        case TOOL_ROUGH:
+        case TOOL_WATER:
+        case TOOL_CARTPATH:
+        case TOOL_BRIDGE: {
+            SurfaceType st = SURF_ROUGH;
+            if (gs->current_tool == TOOL_FAIRWAY) st = SURF_FAIRWAY;
+            else if (gs->current_tool == TOOL_GREEN) st = SURF_GREEN;
+            else if (gs->current_tool == TOOL_SAND) st = SURF_SAND;
+            else if (gs->current_tool == TOOL_WATER) st = SURF_WATER;
+            else if (gs->current_tool == TOOL_CARTPATH) st = SURF_CARTPATH;
+            else if (gs->current_tool == TOOL_BRIDGE) st = SURF_BRIDGE;
+            
+            for (int dy = -rad; dy <= rad; ++dy) {
+                for (int dx = -rad; dx <= rad; ++dx) {
+                    int tx = gx + dx;
+                    int ty = gy + dy;
+                    if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                        gs->grid[tx][ty].surface = st;
+                        if (st == SURF_WATER) {
+                            gs->grid[tx][ty].elevation = 0;
+                            gs->grid[tx][ty].feature = FEAT_NONE;
+                        } else if (gs->grid[tx][ty].elevation == 0) {
+                            gs->grid[tx][ty].elevation = ELEV_LOWLAND;
+                        }
+                        modified = true;
+                    }
+                }
+            }
+            gs->audio_event = AUDIO_EVT_BUILD_PLACE;
+            break;
+        }
+        
+        case TOOL_BULLDOZE: {
+            for (int dy = -rad; dy <= rad; ++dy) {
+                for (int dx = -rad; dx <= rad; ++dx) {
+                    int tx = gx + dx;
+                    int ty = gy + dy;
+                    if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                        if (gs->grid[tx][ty].feature == FEAT_CLUBHOUSE) {
+                            golf_remove_clubhouse(gs);
+                        }
+                        gs->grid[tx][ty].feature = FEAT_NONE;
+                        if (gs->grid[tx][ty].surface != SURF_WATER) {
+                            gs->grid[tx][ty].surface = SURF_ROUGH;
+                        }
+                        modified = true;
+                    }
+                }
+            }
+            gs->audio_event = AUDIO_EVT_BUILD_PLACE;
+            break;
+        }
+        
+        case TOOL_TEE: {
+            gs->tee_gx = gx;
+            gs->tee_gy = gy;
+            gs->has_tee = true;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    int tx = gx + dx;
+                    int ty = gy + dy;
+                    if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                        if (gs->grid[tx][ty].elevation == 0) gs->grid[tx][ty].elevation = ELEV_LOWLAND;
+                        gs->grid[tx][ty].surface = SURF_TEE;
+                        gs->grid[tx][ty].feature = FEAT_NONE;
+                    }
+                }
+            }
+            golf_recalc_hole_stats(gs);
+            golf_reset_ball_to_tee(gs);
+            gs->audio_event = AUDIO_EVT_BUILD_PLACE;
+            modified = true;
+            break;
+        }
+        
+        case TOOL_PIN: {
+            gs->pin_gx = gx;
+            gs->pin_gy = gy;
+            gs->has_pin = true;
+            for (int dy = -2; dy <= 2; ++dy) {
+                for (int dx = -2; dx <= 2; ++dx) {
+                    int tx = gx + dx;
+                    int ty = gy + dy;
+                    if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                        if (gs->grid[tx][ty].elevation == 0) gs->grid[tx][ty].elevation = ELEV_VALLEY;
+                        gs->grid[tx][ty].surface = SURF_GREEN;
+                        gs->grid[tx][ty].feature = FEAT_NONE;
+                    }
+                }
+            }
+            golf_recalc_hole_stats(gs);
+            gs->audio_event = AUDIO_EVT_BUILD_PLACE;
+            modified = true;
+            break;
+        }
+        
+        case TOOL_PINE:
+        case TOOL_OAK:
+        case TOOL_PALM:
+        case TOOL_FLOWERING:
+        case TOOL_BUSH:
+        case TOOL_FLOWERS:
+        case TOOL_ROCK:
+        case TOOL_BENCH:
+        case TOOL_CART: {
+            FeatureType ft = FEAT_PINE;
+            if (gs->current_tool == TOOL_OAK) ft = FEAT_OAK;
+            else if (gs->current_tool == TOOL_PALM) ft = FEAT_PALM;
+            else if (gs->current_tool == TOOL_FLOWERING) ft = FEAT_FLOWERING;
+            else if (gs->current_tool == TOOL_BUSH) ft = FEAT_BUSH;
+            else if (gs->current_tool == TOOL_FLOWERS) ft = FEAT_FLOWERS;
+            else if (gs->current_tool == TOOL_ROCK) ft = FEAT_ROCK;
+            else if (gs->current_tool == TOOL_BENCH) ft = FEAT_BENCH;
+            else if (gs->current_tool == TOOL_CART) ft = FEAT_CART;
+            
+            if (gs->grid[gx][gy].surface != SURF_WATER && gs->grid[gx][gy].surface != SURF_TEE && gs->grid[gx][gy].surface != SURF_GREEN) {
+                gs->grid[gx][gy].feature = ft;
+                gs->audio_event = AUDIO_EVT_BUILD_PLACE;
+                gs->club_funds -= 25;
+                modified = true;
+            }
+            break;
+        }
+        
+        case TOOL_CLUBHOUSE: {
+            if (golf_place_clubhouse(gs, gx, gy)) {
+                gs->audio_event = AUDIO_EVT_BUILD_PLACE;
+                gs->club_funds -= 1500;
+                modified = true;
+            }
+            break;
+        }
+        
+        default:
+            break;
+    }
+    
+    if (modified) {
+        golf_update_autotile_masks(gs);
+        golf_recalc_course_rating(gs);
+    }
+    return modified;
 }
 
 void golf_select_club(GolfState *gs, ClubType club) {
@@ -767,50 +1032,34 @@ void golf_change_club(GolfState *gs, int delta) {
     if (next < 0) next = CLUB_COUNT - 1;
     if (next >= CLUB_COUNT) next = 0;
     gs->current_club = (ClubType)next;
-    
-    /* If player hasn't placed custom aim spot, target follows club nominal range */
-    if (!gs->has_custom_aim) {
-        const ClubData *club = golf_get_club_data(gs->current_club);
-        gs->aim_distance_yds = club->nominal_yards;
-        fixed dist_tiles = TO_FIXED(club->nominal_yards) / YARDS_PER_TILE;
-        gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
-        gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
-    }
 }
 
 void golf_adjust_aim(GolfState *gs, int delta_angle) {
     gs->aim_angle = (uint8_t)(gs->aim_angle + delta_angle);
+    gs->golfer.facing_angle = gs->aim_angle;
+    gs->has_custom_aim = false;
     
-    /* Rotate target position around ball at current distance */
-    fixed dist_tiles = TO_FIXED(gs->aim_distance_yds) / YARDS_PER_TILE;
-    if (dist_tiles < TO_FIXED(2)) dist_tiles = TO_FIXED(2);
-    
+    const ClubData *club = golf_get_club_data(gs->current_club);
+    gs->aim_distance_yds = club->nominal_yards;
+    fixed dist_tiles = FDIV(TO_FIXED(gs->aim_distance_yds), TO_FIXED(YARDS_PER_TILE));
     gs->aim_target_x = gs->ball.x + FMUL(dist_tiles, fixed_cos(gs->aim_angle));
     gs->aim_target_y = gs->ball.y + FMUL(dist_tiles, fixed_sin(gs->aim_angle));
 }
 
-/* Set aim landing spot directly to clicked world coordinates */
-void golf_set_aim_target(GolfState *gs, fixed target_x, fixed target_y) {
-    /* Clamp target within course bounds */
-    if (target_x < TO_FIXED(0)) target_x = TO_FIXED(0);
-    if (target_x > TO_FIXED(GRID_W - 1) + FIXED_HALF) target_x = TO_FIXED(GRID_W - 1) + FIXED_HALF;
-    if (target_y < TO_FIXED(0)) target_y = TO_FIXED(0);
-    if (target_y > TO_FIXED(GRID_H - 1) + FIXED_HALF) target_y = TO_FIXED(GRID_H - 1) + FIXED_HALF;
-    
-    gs->aim_target_x = target_x;
-    gs->aim_target_y = target_y;
+void golf_set_aim_target(GolfState *gs, fixed target_fx, fixed target_fy) {
+    gs->aim_target_x = target_fx;
+    gs->aim_target_y = target_fy;
     gs->has_custom_aim = true;
     
-    /* Calculate angle from ball to aim target */
-    fixed dx = target_x - gs->ball.x;
-    fixed dy = target_y - gs->ball.y;
+    fixed dx = target_fx - gs->ball.x;
+    fixed dy = target_fy - gs->ball.y;
     gs->aim_angle = fixed_atan2(dy, dx);
+    gs->golfer.facing_angle = gs->aim_angle;
     
-    /* Calculate linear distance in yards */
     fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
     gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
     
-    /* Auto-select matching club for this distance */
+    /* Auto-select optimal club */
     if (gs->ball.current_surf == SURF_GREEN || gs->aim_distance_yds <= 20) {
         gs->current_club = CLUB_PT;
     } else if (gs->aim_distance_yds > 215) {
@@ -826,48 +1075,41 @@ void golf_set_aim_target(GolfState *gs, fixed target_x, fixed target_y) {
     }
 }
 
-/* 3-Click Swing Gauge handler */
 void golf_swing_click(GolfState *gs) {
-    if (gs->mode != MODE_PLAY || gs->ball.state != BALL_IDLE || gs->hole_completed) {
-        return;
-    }
+    if (gs->mode != MODE_PLAY || gs->ball.state != BALL_IDLE) return;
     
     switch (gs->swing.state) {
         case SWING_STATE_READY:
-        case SWING_STATE_RESOLVED:
-            /* Arrive at ball immediately if walking */
-            golf_golfer_arrive_at_ball(gs);
-            gs->golfer.state = GOLFER_STATE_SWINGING;
-            /* Click 1: Start power needle rising from 0 */
+            /* Click 1: Start power gauge oscillation */
             gs->swing.state = SWING_STATE_POWER;
             gs->swing.cursor_pos = 0;
             gs->swing.moving_up = true;
+            gs->golfer.state = GOLFER_STATE_SWINGING;
             break;
             
         case SWING_STATE_POWER:
-            /* Click 2: Lock power level, start needle downward towards snap mark */
+            /* Click 2: Lock shot power */
             gs->swing.locked_power = gs->swing.cursor_pos;
             if (gs->swing.locked_power < TO_FIXED(1) / 5) {
-                gs->swing.locked_power = TO_FIXED(1) / 5; /* Minimum 20% power */
+                gs->swing.locked_power = TO_FIXED(1) / 5;
             }
             gs->swing.state = SWING_STATE_ACCURACY;
             gs->swing.moving_up = false;
             break;
             
         case SWING_STATE_ACCURACY:
-            /* Click 3: Lock snap/accuracy */
+            /* Click 3: Lock accuracy & strike ball */
             gs->swing.locked_accuracy = gs->swing.cursor_pos - gs->swing.sweetspot_center;
             gs->swing.state = SWING_STATE_RESOLVED;
             gs->golfer.state = GOLFER_STATE_WATCHING;
             
-            /* Execute ball strike! */
             {
                 const ClubData *club = golf_get_club_data(gs->current_club);
                 gs->strokes++;
                 gs->prev_ball_gx = FROM_FIXED(gs->ball.x);
                 gs->prev_ball_gy = FROM_FIXED(gs->ball.y);
                 
-                /* Trigger audio event based on club */
+                /* Trigger club audio */
                 if (club->is_putter) {
                     gs->audio_event = AUDIO_EVT_SWING_PUTTER;
                 } else if (gs->current_club == CLUB_1W) {
@@ -881,45 +1123,38 @@ void golf_swing_click(GolfState *gs) {
                 fixed pwr = gs->swing.locked_power;
                 fixed acc = gs->swing.locked_accuracy;
                 
-                /* Surface lie penalty */
                 if (gs->ball.current_surf == SURF_ROUGH) {
-                    pwr = FMUL(pwr, 52428); /* 80% power from rough */
+                    pwr = FMUL(pwr, 52428); /* 80% from rough */
                 } else if (gs->ball.current_surf == SURF_SAND) {
-                    pwr = FMUL(pwr, 36044); /* 55% power from bunker */
+                    pwr = FMUL(pwr, 36044); /* 55% from sand */
                 }
                 
-                /* Distance scaling for the shot length */
                 fixed dist_scale = FIXED_ONE;
                 fixed root_scale = FIXED_ONE;
                 if (club->nominal_yards > 0 && gs->aim_distance_yds > 0) {
                     if (gs->aim_distance_yds < club->nominal_yards) {
-                        /* Scale club power so full swing reaches targeted landing zone */
                         dist_scale = FDIV(TO_FIXED(gs->aim_distance_yds), TO_FIXED(club->nominal_yards));
-                        if (dist_scale < TO_FIXED(1) / 5) dist_scale = TO_FIXED(1) / 5; /* Minimum 20% scale */
+                        if (dist_scale < TO_FIXED(1) / 5) dist_scale = TO_FIXED(1) / 5;
                         root_scale = fixed_sqrt(dist_scale);
                     }
                 }
                 
-                /* Precision Accuracy tuning: Sweet spot delivers dead-center precision */
                 int32_t angle_dev = 0;
                 if (FABS(acc) <= gs->swing.sweetspot_width) {
-                    angle_dev = 0; /* Sweet spot: dead straight down aim line */
+                    angle_dev = 0;
                 } else {
-                    /* Gentle, realistic slice/hook outside sweet spot */
                     fixed dev = (acc > 0) ? (acc - gs->swing.sweetspot_width) : (acc + gs->swing.sweetspot_width);
                     angle_dev = FROM_FIXED(FMUL(dev, TO_FIXED(10)));
                 }
                 uint8_t final_angle = (uint8_t)(gs->aim_angle + angle_dev);
                 
                 if (club->is_putter) {
-                    /* Ground roll (linear distance scaling with roll speed) */
                     fixed roll_speed = FMUL(FMUL(club->launch_speed_h, pwr), dist_scale);
                     gs->ball.vx = FMUL(roll_speed, fixed_cos(final_angle));
                     gs->ball.vy = FMUL(roll_speed, fixed_sin(final_angle));
                     gs->ball.vz = 0;
                     gs->ball.state = BALL_ROLLING;
                 } else {
-                    /* High ballistic flight (square-root scaling preserves natural arc) */
                     fixed horiz_spd = FMUL(FMUL(club->launch_speed_h, pwr), root_scale);
                     fixed vert_spd  = FMUL(FMUL(club->launch_speed_v, pwr), root_scale);
                     
@@ -940,10 +1175,13 @@ void golf_swing_click(GolfState *gs) {
                 }
             }
             break;
+            
+        case SWING_STATE_RESOLVED:
+            break;
     }
 }
 
-/* Physics and Simulation Tick */
+/* Physics and Simulation Tick (60 Hz) */
 void golf_tick(GolfState *gs) {
     if (gs->banner_timer > 0) {
         gs->banner_timer--;
@@ -955,15 +1193,12 @@ void golf_tick(GolfState *gs) {
             gs->swing.cursor_pos += gs->swing.cursor_speed;
             if (gs->swing.cursor_pos >= FIXED_ONE) {
                 gs->swing.cursor_pos = FIXED_ONE;
-                /* Auto-lock at 100% and reverse smoothly */
                 gs->swing.locked_power = FIXED_ONE;
                 gs->swing.state = SWING_STATE_ACCURACY;
                 gs->swing.moving_up = false;
             }
         } else if (gs->swing.state == SWING_STATE_ACCURACY) {
-            /* Return stroke towards snap mark at classic tempo */
             gs->swing.cursor_pos -= (gs->swing.cursor_speed * 11) / 10;
-            /* If needle drops past 0, miss-hit auto-snap */
             if (gs->swing.cursor_pos <= 0) {
                 gs->swing.cursor_pos = 0;
                 golf_swing_click(gs);
@@ -974,26 +1209,21 @@ void golf_tick(GolfState *gs) {
     /* 2. Ball Simulation */
     if (gs->ball.state == BALL_IN_FLIGHT) {
         gs->ball.air_ticks++;
-        
-        /* Gravity (downward in pixel space) */
         gs->ball.vz -= GRAVITY_FIXED;
         
-        /* Wind force (horizontal) */
         fixed wx = FMUL(gs->wind.speed, fixed_cos(gs->wind.angle));
         fixed wy = FMUL(gs->wind.speed, fixed_sin(gs->wind.angle));
         gs->ball.vx += FMUL(wx, WIND_FACTOR_FIXED);
         gs->ball.vy += FMUL(wy, WIND_FACTOR_FIXED);
         
-        /* Air drag on horizontal velocity */
         gs->ball.vx = FMUL(gs->ball.vx, AIR_DRAG_FIXED);
         gs->ball.vy = FMUL(gs->ball.vy, AIR_DRAG_FIXED);
         
-        /* Integrate position */
         gs->ball.x += gs->ball.vx;
         gs->ball.y += gs->ball.vy;
         gs->ball.z += gs->ball.vz;
         
-        /* Boundary check: Out of Bounds */
+        /* Boundary check */
         if (gs->ball.x < 0 || gs->ball.x >= TO_FIXED(GRID_W) ||
             gs->ball.y < 0 || gs->ball.y >= TO_FIXED(GRID_H)) {
             gs->ball.state = BALL_WATER;
@@ -1002,15 +1232,15 @@ void golf_tick(GolfState *gs) {
             return;
         }
         
-        /* Tree canopy collision check */
+        /* Tree / Object Collision */
         int32_t bgx = FROM_FIXED(gs->ball.x);
         int32_t bgy = FROM_FIXED(gs->ball.y);
         if (bgx >= 0 && bgx < GRID_W && bgy >= 0 && bgy < GRID_H) {
             uint8_t feat = gs->grid[bgx][bgy].feature;
-            if (feat == FEAT_PINE || feat == FEAT_OAK) {
-                fixed ground_z = TO_FIXED(gs->grid[bgx][bgy].elevation * HEIGHT_STEP_PX);
+            fixed ground_z = TO_FIXED(gs->grid[bgx][bgy].elevation * HEIGHT_STEP_PX);
+            
+            if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING) {
                 if (gs->ball.z >= ground_z + TO_FIXED(4) && gs->ball.z <= ground_z + TO_FIXED(36)) {
-                    /* Struck tree canopy! Deflect downward and lose velocity */
                     gs->ball.vz = -FABS(gs->ball.vz) / 2 - TO_FIXED(1);
                     gs->ball.vx = gs->ball.vx / 3;
                     gs->ball.vy = gs->ball.vy / 3;
@@ -1018,9 +1248,7 @@ void golf_tick(GolfState *gs) {
                     set_banner(gs, "THWACK! STRUCK TREE BRANCHES!", 90);
                 }
             } else if (feat == FEAT_ROCK) {
-                fixed ground_z = TO_FIXED(gs->grid[bgx][bgy].elevation * HEIGHT_STEP_PX);
                 if (gs->ball.z <= ground_z + TO_FIXED(10)) {
-                    /* Struck boulder! Chaotic bounce */
                     gs->ball.vz = FABS(gs->ball.vz) + TO_FIXED(2);
                     gs->ball.vx = -gs->ball.vx / 2;
                     gs->ball.vy = -gs->ball.vy / 2;
@@ -1030,19 +1258,18 @@ void golf_tick(GolfState *gs) {
             }
         }
         
-        /* Ground check */
         fixed gz = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
         gs->ball.ground_z = gz;
         
         if (gs->ball.z <= gz) {
             gs->ball.z = gz;
             
-            /* Check water hazard */
             SurfaceType surf = golf_get_surface_at(gs, gs->ball.x, gs->ball.y);
             if (surf == SURF_WATER) {
                 gs->ball.state = BALL_WATER;
-                gs->strokes++; /* +1 penalty stroke */
+                gs->strokes++;
                 gs->audio_event = AUDIO_EVT_WATER_SPLASH;
+                gs->caddy.state = CADDY_STATE_DISAPPOINTED;
                 set_banner(gs, "SPLASH! WATER HAZARD (+1 PENALTY)", 120);
                 return;
             }
@@ -1057,7 +1284,6 @@ void golf_tick(GolfState *gs) {
                 if (dist < CUP_RADIUS_FIXED) {
                     fixed speed = fixed_sqrt(FMUL(gs->ball.vx, gs->ball.vx) + FMUL(gs->ball.vy, gs->ball.vy));
                     if (speed < CUP_MAX_SPEED) {
-                        /* Direct hole-in! */
                         gs->ball.x = pin_x;
                         gs->ball.y = pin_y;
                         gs->ball.vx = 0;
@@ -1066,22 +1292,23 @@ void golf_tick(GolfState *gs) {
                         gs->ball.state = BALL_HOLED;
                         gs->hole_completed = true;
                         gs->audio_event = AUDIO_EVT_CUP_SINK;
+                        gs->caddy.state = CADDY_STATE_CELEBRATING;
                         
                         int32_t rel = gs->strokes - gs->par;
                         if (gs->strokes == 1) {
                             set_banner(gs, "*** HOLE IN ONE! LEGENDARY! ***", 300);
-                        } else if (rel <= -3) {
-                            set_banner(gs, "*** ALBATROSS! INCREDIBLE! ***", 300);
-                        } else if (rel == -2) {
+                            gs->club_funds += 25000;
+                        } else if (rel <= -2) {
                             set_banner(gs, "*** EAGLE! MAGNIFICENT! ***", 300);
+                            gs->club_funds += 10000;
                         } else if (rel == -1) {
                             set_banner(gs, "** BIRDIE! EXCELLENT SHOT! **", 300);
+                            gs->club_funds += 5000;
                         } else if (rel == 0) {
                             set_banner(gs, "* PAR! SOLID GOLF! *", 240);
-                        } else if (rel == 1) {
-                            set_banner(gs, "BOGEY.", 240);
+                            gs->club_funds += 1000;
                         } else {
-                            set_banner(gs, "DOUBLE BOGEY (+).", 240);
+                            set_banner(gs, "HOLED OUT!", 200);
                         }
                         return;
                     }
@@ -1093,17 +1320,15 @@ void golf_tick(GolfState *gs) {
             fixed fric = 60293;   /* ~0.92 Fairway */
             
             if (surf == SURF_GREEN) {
-                rest = 32768; /* 0.50 */
-                fric = 62914; /* 0.96 */
+                rest = 32768; fric = 62914;
             } else if (surf == SURF_ROUGH) {
-                rest = 9830;  /* 0.15 */
-                fric = 52428; /* 0.80 */
+                rest = 9830;  fric = 52428;
             } else if (surf == SURF_SAND) {
-                rest = 3276;  /* 0.05 - Bunker dead thud */
-                fric = 36044; /* 0.55 */
+                rest = 3276;  fric = 36044;
+            } else if (surf == SURF_BRIDGE || surf == SURF_CARTPATH) {
+                rest = 28000; fric = 62000;
             }
             
-            /* Reverse vertical velocity */
             gs->ball.vz = -FMUL(gs->ball.vz, rest);
             gs->ball.vx = FMUL(gs->ball.vx, fric);
             gs->ball.vy = FMUL(gs->ball.vy, fric);
@@ -1118,25 +1343,26 @@ void golf_tick(GolfState *gs) {
             }
         }
     } else if (gs->ball.state == BALL_ROLLING) {
-        /* Rolling on ground */
         SurfaceType surf = golf_get_surface_at(gs, gs->ball.x, gs->ball.y);
         if (surf == SURF_WATER) {
             gs->ball.state = BALL_WATER;
             gs->strokes++;
+            gs->audio_event = AUDIO_EVT_WATER_SPLASH;
+            gs->caddy.state = CADDY_STATE_DISAPPOINTED;
             set_banner(gs, "SPLASH! ROLLED INTO WATER (+1 PENALTY)", 120);
             return;
         }
         
-        fixed fric = 60293; /* 0.92 Fairway */
-        if (surf == SURF_GREEN) fric = 63500; /* 0.969 Green */
-        else if (surf == SURF_ROUGH) fric = 50000; /* 0.76 Rough */
-        else if (surf == SURF_SAND) fric = 32000; /* 0.48 Sand */
+        fixed fric = 60293;
+        if (surf == SURF_GREEN) fric = 63500;
+        else if (surf == SURF_ROUGH) fric = 50000;
+        else if (surf == SURF_SAND) fric = 32000;
+        else if (surf == SURF_BRIDGE || surf == SURF_CARTPATH) fric = 62000;
         
-        /* Apply friction */
         gs->ball.vx = FMUL(gs->ball.vx, fric);
         gs->ball.vy = FMUL(gs->ball.vy, fric);
         
-        /* Slope vector acceleration down elevation tiers */
+        /* Slope vector acceleration */
         int32_t bgx = FROM_FIXED(gs->ball.x);
         int32_t bgy = FROM_FIXED(gs->ball.y);
         if (bgx > 0 && bgx < GRID_W - 1 && bgy > 0 && bgy < GRID_H - 1) {
@@ -1149,7 +1375,6 @@ void golf_tick(GolfState *gs) {
         gs->ball.x += gs->ball.vx;
         gs->ball.y += gs->ball.vy;
         
-        /* Boundary check: Out of Bounds */
         if (gs->ball.x < 0 || gs->ball.x >= TO_FIXED(GRID_W) ||
             gs->ball.y < 0 || gs->ball.y >= TO_FIXED(GRID_H)) {
             gs->ball.state = BALL_WATER;
@@ -1161,7 +1386,7 @@ void golf_tick(GolfState *gs) {
         gs->ball.ground_z = golf_get_ground_z_fixed(gs, gs->ball.x, gs->ball.y);
         gs->ball.z = gs->ball.ground_z;
         
-        /* Cup sinking detection */
+        /* Cup capture */
         if (gs->has_pin) {
             fixed pin_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
             fixed pin_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
@@ -1172,7 +1397,6 @@ void golf_tick(GolfState *gs) {
             if (dist < CUP_RADIUS_FIXED) {
                 fixed speed = fixed_sqrt(FMUL(gs->ball.vx, gs->ball.vx) + FMUL(gs->ball.vy, gs->ball.vy));
                 if (speed < CUP_MAX_SPEED) {
-                    /* IN THE HOLE! */
                     gs->ball.x = pin_x;
                     gs->ball.y = pin_y;
                     gs->ball.vx = 0;
@@ -1180,32 +1404,32 @@ void golf_tick(GolfState *gs) {
                     gs->ball.state = BALL_HOLED;
                     gs->hole_completed = true;
                     gs->audio_event = AUDIO_EVT_CUP_SINK;
+                    gs->caddy.state = CADDY_STATE_CELEBRATING;
                     
                     int32_t rel = gs->strokes - gs->par;
                     if (gs->strokes == 1) {
                         set_banner(gs, "*** HOLE IN ONE! LEGENDARY! ***", 300);
-                    } else if (rel <= -3) {
-                        set_banner(gs, "*** ALBATROSS! INCREDIBLE! ***", 300);
-                    } else if (rel == -2) {
+                        gs->club_funds += 25000;
+                    } else if (rel <= -2) {
                         set_banner(gs, "*** EAGLE! MAGNIFICENT! ***", 300);
+                        gs->club_funds += 10000;
                     } else if (rel == -1) {
                         set_banner(gs, "** BIRDIE! EXCELLENT SHOT! **", 300);
+                        gs->club_funds += 5000;
                     } else if (rel == 0) {
                         set_banner(gs, "* PAR! SOLID GOLF! *", 240);
-                    } else if (rel == 1) {
-                        set_banner(gs, "BOGEY.", 240);
+                        gs->club_funds += 1000;
                     } else {
-                        set_banner(gs, "DOUBLE BOGEY (+).", 240);
+                        set_banner(gs, "HOLED OUT!", 200);
                     }
                     return;
                 } else {
-                    /* Lip out! Deflect away */
                     set_banner(gs, "LIPPED OUT!", 60);
                 }
             }
         }
         
-        /* Check stop threshold */
+        /* Stop threshold check */
         fixed speed = fixed_sqrt(FMUL(gs->ball.vx, gs->ball.vx) + FMUL(gs->ball.vy, gs->ball.vy));
         if (speed < STOP_SPEED_THRESHOLD) {
             gs->ball.vx = 0;
@@ -1213,7 +1437,17 @@ void golf_tick(GolfState *gs) {
             gs->ball.state = BALL_IDLE;
             gs->ball.current_surf = golf_get_surface_at(gs, gs->ball.x, gs->ball.y);
             
-            /* Start golfer walking towards ball if not already close */
+            /* Check gallery applause if ball settled close to the cup */
+            if (gs->has_pin) {
+                fixed pdx = (TO_FIXED(gs->pin_gx) + FIXED_HALF) - gs->ball.x;
+                fixed pdy = (TO_FIXED(gs->pin_gy) + FIXED_HALF) - gs->ball.y;
+                fixed pdist = fixed_sqrt(FMUL(pdx, pdx) + FMUL(pdy, pdy));
+                if (pdist < TO_FIXED(3)) {
+                    gs->audio_event = AUDIO_EVT_APPLAUSE_GOLF;
+                }
+            }
+            
+            /* Start golfer walking to ball */
             fixed gdx = gs->ball.x - gs->golfer.x;
             fixed gdy = gs->ball.y - gs->golfer.y;
             fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
@@ -1224,11 +1458,12 @@ void golf_tick(GolfState *gs) {
                 gs->golfer.facing_angle = fixed_atan2(gdy, gdx);
                 gs->golfer.walk_ticks = 0;
                 gs->golfer.step_timer = 0;
+                gs->caddy.state = CADDY_STATE_FOLLOWING;
             } else {
                 golf_golfer_arrive_at_ball(gs);
             }
             
-            /* Ready for next shot: turn aim towards pin */
+            /* Aim toward pin */
             if (gs->has_pin) {
                 gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
                 gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
@@ -1240,11 +1475,9 @@ void golf_tick(GolfState *gs) {
                 gs->has_custom_aim = false;
             }
             
-            /* Reset swing gauge */
             gs->swing.state = SWING_STATE_READY;
             gs->swing.cursor_pos = gs->swing.sweetspot_center;
             
-            /* Recommend club */
             int32_t yds = golf_distance_to_pin_yards(gs);
             if (gs->ball.current_surf == SURF_GREEN || yds < 15) {
                 gs->current_club = CLUB_PT;
@@ -1261,7 +1494,6 @@ void golf_tick(GolfState *gs) {
             }
         }
     } else if (gs->ball.state == BALL_WATER) {
-        /* Drop ball back to previous lie (safely clamped within course boundaries) */
         if (gs->prev_ball_gx < 0) gs->prev_ball_gx = 0;
         if (gs->prev_ball_gx >= GRID_W) gs->prev_ball_gx = GRID_W - 1;
         if (gs->prev_ball_gy < 0) gs->prev_ball_gy = 0;
@@ -1278,41 +1510,14 @@ void golf_tick(GolfState *gs) {
         gs->ball.current_surf = golf_get_surface_at(gs, gs->ball.x, gs->ball.y);
         gs->swing.state = SWING_STATE_READY;
         gs->swing.cursor_pos = gs->swing.sweetspot_center;
-        
-        if (gs->has_pin) {
-            gs->aim_target_x = TO_FIXED(gs->pin_gx) + FIXED_HALF;
-            gs->aim_target_y = TO_FIXED(gs->pin_gy) + FIXED_HALF;
-            fixed dx = gs->aim_target_x - gs->ball.x;
-            fixed dy = gs->aim_target_y - gs->ball.y;
-            gs->aim_angle = fixed_atan2(dy, dx);
-            fixed dist_tiles = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
-            gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
-            gs->has_custom_aim = false;
-        }
-        
-        /* Auto-select club for drop position */
-        int32_t drop_yds = golf_distance_to_pin_yards(gs);
-        if (gs->ball.current_surf == SURF_GREEN || drop_yds <= 20) {
-            gs->current_club = CLUB_PT;
-        } else if (drop_yds > 215) {
-            gs->current_club = CLUB_1W;
-        } else if (drop_yds > 175) {
-            gs->current_club = CLUB_3W;
-        } else if (drop_yds > 130) {
-            gs->current_club = CLUB_5I;
-        } else if (drop_yds > 80) {
-            gs->current_club = CLUB_9I;
-        } else {
-            gs->current_club = CLUB_PW;
-        }
     }
     
-    /* 3. Golfer Walking Simulation & Footstep Audio */
+    /* 3. Golfer Walking & Footsteps */
     if (gs->mode == MODE_PLAY && gs->golfer.state == GOLFER_STATE_WALKING) {
         fixed gdx = gs->golfer.target_x - gs->golfer.x;
         fixed gdy = gs->golfer.target_y - gs->golfer.y;
         fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
-        fixed walk_spd = 3500; /* ~0.053 tiles per tick (~3.2 tiles/sec, ~22 yards/sec) */
+        fixed walk_spd = 3500;
         
         if (gdist <= walk_spd || gdist < TO_FIXED(1) / 3) {
             golf_golfer_arrive_at_ball(gs);
@@ -1323,34 +1528,66 @@ void golf_tick(GolfState *gs) {
             gs->golfer.walk_ticks++;
             gs->golfer.walk_anim_frame = (gs->golfer.walk_ticks / 10) % 4;
             
-            /* Smooth continuous elevation tracking - prevents popping or sinking on slopes */
             fixed target_gz = golf_get_ground_z_fixed(gs, gs->golfer.x, gs->golfer.y);
-            /* Never sink below dry-land lowland shore elevation (12px) even if clipping water edge */
-            if (target_gz < TO_FIXED(HEIGHT_STEP_PX)) {
-                target_gz = TO_FIXED(HEIGHT_STEP_PX);
-            }
+            if (target_gz < TO_FIXED(HEIGHT_STEP_PX)) target_gz = TO_FIXED(HEIGHT_STEP_PX);
             fixed z_diff = target_gz - gs->golfer.current_z;
-            fixed z_step = 22000; /* ~0.33 px per tick (~20 px/sec) */
-            if (z_diff > z_step) {
-                gs->golfer.current_z += z_step;
-            } else if (z_diff < -z_step) {
-                gs->golfer.current_z -= z_step;
-            } else {
-                gs->golfer.current_z = target_gz;
-            }
+            fixed z_step = 22000;
+            if (z_diff > z_step) gs->golfer.current_z += z_step;
+            else if (z_diff < -z_step) gs->golfer.current_z -= z_step;
+            else gs->golfer.current_z = target_gz;
             
             gs->golfer.step_timer++;
             if (gs->golfer.step_timer >= 20) {
                 gs->golfer.step_timer = 0;
                 SurfaceType surf = golf_get_surface_at(gs, gs->golfer.x, gs->golfer.y);
-                if (surf == SURF_SAND) {
-                    gs->audio_event = AUDIO_EVT_FOOTSTEP_SAND;
-                } else if (surf == SURF_ROUGH) {
-                    gs->audio_event = AUDIO_EVT_FOOTSTEP_ROUGH;
-                } else {
-                    gs->audio_event = AUDIO_EVT_FOOTSTEP_GRASS;
-                }
+                if (surf == SURF_BRIDGE) gs->audio_event = AUDIO_EVT_FOOTSTEP_WOOD;
+                else if (surf == SURF_SAND) gs->audio_event = AUDIO_EVT_FOOTSTEP_SAND;
+                else if (surf == SURF_ROUGH) gs->audio_event = AUDIO_EVT_FOOTSTEP_ROUGH;
+                else gs->audio_event = AUDIO_EVT_FOOTSTEP_GRASS;
             }
+        }
+    }
+    
+    /* 4. Caddy Companion Simulation */
+    if (gs->mode == MODE_PLAY) {
+        if (gs->caddy.state == CADDY_STATE_FOLLOWING) {
+            fixed c_target_x = gs->golfer.x - FMUL(TO_FIXED(2), fixed_cos(gs->golfer.facing_angle));
+            fixed c_target_y = gs->golfer.y - FMUL(TO_FIXED(2), fixed_sin(gs->golfer.facing_angle));
+            fixed cdx = c_target_x - gs->caddy.x;
+            fixed cdy = c_target_y - gs->caddy.y;
+            fixed cdist = fixed_sqrt(FMUL(cdx, cdx) + FMUL(cdy, cdy));
+            fixed c_spd = 3600;
+            
+            if (cdist > TO_FIXED(1) / 2) {
+                gs->caddy.facing_angle = fixed_atan2(cdy, cdx);
+                gs->caddy.x += FMUL(c_spd, fixed_cos(gs->caddy.facing_angle));
+                gs->caddy.y += FMUL(c_spd, fixed_sin(gs->caddy.facing_angle));
+                gs->caddy.walk_anim_frame = (gs->golfer.walk_ticks / 10) % 4;
+            } else if (gs->golfer.state != GOLFER_STATE_WALKING) {
+                gs->caddy.state = CADDY_STATE_READY;
+                gs->caddy.facing_angle = gs->golfer.facing_angle;
+            }
+            gs->caddy.current_z = golf_get_ground_z_fixed(gs, gs->caddy.x, gs->caddy.y);
+        }
+    }
+    
+    /* 5. Spectator Gallery Simulation */
+    for (int i = 0; i < gs->spectator_count; ++i) {
+        SpectatorEntity *sp = &gs->spectators[i];
+        if (!sp->active) continue;
+        
+        sp->timer++;
+        if (gs->ball.state == BALL_IN_FLIGHT) {
+            /* Heads turn to follow ball */
+            fixed sdx = gs->ball.x - (TO_FIXED(sp->gx) + FIXED_HALF);
+            fixed sdy = gs->ball.y - (TO_FIXED(sp->gy) + FIXED_HALF);
+            sp->facing_angle = fixed_atan2(sdy, sdx);
+            sp->state = SPEC_STATE_WATCHING;
+        } else if (gs->hole_completed) {
+            sp->state = SPEC_STATE_CHEERING;
+            sp->anim_frame = (sp->timer / 12) % 2;
+        } else if (sp->state == SPEC_STATE_WATCHING && gs->ball.state == BALL_IDLE) {
+            sp->state = SPEC_STATE_IDLE;
         }
     }
 }
@@ -1364,6 +1601,9 @@ void golf_golfer_arrive_at_ball(GolfState *gs) {
     gs->golfer.state = GOLFER_STATE_READY;
     gs->golfer.walk_anim_frame = 0;
     gs->golfer.facing_angle = gs->aim_angle;
+    
+    gs->caddy.state = CADDY_STATE_READY;
+    gs->caddy.facing_angle = gs->aim_angle;
 }
 
 int golf_get_water_proximity(const GolfState *gs, fixed view_x, fixed view_y) {
@@ -1378,9 +1618,7 @@ int golf_get_water_proximity(const GolfState *gs, fixed view_x, fixed view_y) {
             if (gx >= 0 && gx < GRID_W && gy >= 0 && gy < GRID_H) {
                 if (gs->grid[gx][gy].surface == SURF_WATER) {
                     int d2 = dx * dx + dy * dy;
-                    if (d2 < min_dist_sq) {
-                        min_dist_sq = d2;
-                    }
+                    if (d2 < min_dist_sq) min_dist_sq = d2;
                 }
             }
         }
@@ -1388,12 +1626,25 @@ int golf_get_water_proximity(const GolfState *gs, fixed view_x, fixed view_y) {
     
     if (min_dist_sq >= 100) return 0;
     int dist = 0;
-    while ((dist + 1) * (dist + 1) <= min_dist_sq) {
-        dist++;
-    }
+    while ((dist + 1) * (dist + 1) <= min_dist_sq) dist++;
     int pct = 100 - dist * 10;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     return pct;
 }
 
+int golf_get_clubhouse_proximity(const GolfState *gs, fixed view_x, fixed view_y) {
+    if (!gs->has_clubhouse) return 0;
+    int32_t cx = FROM_FIXED(view_x);
+    int32_t cy = FROM_FIXED(view_y);
+    int32_t dx = cx - (gs->clubhouse_gx + 1);
+    int32_t dy = cy - (gs->clubhouse_gy + 1);
+    int d2 = dx * dx + dy * dy;
+    if (d2 >= 64) return 0;
+    int dist = 0;
+    while ((dist + 1) * (dist + 1) <= d2) dist++;
+    int pct = 100 - dist * 12;
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return pct;
+}

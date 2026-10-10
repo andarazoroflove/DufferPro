@@ -5,11 +5,13 @@
 *.dll.a
 build/duffer
 build/duffer.exe
+build/duffer_pro.exe
 build/retrosimgolf
 build/retrosimgolf.exe
 
 # Keep build directory structure with SDL2.dll for direct running if desired
 !build/SDL2.dll
+tools/SDL2.dll
 
 # Screenshots and temp files
 *.bmp

@@ -51,4 +51,43 @@ clean:
 	@rm -f src/*.o build/duffer build/duffer.exe build/duffer_pro build/duffer_pro.exe build/retrosimgolf build/retrosimgolf.exe
 endif
 
-.PHONY: all clean
+# GBA Bare-Metal ARM Toolchain
+ifneq ($(wildcard C:/Users/adam/arm-toolchain/bin/arm-none-eabi-gcc.exe),)
+    ARM_GCC ?= C:/Users/adam/arm-toolchain/bin/arm-none-eabi-gcc.exe
+    ARM_OBJCOPY ?= C:/Users/adam/arm-toolchain/bin/arm-none-eabi-objcopy.exe
+else
+    ARM_GCC ?= arm-none-eabi-gcc
+    ARM_OBJCOPY ?= arm-none-eabi-objcopy
+endif
+
+ifeq ($(OS),Windows_NT)
+    GBAFIX = build/gbafix.exe
+else
+    GBAFIX = build/gbafix
+endif
+
+gba: $(GBAFIX)
+ifeq ($(OS),Windows_NT)
+	@if not exist build mkdir build
+	"$(ARM_GCC)" -std=c99 -O2 -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -fno-builtin -nostdlib -Isrc -Igba gba/crt0.s gba/gba_hw.c gba/gba_render.c gba/main_gba.c src/golf_core.c -T gba/gba.ld -o build/duffer_pro.elf -lgcc
+	"$(ARM_OBJCOPY)" -O binary -S build/duffer_pro.elf build/duffer_pro.gba
+	$(GBAFIX) build/duffer_pro.gba "DUFFER PRO"
+	@echo Successfully built GBA ROM: build/duffer_pro.gba
+else
+	@mkdir -p build
+	"$(ARM_GCC)" -std=c99 -O2 -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -fno-builtin -nostdlib -Isrc -Igba gba/crt0.s gba/gba_hw.c gba/gba_render.c gba/main_gba.c src/golf_core.c -T gba/gba.ld -o build/duffer_pro.elf -lgcc
+	"$(ARM_OBJCOPY)" -O binary -S build/duffer_pro.elf build/duffer_pro.gba
+	$(GBAFIX) build/duffer_pro.gba "DUFFER PRO"
+	@echo Successfully built GBA ROM: build/duffer_pro.gba
+endif
+
+$(GBAFIX): tools/gbafix.c
+ifeq ($(OS),Windows_NT)
+	@if not exist build mkdir build
+	$(CC) -std=c99 -O2 tools/gbafix.c -o $(GBAFIX)
+else
+	@mkdir -p build
+	$(CC) -std=c99 -O2 tools/gbafix.c -o $(GBAFIX)
+endif
+
+.PHONY: all clean gba

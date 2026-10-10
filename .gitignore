@@ -3,11 +3,15 @@
 *.obj
 *.exe
 *.dll.a
+*.elf
+*.sav
 build/duffer
 build/duffer.exe
 build/duffer_pro.exe
 build/retrosimgolf
 build/retrosimgolf.exe
+build/gbafix.exe
+build/gba_test.exe
 
 # Keep build directory structure with SDL2.dll for direct running if desired
 !build/SDL2.dll
@@ -15,7 +19,9 @@ tools/SDL2.dll
 
 # Screenshots and temp files
 *.bmp
+*.png
 tools/capture_test.exe
+tools/gba_test.exe
 
 # Editor & OS files
 .vscode/

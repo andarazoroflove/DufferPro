@@ -9,6 +9,8 @@
 bool golf_audio_init(void) { return true; }
 void golf_audio_shutdown(void) {}
 void golf_audio_play_sfx(GolfSfxType sfx) { (void)sfx; }
+void golf_audio_start_intro_music(void) {}
+void golf_audio_stop_intro_music(void) {}
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) { (void)wind_speed; (void)water_proximity_percent; }
 void golf_audio_update_ambient_pro(fixed wind_speed, int water_proximity_percent, int clubhouse_proximity_percent) { (void)wind_speed; (void)water_proximity_percent; (void)clubhouse_proximity_percent; }
 #else
@@ -63,6 +65,51 @@ static float s_bird_phase = 0.0f;
 static SfxVoice s_voices[MAX_ACTIVE_VOICES];
 static SDL_AudioDeviceID s_audio_device = 0;
 static bool s_audio_ready = false;
+
+/* Procedural Intro Melody Synthesizer (114 BPM, 8-measure country club swing) */
+static bool s_intro_music_active = false;
+static float s_intro_music_vol = 0.0f;
+static float s_intro_music_target_vol = 0.0f;
+static uint32_t s_music_sample_clock = 0;
+static float s_m_bass_phase = 0.0f;
+static float s_m_chord_phase[3] = { 0.0f, 0.0f, 0.0f };
+static float s_m_lead_phase = 0.0f;
+
+/* Chord notes (root, third, fifth) for 8 measures */
+static const float s_music_chords[8][3] = {
+    { 329.63f, 392.00f, 493.88f }, /* Cmaj7 (E4, G4, B4) */
+    { 261.63f, 329.63f, 392.00f }, /* Am7   (C4, E4, G4) */
+    { 349.23f, 440.00f, 523.25f }, /* Dm7   (F4, A4, C5) */
+    { 349.23f, 392.00f, 493.88f }, /* G7    (F4, G4, B4) */
+    { 392.00f, 493.88f, 587.33f }, /* Em7   (G4, B4, D5) */
+    { 392.00f, 440.00f, 554.37f }, /* A7    (G4, A4, C#5) */
+    { 349.23f, 440.00f, 523.25f }, /* Dm7   (F4, A4, C5) */
+    { 349.23f, 392.00f, 587.33f }  /* G7sus (F4, G4, D5) */
+};
+
+/* Walking bass note frequencies (32 quarter notes = 4 per measure) */
+static const float s_music_bass[32] = {
+    130.81f, 196.00f, 220.00f, 246.94f, /* C3, G3, A3, B3 */
+    220.00f, 164.81f, 196.00f, 207.65f, /* A3, E3, G3, G#3 */
+    146.83f, 220.00f, 261.63f, 277.18f, /* D3, A3, C4, C#4 */
+    98.00f,  146.83f, 174.61f, 246.94f, /* G2, D3, F3, B3 */
+    164.81f, 246.94f, 293.66f, 164.81f, /* E3, B3, D4, E3 */
+    220.00f, 164.81f, 196.00f, 277.18f, /* A3, E3, G3, C#4 */
+    146.83f, 220.00f, 174.61f, 220.00f, /* D3, A3, F3, A3 */
+    98.00f,  146.83f, 196.00f, 246.94f  /* G2, D3, G3, B3 */
+};
+
+/* Catchy 64-step melody (8th notes) */
+static const float s_music_melody[64] = {
+    659.25f, 0.0f,    783.99f, 880.00f, 1046.50f, 0.0f,    987.77f, 783.99f,
+    659.25f, 0.0f,    587.33f, 0.0f,    659.25f, 783.99f, 880.00f, 0.0f,
+    698.46f, 0.0f,    880.00f, 1046.50f, 1174.66f, 0.0f,   987.77f, 783.99f,
+    880.00f, 0.0f,    987.77f, 0.0f,    783.99f, 0.0f,    0.0f,    0.0f,
+    783.99f, 0.0f,    987.77f, 1174.66f, 1318.51f, 0.0f,   1108.73f, 880.00f,
+    783.99f, 0.0f,    659.25f, 0.0f,    783.99f, 880.00f, 1046.50f, 0.0f,
+    698.46f, 0.0f,    880.00f, 1046.50f, 1318.51f, 0.0f,   1174.66f, 987.77f,
+    783.99f, 0.0f,    987.77f, 1174.66f, 1046.50f, 0.0f,   0.0f,    0.0f
+};
 
 /* Synthesis helper for single SFX sample */
 static float synthesize_sfx_sample(SfxVoice *v) {
@@ -296,6 +343,29 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             break;
         }
         
+        case SFX_BEVERAGE_WHISTLE: {
+            /* Cheerful 2-tone melodic whistle: Note 1 (A6/1760Hz), brief gap, Note 2 (C#7->E7 glissando) */
+            float w_freq = 0.0f;
+            float w_env = 0.0f;
+            if (t < 0.20f) {
+                /* First note: 1760 Hz with soft attack and decay */
+                w_freq = 1760.0f;
+                w_env = sinf((t / 0.20f) * (float)M_PI);
+            } else if (t >= 0.24f && t < 0.62f) {
+                /* Second note: 2200 Hz gliding up to 2640 Hz with vibrato */
+                float t2 = (t - 0.24f) / 0.38f;
+                w_freq = 2200.0f + t2 * 440.0f + sinf(t2 * 26.0f) * 16.0f;
+                w_env = sinf(t2 * (float)M_PI);
+            }
+            if (w_env > 0.0f) {
+                float phase = 2.0f * (float)M_PI * w_freq * t;
+                float tone = sinf(phase) + sinf(phase * 2.0f) * 0.08f;
+                float breath = audio_noise() * 0.035f;
+                out = (tone + breath) * w_env * v->volume * 1.15f;
+            }
+            break;
+        }
+        
         default:
             break;
     }
@@ -305,6 +375,55 @@ static float synthesize_sfx_sample(SfxVoice *v) {
         v->active = false;
     }
     return out;
+}
+
+/* Synthesize single music sample for Intro Melody */
+static void synthesize_music_sample(uint32_t clock, float vol, float *out_l, float *out_r) {
+    uint32_t step_samples = 11605; /* 114 BPM 8th note at 44100 Hz */
+    uint32_t total_loop = step_samples * 64;
+    uint32_t loop_pos = clock % total_loop;
+    uint32_t step = loop_pos / step_samples;
+    uint32_t step_pos = loop_pos % step_samples;
+    uint32_t beat_pos = loop_pos % (step_samples * 2);
+    float t_step = (float)step_pos / (float)AUDIO_SAMPLE_RATE;
+    float t_beat = (float)beat_pos / (float)AUDIO_SAMPLE_RATE;
+    
+    /* 1. Walking Bass (Plucked Upright Bass) */
+    uint32_t beat_idx = (loop_pos / (step_samples * 2)) % 32;
+    float b_freq = s_music_bass[beat_idx];
+    s_m_bass_phase += 2.0f * (float)M_PI * b_freq / (float)AUDIO_SAMPLE_RATE;
+    if (s_m_bass_phase > 2.0f * (float)M_PI) s_m_bass_phase -= 2.0f * (float)M_PI;
+    float b_env = expf(-t_beat * 5.5f);
+    float bass = (sinf(s_m_bass_phase) + 0.35f * sinf(s_m_bass_phase * 2.0f)) * b_env * 0.36f;
+    
+    /* 2. Syncopated Electric Piano / Marimba Chords */
+    uint32_t meas = (step / 8) % 8;
+    float chord = 0.0f;
+    bool is_chord_step = ((step % 2) == 1); /* Off-beat swing */
+    if (is_chord_step) {
+        float c_env = expf(-t_step * 4.2f);
+        for (int k = 0; k < 3; ++k) {
+            float cf = s_music_chords[meas][k];
+            s_m_chord_phase[k] += 2.0f * (float)M_PI * cf / (float)AUDIO_SAMPLE_RATE;
+            if (s_m_chord_phase[k] > 2.0f * (float)M_PI) s_m_chord_phase[k] -= 2.0f * (float)M_PI;
+            chord += sinf(s_m_chord_phase[k]) * c_env * 0.09f;
+        }
+    }
+    
+    /* 3. Lead Country Club Melody (Vibraphone / Flute with Vibrato) */
+    float lead = 0.0f;
+    float m_freq = s_music_melody[step];
+    if (m_freq > 0.0f) {
+        float l_env = (t_step < 0.015f) ? (t_step / 0.015f) : expf(-t_step * 2.5f);
+        float vibrato = sinf(t_step * 38.0f) * 0.04f;
+        s_m_lead_phase += 2.0f * (float)M_PI * (m_freq * (1.0f + vibrato)) / (float)AUDIO_SAMPLE_RATE;
+        if (s_m_lead_phase > 2.0f * (float)M_PI) s_m_lead_phase -= 2.0f * (float)M_PI;
+        lead = (sinf(s_m_lead_phase) + 0.15f * sinf(s_m_lead_phase * 2.0f)) * l_env * 0.28f;
+    }
+    
+    /* Stereo Mix: Bass Center, Chords slightly Left, Lead slightly Right */
+    *out_l = (bass * 0.5f + chord * 0.65f + lead * 0.45f) * vol;
+    *out_r = (bass * 0.5f + chord * 0.35f + lead * 0.55f) * vol;
 }
 
 /* Audio Callback (Runs on audio thread) */
@@ -386,9 +505,22 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
             }
         }
         
+        /* 6. Procedural Intro Screen Melody */
+        float music_left = 0.0f;
+        float music_right = 0.0f;
+        if (s_intro_music_active || s_intro_music_vol > 0.001f) {
+            s_intro_music_vol += (s_intro_music_target_vol - s_intro_music_vol) * 0.0004f;
+            if (s_intro_music_vol < 0.001f && s_intro_music_target_vol == 0.0f) {
+                s_intro_music_active = false;
+            } else {
+                synthesize_music_sample(s_music_sample_clock, s_intro_music_vol, &music_left, &music_right);
+                s_music_sample_clock++;
+            }
+        }
+        
         /* Master Mix */
-        float left = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_left + sfx_mix_left);
-        float right = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_right + sfx_mix_right);
+        float left = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_left + sfx_mix_left + music_left);
+        float right = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_right + sfx_mix_right + music_right);
         
         /* Soft Limiting */
         if (left > 0.95f) left = 0.95f;
@@ -496,6 +628,7 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
             case SFX_CROWD_OOH:      v->total_samples = AUDIO_SAMPLE_RATE * 90 / 100; v->volume = 1.15f; break;
             case SFX_BUILD_PLACE:    v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.95f; break;
             case SFX_TERRAIN_SCULPT: v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 0.90f; break;
+            case SFX_BEVERAGE_WHISTLE: v->total_samples = AUDIO_SAMPLE_RATE * 65 / 100; v->volume = 1.30f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }
@@ -505,6 +638,30 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
     } else {
         SDL_UnlockAudio();
     }
+}
+
+void golf_audio_start_intro_music(void) {
+    if (!s_audio_ready) return;
+    if (s_audio_device != 0) SDL_LockAudioDevice(s_audio_device);
+    else SDL_LockAudio();
+    
+    s_intro_music_active = true;
+    s_intro_music_target_vol = 0.85f;
+    s_music_sample_clock = 0;
+    
+    if (s_audio_device != 0) SDL_UnlockAudioDevice(s_audio_device);
+    else SDL_UnlockAudio();
+}
+
+void golf_audio_stop_intro_music(void) {
+    if (!s_audio_ready) return;
+    if (s_audio_device != 0) SDL_LockAudioDevice(s_audio_device);
+    else SDL_LockAudio();
+    
+    s_intro_music_target_vol = 0.0f;
+    
+    if (s_audio_device != 0) SDL_UnlockAudioDevice(s_audio_device);
+    else SDL_UnlockAudio();
 }
 
 void golf_audio_update_ambient(fixed wind_speed, int water_proximity_percent) {

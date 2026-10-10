@@ -124,7 +124,29 @@ int main(void) {
     render_pan_camera(&rc, 0, 60);
     render_frame(&rc, &gs);
     render_save_bmp(&rc, "screenshot_holed_pro.bmp");
-    printf("[7/7] Saved screenshot_holed_pro.bmp (Cup Sink: %s)\n", sink_ok ? "SUCCESS" : "FAILED");
+    printf("[7/8] Saved screenshot_holed_pro.bmp (Cup Sink: %s)\n", sink_ok ? "SUCCESS" : "FAILED");
+    
+    /* 8. Beverage Cart Driving & Whistling */
+    gs.bev_cart.active = true;
+    gs.bev_cart.x = TO_FIXED(gs.tee_gx - 1) + FIXED_HALF;
+    gs.bev_cart.y = TO_FIXED(gs.tee_gy - 3) + FIXED_HALF;
+    gs.bev_cart.current_z = golf_get_ground_z_fixed(&gs, gs.bev_cart.x, gs.bev_cart.y);
+    gs.bev_cart.target_x = TO_FIXED(gs.tee_gx + 2) + FIXED_HALF;
+    gs.bev_cart.target_y = TO_FIXED(gs.tee_gy - 6) + FIXED_HALF;
+    gs.bev_cart.state = BEV_STATE_DRIVING;
+    gs.bev_cart.whistle_timer = 2; /* trigger whistle in 2 ticks */
+    golf_tick(&gs);
+    golf_tick(&gs);
+    printf("Beverage Cart: Active=%d, AudioEvent=%d (Expected 20/BEV_WHISTLE), SpeechTimer=%d\n",
+           gs.bev_cart.active, gs.audio_event, gs.bev_cart.speech_timer);
+    gs.audio_event = AUDIO_EVT_NONE;
+    int32_t bc_gx = FROM_FIXED(gs.bev_cart.x);
+    int32_t bc_gy = FROM_FIXED(gs.bev_cart.y);
+    render_center_camera_on(&rc, bc_gx, bc_gy, FROM_FIXED(gs.bev_cart.current_z) / HEIGHT_STEP_PX);
+    render_pan_camera(&rc, 0, 80);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_beverage_pro.bmp");
+    printf("[8/8] Saved screenshot_beverage_pro.bmp (Beverage Cart Whistling at %d,%d)\n", bc_gx, bc_gy);
     
     render_free(&rc);
     printf("=== ALL VERIFICATION TESTS PASSED ===\n");

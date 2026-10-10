@@ -237,6 +237,26 @@ typedef struct {
     bool active;
 } SpectatorEntity;
 
+/* Beverage Cart Entity */
+typedef enum {
+    BEV_STATE_DRIVING = 0,
+    BEV_STATE_SERVICING,
+    BEV_STATE_PAUSED
+} BeverageCartState;
+
+typedef struct {
+    fixed x, y;             /* Continuous grid position (16.16 fixed) */
+    fixed current_z;
+    fixed target_x, target_y;
+    BeverageCartState state;
+    uint8_t facing_angle;
+    fixed speed;
+    int32_t whistle_timer;  /* Ticks until next cheerful whistle */
+    int32_t speech_timer;   /* Speech bubble "COLD DRINKS!" */
+    int32_t wait_timer;
+    bool active;
+} BeverageCartEntity;
+
 /* Audio Events Triggered by Physics & Actions */
 typedef enum {
     AUDIO_EVT_NONE = 0,
@@ -258,7 +278,8 @@ typedef enum {
     AUDIO_EVT_CROWD_CHEER = 16,
     AUDIO_EVT_CROWD_OOH = 17,
     AUDIO_EVT_BUILD_PLACE = 18,
-    AUDIO_EVT_TERRAIN_SCULPT = 19
+    AUDIO_EVT_TERRAIN_SCULPT = 19,
+    AUDIO_EVT_BEV_WHISTLE = 20
 } GolfAudioEvent;
 
 /* Wind system */
@@ -312,6 +333,7 @@ typedef struct {
     CaddyEntity caddy;
     SpectatorEntity spectators[MAX_SPECTATORS];
     int32_t spectator_count;
+    BeverageCartEntity bev_cart;
     
     Wind wind;
     GolfAudioEvent audio_event; /* Audio event generated this tick */

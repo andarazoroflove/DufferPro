@@ -191,6 +191,7 @@ int main(int argc, char *argv[]) {
     golf_init(&s_game_state);
     render_init(&s_render_ctx, s_framebuffer);
     golf_audio_init();
+    golf_audio_start_intro_music();
     
     /* Center camera on Tee */
     if (s_game_state.has_tee) {
@@ -211,10 +212,16 @@ int main(int argc, char *argv[]) {
                     
                 case SDL_KEYDOWN:
                     if (s_game_state.mode == MODE_SPLASH) {
-                        golf_set_mode(&s_game_state, MODE_PLAY);
-                        if (s_game_state.has_tee) {
-                            render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
-                            s_free_cam = false;
+                        /* Only Return/Enter starts the game from splash screen */
+                        if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER) {
+                            golf_audio_stop_intro_music();
+                            golf_set_mode(&s_game_state, MODE_PLAY);
+                            s_game_state.swing.state = SWING_STATE_READY;
+                            s_game_state.swing.cursor_pos = s_game_state.swing.sweetspot_center;
+                            if (s_game_state.has_tee) {
+                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                s_free_cam = false;
+                            }
                         }
                         break;
                     }
@@ -358,10 +365,21 @@ int main(int argc, char *argv[]) {
                     
                 case SDL_MOUSEBUTTONDOWN:
                     if (s_game_state.mode == MODE_SPLASH) {
-                        golf_set_mode(&s_game_state, MODE_PLAY);
-                        if (s_game_state.has_tee) {
-                            render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
-                            s_free_cam = false;
+                        int mx = event.button.x;
+                        int my = event.button.y;
+                        int btn_w = 440;
+                        int btn_h = 44;
+                        int btn_x = SCREEN_W / 2 - btn_w / 2;
+                        int btn_y = 646;
+                        if ((mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h) || my >= 640) {
+                            golf_audio_stop_intro_music();
+                            golf_set_mode(&s_game_state, MODE_PLAY);
+                            s_game_state.swing.state = SWING_STATE_READY;
+                            s_game_state.swing.cursor_pos = s_game_state.swing.sweetspot_center;
+                            if (s_game_state.has_tee) {
+                                render_center_camera_on(&s_render_ctx, s_game_state.tee_gx, s_game_state.tee_gy, s_game_state.grid[s_game_state.tee_gx][s_game_state.tee_gy].elevation);
+                                s_free_cam = false;
+                            }
                         }
                         break;
                     }

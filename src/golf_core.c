@@ -494,6 +494,20 @@ void golf_place_default_routing(GolfState *gs) {
         }
     }
     
+    /* 9. Setup Beverage Cart Girl */
+    gs->bev_cart.active = true;
+    gs->bev_cart.x = TO_FIXED(gs->tee_gx - 3) + FIXED_HALF;
+    gs->bev_cart.y = TO_FIXED(gs->tee_gy + 2) + FIXED_HALF;
+    gs->bev_cart.current_z = golf_get_ground_z_fixed(gs, gs->bev_cart.x, gs->bev_cart.y);
+    gs->bev_cart.target_x = TO_FIXED(gs->tee_gx) + FIXED_HALF;
+    gs->bev_cart.target_y = TO_FIXED(gs->tee_gy - 10) + FIXED_HALF;
+    gs->bev_cart.state = BEV_STATE_DRIVING;
+    gs->bev_cart.facing_angle = 192;
+    gs->bev_cart.speed = 2200; /* gentle cart cruising speed */
+    gs->bev_cart.whistle_timer = 200 + (core_rand() % 250);
+    gs->bev_cart.speech_timer = 0;
+    gs->bev_cart.wait_timer = 0;
+    
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
     golf_reset_ball_to_tee(gs);
@@ -774,6 +788,21 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     gs->strokes = 0;
     gs->score_rel_par = 0;
     gs->hole_completed = false;
+    
+    if (!gs->bev_cart.active) {
+        gs->bev_cart.active = true;
+        gs->bev_cart.x = TO_FIXED(gs->tee_gx - 3) + FIXED_HALF;
+        gs->bev_cart.y = TO_FIXED(gs->tee_gy + 2) + FIXED_HALF;
+        gs->bev_cart.current_z = golf_get_ground_z_fixed(gs, gs->bev_cart.x, gs->bev_cart.y);
+        gs->bev_cart.target_x = TO_FIXED(gs->tee_gx) + FIXED_HALF;
+        gs->bev_cart.target_y = TO_FIXED(gs->tee_gy - 8) + FIXED_HALF;
+        gs->bev_cart.state = BEV_STATE_DRIVING;
+        gs->bev_cart.facing_angle = 192;
+        gs->bev_cart.speed = 2200;
+        gs->bev_cart.whistle_timer = 200 + (core_rand() % 300);
+        gs->bev_cart.speech_timer = 0;
+        gs->bev_cart.wait_timer = 0;
+    }
 }
 
 void golf_set_mode(GolfState *gs, GameMode mode) {
@@ -1593,6 +1622,89 @@ void golf_tick(GolfState *gs) {
             sp->anim_frame = (sp->timer / 12) % 2;
         } else if (sp->state == SPEC_STATE_WATCHING && gs->ball.state == BALL_IDLE) {
             sp->state = SPEC_STATE_IDLE;
+        }
+    }
+    
+    /* 6. Beverage Cart Simulation */
+    if (gs->bev_cart.active) {
+        if (gs->bev_cart.speech_timer > 0) {
+            gs->bev_cart.speech_timer--;
+        }
+        
+        if (gs->bev_cart.whistle_timer > 0) {
+            gs->bev_cart.whistle_timer--;
+            if (gs->bev_cart.whistle_timer == 0) {
+                gs->audio_event = AUDIO_EVT_BEV_WHISTLE;
+                gs->bev_cart.speech_timer = 150; /* Show speech bubble for ~2.5 seconds */
+                gs->bev_cart.whistle_timer = 400 + (core_rand() % 400); /* Next whistle in 7..13 sec */
+            }
+        }
+        
+        if (gs->bev_cart.state == BEV_STATE_DRIVING) {
+            fixed dx = gs->bev_cart.target_x - gs->bev_cart.x;
+            fixed dy = gs->bev_cart.target_y - gs->bev_cart.y;
+            fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+            
+            if (dist < TO_FIXED(1)) {
+                /* Arrived at waypoint! Pause to service golfers/spectators */
+                gs->bev_cart.state = BEV_STATE_SERVICING;
+                gs->bev_cart.wait_timer = 120 + (core_rand() % 120); /* 2-4 seconds pause */
+            } else {
+                gs->bev_cart.facing_angle = fixed_atan2(dy, dx);
+                gs->bev_cart.x += FMUL(gs->bev_cart.speed, fixed_cos(gs->bev_cart.facing_angle));
+                gs->bev_cart.y += FMUL(gs->bev_cart.speed, fixed_sin(gs->bev_cart.facing_angle));
+                
+                fixed target_gz = golf_get_ground_z_fixed(gs, gs->bev_cart.x, gs->bev_cart.y);
+                fixed z_diff = target_gz - gs->bev_cart.current_z;
+                fixed z_step = TO_FIXED(3);
+                if (z_diff > z_step) gs->bev_cart.current_z += z_step;
+                else if (z_diff < -z_step) gs->bev_cart.current_z -= z_step;
+                else gs->bev_cart.current_z = target_gz;
+            }
+        } else if (gs->bev_cart.state == BEV_STATE_SERVICING) {
+            if (gs->bev_cart.wait_timer > 0) {
+                gs->bev_cart.wait_timer--;
+            } else {
+                /* Pick new destination waypoint across the course */
+                int way_choice = core_rand() % 4;
+                int dest_gx = gs->tee_gx;
+                int dest_gy = gs->tee_gy;
+                
+                if (way_choice == 0) {
+                    /* Near tee box */
+                    dest_gx = gs->tee_gx + ((int)(core_rand() % 5) - 2);
+                    dest_gy = gs->tee_gy + ((int)(core_rand() % 5) - 2);
+                } else if (way_choice == 1) {
+                    /* Mid-fairway corridor */
+                    dest_gx = (gs->tee_gx + gs->pin_gx) / 2 + ((int)(core_rand() % 7) - 3);
+                    dest_gy = (gs->tee_gy + gs->pin_gy) / 2 + ((int)(core_rand() % 7) - 3);
+                } else if (way_choice == 2) {
+                    /* Near putting green */
+                    dest_gx = gs->pin_gx + 3 + ((int)(core_rand() % 4) - 2);
+                    dest_gy = gs->pin_gy + 3 + ((int)(core_rand() % 4) - 2);
+                } else {
+                    /* Near clubhouse */
+                    if (gs->has_clubhouse) {
+                        dest_gx = gs->clubhouse_gx + 2 + ((int)(core_rand() % 3));
+                        dest_gy = gs->clubhouse_gy + 3 + ((int)(core_rand() % 3));
+                    } else {
+                        dest_gx = gs->tee_gx - 3;
+                        dest_gy = gs->tee_gy - 4;
+                    }
+                }
+                
+                if (dest_gx < 2) dest_gx = 2;
+                if (dest_gx >= GRID_W - 2) dest_gx = GRID_W - 3;
+                if (dest_gy < 2) dest_gy = 2;
+                if (dest_gy >= GRID_H - 2) dest_gy = GRID_H - 3;
+                
+                /* Avoid water hazard */
+                if (gs->grid[dest_gx][dest_gy].surface != SURF_WATER) {
+                    gs->bev_cart.target_x = TO_FIXED(dest_gx) + FIXED_HALF;
+                    gs->bev_cart.target_y = TO_FIXED(dest_gy) + FIXED_HALF;
+                    gs->bev_cart.state = BEV_STATE_DRIVING;
+                }
+            }
         }
     }
 }

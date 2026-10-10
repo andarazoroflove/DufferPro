@@ -27,12 +27,17 @@ typedef enum {
     SFX_CROWD_OOH = 17,
     SFX_BUILD_PLACE = 18,
     SFX_TERRAIN_SCULPT = 19,
+    SFX_BEVERAGE_WHISTLE = 20,
     SFX_COUNT
 } GolfSfxType;
 
 /* Audio Lifecycle */
 bool golf_audio_init(void);
 void golf_audio_shutdown(void);
+
+/* Procedural Intro Melody */
+void golf_audio_start_intro_music(void);
+void golf_audio_stop_intro_music(void);
 
 /* Play one-shot procedural sound effect */
 void golf_audio_play_sfx(GolfSfxType sfx);

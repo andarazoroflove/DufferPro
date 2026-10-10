@@ -1,6 +1,5 @@
 #include "golf_render.h"
 #include "font8x8.h"
-#include "splash_art.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -61,6 +60,10 @@ static uint32_t s_sprite_bench[SPRITE_BENCH_W * SPRITE_BENCH_H];
 #define SPRITE_CART_W 44
 #define SPRITE_CART_H 36
 static uint32_t s_sprite_cart[SPRITE_CART_W * SPRITE_CART_H];
+
+#define SPRITE_BEV_CART_W 46
+#define SPRITE_BEV_CART_H 38
+static uint32_t s_sprite_bev_cart[SPRITE_BEV_CART_W * SPRITE_BEV_CART_H];
 
 #define SPRITE_FLAG_W 20
 #define SPRITE_FLAG_H 46
@@ -848,6 +851,113 @@ static void generate_procedural_graphics(void) {
             }
         }
     }
+    
+    /* 23. Beverage Cart Girl (46x38, Refreshment Cart with Canopy, Cold Drink Cooler & Girl Driver) */
+    memset(s_sprite_bev_cart, 0, sizeof(s_sprite_bev_cart));
+    for (int y = 0; y < SPRITE_BEV_CART_H; ++y) {
+        for (int x = 0; x < SPRITE_BEV_CART_W; ++x) {
+            int idx = y * SPRITE_BEV_CART_W + x;
+            
+            /* Wheels with chrome hubcaps (x = 7..13 and x = 31..37, y = 28..36) */
+            if (y >= 28 && ((x >= 7 && x <= 13) || (x >= 31 && x <= 37))) {
+                if (y >= 30 && y <= 34 && (x == 10 || x == 34)) {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(220, 225, 235); /* Chrome hubcap */
+                } else {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(28, 30, 32);     /* Rubber tire */
+                }
+                continue;
+            }
+            
+            /* Front chrome bumper & headlight */
+            if (y >= 22 && y <= 25 && x >= 4 && x <= 6) {
+                s_sprite_bev_cart[idx] = (y == 23 && x == 5) ? COLOR_RGB(255, 240, 150) : COLOR_RGB(210, 215, 220);
+                continue;
+            }
+            
+            /* Cart Body - White chassis with vibrant pink/teal trim */
+            if (y >= 19 && y <= 28 && x >= 6 && x <= 39) {
+                if (y == 22 || y == 23) {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(245, 60, 130); /* Sporty Pink Stripe */
+                } else if (y >= 24) {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(225, 228, 235); /* Lower body */
+                } else {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(248, 250, 252); /* Upper glossy white */
+                }
+            }
+            
+            /* Windshield (slanted glass with reflection) */
+            if (y >= 9 && y <= 18 && x >= 8 && x <= 16) {
+                if (x + y == 21 || x + y == 22) {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(240, 255, 255); /* Sun reflection */
+                } else if (x >= 10 && x <= 14) {
+                    s_sprite_bev_cart[idx] = COLOR_RGB(150, 195, 225); /* Tinted glass */
+                }
+            }
+            
+            /* Steering column & wheel */
+            if (y >= 16 && y <= 20 && x >= 16 && x <= 18) {
+                s_sprite_bev_cart[idx] = COLOR_RGB(35, 40, 45);
+            }
+            
+            /* Beverage Girl Driver:
+               Blonde Ponytail: x = 24..27, y = 10..15
+               Sun Visor: x = 18..24, y = 7..9
+               Face: x = 19..23, y = 9..13
+               Pink Polo Top: x = 18..24, y = 14..20
+               Arms: x = 16..19, y = 16..19
+            */
+            /* Sun Visor */
+            if (y >= 7 && y <= 9 && x >= 18 && x <= 24) {
+                s_sprite_bev_cart[idx] = (y == 7) ? COLOR_RGB(250, 250, 255) : COLOR_RGB(245, 60, 130);
+            }
+            /* Face & Smile */
+            if (y >= 10 && y <= 13 && x >= 19 && x <= 23) {
+                if (y == 12 && x == 20) s_sprite_bev_cart[idx] = COLOR_RGB(220, 70, 70); /* smile */
+                else if (y == 11 && x == 20) s_sprite_bev_cart[idx] = COLOR_RGB(45, 50, 60); /* eye */
+                else s_sprite_bev_cart[idx] = COLOR_RGB(255, 205, 170); /* skin */
+            }
+            /* Golden Blonde Ponytail */
+            if (y >= 9 && y <= 15 && x >= 23 && x <= 27) {
+                s_sprite_bev_cart[idx] = (y >= 13) ? COLOR_RGB(225, 185, 40) : COLOR_RGB(250, 215, 65);
+            }
+            /* Pink Polo Shirt */
+            if (y >= 14 && y <= 20 && x >= 18 && x <= 24) {
+                s_sprite_bev_cart[idx] = COLOR_RGB(245, 60, 130);
+            }
+            /* Arms holding steering wheel */
+            if (y >= 16 && y <= 19 && x >= 16 && x <= 18) {
+                s_sprite_bev_cart[idx] = COLOR_RGB(255, 205, 170);
+            }
+            
+            /* Rear Refreshment Cooler Box (x = 28..42, y = 13..27) */
+            if (y >= 17 && y <= 27 && x >= 28 && x <= 42) {
+                s_sprite_bev_cart[idx] = COLOR_RGB(32, 90, 180); /* Deep royal blue cooler */
+                if (x == 35 && (y == 19 || y == 20)) s_sprite_bev_cart[idx] = COLOR_RGB(225, 230, 235); /* Chrome latch */
+            }
+            /* Sparkling Crushed Ice in open bin (y = 13..16, x = 29..41) */
+            if (y >= 13 && y <= 16 && x >= 29 && x <= 41) {
+                s_sprite_bev_cart[idx] = ((x + y) % 2 == 0) ? COLOR_RGB(230, 245, 255) : COLOR_RGB(195, 225, 248);
+            }
+            /* Colorful Cold Beverage Cans & Bottles sitting in ice (y = 10..13) */
+            if (y >= 10 && y <= 13) {
+                if (x >= 29 && x <= 31) s_sprite_bev_cart[idx] = COLOR_RGB(235, 35, 35);   /* Red Cola Can */
+                if (x >= 32 && x <= 34) s_sprite_bev_cart[idx] = COLOR_RGB(40, 160, 245);  /* Blue Sports Drink */
+                if (x >= 35 && x <= 37) s_sprite_bev_cart[idx] = COLOR_RGB(45, 210, 65);   /* Green Lemon-Lime */
+                if (x >= 38 && x <= 40) s_sprite_bev_cart[idx] = (y == 10) ? COLOR_RGB(245, 210, 45) : COLOR_RGB(155, 85, 25); /* Cold Brew Bottle */
+            }
+            
+            /* Chrome Canopy Support Struts */
+            if (y >= 6 && y <= 18 && (x == 9 || x == 26 || x == 40)) {
+                s_sprite_bev_cart[idx] = COLOR_RGB(190, 195, 205);
+            }
+            
+            /* Striped Resort Canopy Roof (y = 3..6, x = 7..42) */
+            if (y >= 3 && y <= 6 && x >= 7 && x <= 42) {
+                bool pink_stripe = ((x / 4) % 2 == 0);
+                s_sprite_bev_cart[idx] = pink_stripe ? COLOR_RGB(245, 60, 130) : COLOR_RGB(248, 250, 255);
+            }
+        }
+    }
 }
 
 /* Initialization */
@@ -1170,7 +1280,8 @@ typedef enum {
     DRAWABLE_SPECTATOR,
     DRAWABLE_CADDY,
     DRAWABLE_GOLFER,
-    DRAWABLE_BALL
+    DRAWABLE_BALL,
+    DRAWABLE_BEV_CART
 } DrawableType;
 
 typedef struct {
@@ -1468,6 +1579,15 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         item->foot_sy = FROM_FIXED(FMUL(gs->ball.x + gs->ball.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->ball.ground_z) + rc->camera_y + TILE_HALF_H;
     }
     
+    /* 7. Beverage Cart Girl */
+    if (gs->bev_cart.active && s_drawable_count < MAX_DRAWABLES) {
+        DrawableItem *item = &s_drawables[s_drawable_count++];
+        item->type = DRAWABLE_BEV_CART;
+        item->sort_key = FROM_FIXED(FMUL(gs->bev_cart.x + gs->bev_cart.y, TO_FIXED(32)));
+        item->foot_sx = FROM_FIXED(FMUL(gs->bev_cart.x - gs->bev_cart.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        item->foot_sy = FROM_FIXED(FMUL(gs->bev_cart.x + gs->bev_cart.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->bev_cart.current_z) + rc->camera_y + TILE_HALF_H;
+    }
+    
     /* Sort all drawables back-to-front by sort_key */
     qsort(s_drawables, s_drawable_count, sizeof(DrawableItem), compare_drawables);
     
@@ -1592,6 +1712,30 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                             }
                         }
                     }
+                }
+                break;
+            }
+            case DRAWABLE_BEV_CART: {
+                int fx = item->foot_sx;
+                int fy = item->foot_sy;
+                draw_drop_shadow(rc, fx, fy, 22, 10, 140);
+                blit_sprite_depth(rc, fx - SPRITE_BEV_CART_W / 2, fy - SPRITE_BEV_CART_H + 4,
+                                  SPRITE_BEV_CART_W, SPRITE_BEV_CART_H, s_sprite_bev_cart, item->sort_key);
+                
+                /* Floating speech bubble when whistling or selling drinks */
+                if (gs->bev_cart.speech_timer > 0) {
+                    int bub_w = 110;
+                    int bub_h = 20;
+                    int bub_x = fx - bub_w / 2;
+                    int bub_y = fy - SPRITE_BEV_CART_H - 24;
+                    /* White speech bubble with dark border */
+                    draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+                    draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
+                    /* Speech pointer */
+                    for (int dy = 0; dy < 5; ++dy) {
+                        draw_rect(rc, fx - 2 + dy / 2, bub_y + bub_h + dy, 5 - dy, 1, COLOR_RGB(255, 255, 255));
+                    }
+                    draw_text(rc, bub_x + 6, bub_y + 6, "♪ COLD DRINKS! ♪", COLOR_RGB(220, 20, 70), false);
                 }
                 break;
             }
@@ -1827,56 +1971,299 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
     }
 }
 
-/* Splash Screen Renderer scaled to 1024x768 */
+static void draw_text_scaled(RenderContext *rc, int32_t x, int32_t y, const char *str, uint32_t color, int scale, bool shadow) {
+    if (!str || scale <= 0) return;
+    int cur_x = x;
+    while (*str) {
+        char ch = *str++;
+        if (ch >= 32 && ch <= 126) {
+            const uint8_t *glyph = g_font8x8[ch - 32];
+            for (int gy = 0; gy < 8; ++gy) {
+                uint8_t row = glyph[gy];
+                for (int gx = 0; gx < 8; ++gx) {
+                    if (row & (0x80 >> gx)) {
+                        int px0 = cur_x + gx * scale;
+                        int py0 = y + gy * scale;
+                        if (shadow) {
+                            for (int dy = 0; dy < scale; ++dy) {
+                                for (int dx = 0; dx < scale; ++dx) {
+                                    int spx = px0 + dx + scale;
+                                    int spy = py0 + dy + scale;
+                                    if (spx >= 0 && spx < SCREEN_W && spy >= 0 && spy < SCREEN_H) {
+                                        rc->framebuffer[spy * SCREEN_W + spx] = COLOR_RGB(15, 12, 18);
+                                    }
+                                }
+                            }
+                        }
+                        for (int dy = 0; dy < scale; ++dy) {
+                            for (int dx = 0; dx < scale; ++dx) {
+                                int px = px0 + dx;
+                                int py = py0 + dy;
+                                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                    rc->framebuffer[py * SCREEN_W + px] = color;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cur_x += 8 * scale;
+    }
+}
+
+/* Native High-Definition 1024x768 Splash Screen Renderer */
 void render_splash_screen(RenderContext *rc, uint32_t tick_count) {
-    /* Background Gradient */
-    for (int y = 0; y < SCREEN_H; ++y) {
-        float t = (float)y / (float)SCREEN_H;
-        int r = (int)(25.0f * (1.0f - t) + 15.0f * t);
-        int g = (int)(55.0f * (1.0f - t) + 35.0f * t);
-        int b = (int)(95.0f * (1.0f - t) + 50.0f * t);
+    /* 1. Golden Hour Sunset Sky Gradient (y = 0..440) */
+    for (int y = 0; y < 440; ++y) {
+        float t = (float)y / 440.0f;
+        int r, g, b;
+        if (t < 0.40f) {
+            float f = t / 0.40f;
+            r = (int)(20.0f * (1.0f - f) + 95.0f * f);
+            g = (int)(32.0f * (1.0f - f) + 55.0f * f);
+            b = (int)(75.0f * (1.0f - f) + 88.0f * f);
+        } else if (t < 0.75f) {
+            float f = (t - 0.40f) / 0.35f;
+            r = (int)(95.0f * (1.0f - f) + 215.0f * f);
+            g = (int)(55.0f * (1.0f - f) + 105.0f * f);
+            b = (int)(88.0f * (1.0f - f) + 55.0f * f);
+        } else {
+            float f = (t - 0.75f) / 0.25f;
+            r = (int)(215.0f * (1.0f - f) + 255.0f * f);
+            g = (int)(105.0f * (1.0f - f) + 195.0f * f);
+            b = (int)(55.0f * (1.0f - f) + 90.0f * f);
+        }
         uint32_t col = COLOR_RGB(r, g, b);
         for (int x = 0; x < SCREEN_W; ++x) {
             rc->framebuffer[y * SCREEN_W + x] = col;
         }
     }
     
-    /* Bilinear / Nearest Scale of Retro Splash Art into Center */
-    static uint32_t s_art_buf[640 * 480];
-    static bool s_art_init = false;
-    if (!s_art_init) {
-        generate_splash_background(s_art_buf);
-        s_art_init = true;
-    }
-    
-    int dst_x0 = 80;
-    int dst_y0 = 60;
-    int dst_w = 864;
-    int dst_h = 600;
-    
-    for (int dy = 0; dy < dst_h; ++dy) {
-        int py = dst_y0 + dy;
+    /* 2. Setting Sun Orb & Glowing Corona at (780, 230) */
+    int sun_cx = 780;
+    int sun_cy = 230;
+    for (int dy = -75; dy <= 75; ++dy) {
+        int py = sun_cy + dy;
         if (py < 0 || py >= SCREEN_H) continue;
-        int src_y = (dy * 480) / dst_h;
-        for (int dx = 0; dx < dst_w; ++dx) {
-            int px = dst_x0 + dx;
+        for (int dx = -75; dx <= 75; ++dx) {
+            int px = sun_cx + dx;
             if (px < 0 || px >= SCREEN_W) continue;
-            int src_x = (dx * 640) / dst_w;
-            rc->framebuffer[py * SCREEN_W + px] = s_art_buf[src_y * 640 + src_x];
+            int d2 = dx * dx + dy * dy;
+            if (d2 <= 50 * 50) {
+                rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 252, 215);
+            } else if (d2 <= 75 * 75) {
+                int a = 200 - ((d2 - 50 * 50) * 200) / (75 * 75 - 50 * 50);
+                rc->framebuffer[py * SCREEN_W + px] = alpha_blend_pixel(rc->framebuffer[py * SCREEN_W + px], COLOR_RGB(255, 210, 95), (uint8_t)a);
+            }
         }
     }
     
-    /* Frame border */
-    draw_rect_border(rc, dst_x0, dst_y0, dst_w, dst_h, COLOR_RGB(235, 195, 65));
-    
-    /* Pulsing Prompt */
-    if ((tick_count / 30) % 2 == 0) {
-        const char *prompt = "--- CLICK ANYWHERE OR PRESS SPACE TO ENTER DUFFER PRO ---";
-        int tx = SCREEN_W / 2 - (int)strlen(prompt) * 8 / 2;
-        draw_rect_alpha(rc, tx - 16, SCREEN_H - 72, (int)strlen(prompt) * 8 + 32, 28, COLOR_RGB(15, 20, 25), 220);
-        draw_rect_border(rc, tx - 16, SCREEN_H - 72, (int)strlen(prompt) * 8 + 32, 28, COLOR_RGB(255, 215, 65));
-        draw_text(rc, tx, SCREEN_H - 63, prompt, COLOR_RGB(255, 245, 120), true);
+    /* Subtle Golden Clouds */
+    for (int cy = 160; cy <= 280; cy += 50) {
+        for (int x = 0; x < SCREEN_W; ++x) {
+            int cloud = (int)(sinf((float)(x + cy * 7) * 0.015f) * 12.0f);
+            if (cloud > 4) {
+                int py = cy + cloud;
+                if (py >= 0 && py < SCREEN_H) {
+                    rc->framebuffer[py * SCREEN_W + x] = alpha_blend_pixel(rc->framebuffer[py * SCREEN_W + x], COLOR_RGB(245, 175, 120), 80);
+                }
+            }
+        }
     }
+    
+    /* 3. Distant Purple Mountain Ridge */
+    for (int x = 0; x < SCREEN_W; ++x) {
+        int my = 330 + (int)(sinf((float)x * 0.008f) * 36.0f + cosf((float)x * 0.021f) * 16.0f);
+        for (int y = my; y < 440; ++y) {
+            int light = (y - my < 10) ? 22 : 0;
+            rc->framebuffer[y * SCREEN_W + x] = COLOR_RGB(65 + light, 48 + light, 78 + light);
+        }
+    }
+    
+    /* 4. Pine Foothills Silhouette (y = 370..440) */
+    for (int x = 0; x < SCREEN_W; ++x) {
+        int fy = 375 + (int)(sinf((float)x * 0.018f) * 20.0f + cosf((float)x * 0.045f) * 10.0f);
+        for (int y = fy; y < 440; ++y) {
+            rc->framebuffer[y * SCREEN_W + x] = COLOR_RGB(38, 55, 48);
+        }
+    }
+    
+    /* 5. Rolling Emerald Fairway Turf & Hazards (y = 420..768) */
+    for (int y = 420; y < SCREEN_H; ++y) {
+        float t = (float)(y - 420) / (float)(SCREEN_H - 420);
+        for (int x = 0; x < SCREEN_W; ++x) {
+            /* Rolling contour hill curve */
+            int hill_offset = (int)(sinf((float)x * 0.006f) * 28.0f);
+            if (y < 420 + hill_offset) continue;
+            
+            /* Fairway stripes */
+            int stripe = ((x + y) / 24) & 1;
+            int r = stripe ? (int)(55.0f * (1.0f - t) + 42.0f * t) : (int)(45.0f * (1.0f - t) + 34.0f * t);
+            int g = stripe ? (int)(155.0f * (1.0f - t) + 115.0f * t) : (int)(135.0f * (1.0f - t) + 98.0f * t);
+            int b = stripe ? (int)(45.0f * (1.0f - t) + 32.0f * t) : (int)(38.0f * (1.0f - t) + 26.0f * t);
+            rc->framebuffer[y * SCREEN_W + x] = COLOR_RGB(r, g, b);
+        }
+    }
+    
+    /* Water Hazard Lake on Left (x = 30..260, y = 460..540) */
+    for (int dy = -35; dy <= 35; ++dy) {
+        int py = 495 + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int dx = -110; dx <= 110; ++dx) {
+            int px = 145 + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            if (dx * dx * 2 + dy * dy * 18 <= 110 * 110 * 2) {
+                int wave = (int)(sinf((float)px * 0.1f + (float)tick_count * 0.08f) * 1.5f);
+                rc->framebuffer[(py + wave) * SCREEN_W + px] = COLOR_RGB(42, 95, 165);
+            }
+        }
+    }
+    
+    /* White Sand Bunker on Right (x = 690..790, y = 460..510) */
+    for (int dy = -22; dy <= 22; ++dy) {
+        int py = 485 + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        for (int dx = -50; dx <= 50; ++dx) {
+            int px = 740 + dx;
+            if (px < 0 || px >= SCREEN_W) continue;
+            if (dx * dx + dy * dy * 5 <= 50 * 50) {
+                int shade = (dy < -12) ? -28 : 12;
+                rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(225 + shade, 210 + shade, 160 + shade);
+            }
+        }
+    }
+    
+    /* 6. Grand Clubhouse on the Bluff (x = 85..235, y = 370..445) */
+    render_clubhouse(rc, 160, 440);
+    
+    /* Flagstick on Putting Green (x = 840, y = 450) */
+    draw_rect(rc, 840, 415, 2, 35, COLOR_RGB(230, 235, 240));
+    draw_rect(rc, 842, 415, 14, 8, COLOR_RGB(225, 45, 45)); /* Red flag */
+    
+    /* Ponderosa Pines along ridge */
+    blit_sprite_depth(rc, 40, 390, SPRITE_PINE_W, SPRITE_PINE_H, s_sprite_pine, 999999);
+    blit_sprite_depth(rc, 240, 400, SPRITE_OAK_W, SPRITE_OAK_H, s_sprite_oak, 999999);
+    blit_sprite_depth(rc, 910, 420, SPRITE_PALM_W, SPRITE_PALM_H, s_sprite_palm, 999999);
+    blit_sprite_depth(rc, 870, 450, SPRITE_FLOWERING_W, SPRITE_FLOWERING_H, s_sprite_flowering, 999999);
+    
+    /* 7. Foreground Golfer on Left (x = 240, y = 520) */
+    draw_drop_shadow(rc, 254, 555, 14, 6, 140);
+    blit_sprite_depth(rc, 240, 520, SPRITE_GOLFER_W, SPRITE_GOLFER_H, s_sprite_golfer, 999999);
+    draw_text(rc, 222, 563, "CHAMPION", COLOR_RGB(255, 235, 110), true);
+    
+    /* 8. Foreground Beverage Cart Girl on Right (x = 680, y = 520) */
+    draw_drop_shadow(rc, 703, 556, 26, 10, 140);
+    blit_sprite_depth(rc, 680, 520, SPRITE_BEV_CART_W, SPRITE_BEV_CART_H, s_sprite_bev_cart, 999999);
+    
+    /* Floating Melodic Whistle Speech Bubble above Beverage Cart */
+    int bub_x = 645;
+    int bub_y = 485;
+    draw_rect(rc, bub_x, bub_y, 115, 22, COLOR_RGB(255, 255, 255));
+    draw_rect_border(rc, bub_x, bub_y, 115, 22, COLOR_RGB(35, 45, 55));
+    for (int dy = 0; dy < 6; ++dy) {
+        draw_rect(rc, bub_x + 55 + dy / 2, bub_y + 22 + dy, 6 - dy, 1, COLOR_RGB(255, 255, 255));
+    }
+    draw_text(rc, bub_x + 8, bub_y + 7, "♪ COLD DRINKS! ♪", COLOR_RGB(220, 20, 80), false);
+    
+    /* 9. Hero Title Logo: "DUFFER PRO" with 3D Embossing */
+    int title_y = 65;
+    const char *title_text = "DUFFER PRO";
+    int title_scale = 4;
+    int title_w = (int)strlen(title_text) * 8 * title_scale;
+    int title_x = SCREEN_W / 2 - title_w / 2;
+    
+    /* Title Backing Plaque (Translucent Smoked Glass with Gold Filigree) */
+    int plq_w = 640;
+    int plq_h = 100;
+    int plq_x = SCREEN_W / 2 - plq_w / 2;
+    int plq_y = title_y - 12;
+    draw_rect_alpha(rc, plq_x, plq_y, plq_w, plq_h, COLOR_RGB(16, 24, 32), 225);
+    draw_rect_border(rc, plq_x, plq_y, plq_w, plq_h, COLOR_RGB(255, 215, 75));
+    draw_rect_border(rc, plq_x + 3, plq_y + 3, plq_w - 6, plq_h - 6, COLOR_RGB(165, 125, 35));
+    
+    /* 3D Drop Shadow */
+    draw_text_scaled(rc, title_x + 4, title_y + 4, title_text, COLOR_RGB(35, 20, 10), title_scale, false);
+    /* Specular Bevel Top Highlight */
+    draw_text_scaled(rc, title_x - 1, title_y - 1, title_text, COLOR_RGB(255, 255, 235), title_scale, false);
+    /* Metallic Gold Face */
+    draw_text_scaled(rc, title_x, title_y, title_text, COLOR_RGB(255, 215, 65), title_scale, false);
+    
+    /* PGA Championship Ribbon Banner at y = 125 */
+    int ban_w = 460;
+    int ban_h = 24;
+    int ban_x = SCREEN_W / 2 - ban_w / 2;
+    int ban_y = title_y + 42;
+    draw_rect(rc, ban_x, ban_y, ban_w, ban_h, COLOR_RGB(24, 75, 42));
+    draw_rect_border(rc, ban_x, ban_y, ban_w, ban_h, COLOR_RGB(245, 215, 75));
+    const char *ribbon_text = "★  CHAMPIONSHIP RESORT GOLF  ★";
+    int r_tx = SCREEN_W / 2 - (int)strlen(ribbon_text) * 8 / 2;
+    draw_text(rc, r_tx, ban_y + 8, ribbon_text, COLOR_RGB(255, 245, 140), true);
+    
+    /* Subtitle */
+    const char *sub_text = "The Definitive Isometric Country Club Simulation";
+    int s_tx = SCREEN_W / 2 - (int)strlen(sub_text) * 8 / 2;
+    draw_text(rc, s_tx, plq_y + plq_h + 10, sub_text, COLOR_RGB(255, 235, 145), true);
+    
+    /* 10. Three Translucent Feature Cards (y = 575..630) */
+    int card_w = 270;
+    int card_h = 52;
+    int card_y = 575;
+    
+    /* Card 1: Terrain Sculpting */
+    int c1_x = 75;
+    draw_rect_alpha(rc, c1_x, card_y, card_w, card_h, COLOR_RGB(18, 28, 38), 215);
+    draw_rect_border(rc, c1_x, card_y, card_w, card_h, COLOR_RGB(75, 125, 165));
+    draw_text(rc, c1_x + 12, card_y + 8, "[ 6-TIER 3D SCULPTING ]", COLOR_RGB(255, 215, 75), true);
+    draw_text(rc, c1_x + 12, card_y + 24, "Raise, lower cliffs & autotile", COLOR_RGB(210, 225, 235), false);
+    draw_text(rc, c1_x + 12, card_y + 36, "bunkers, greens & water hazards", COLOR_RGB(165, 185, 205), false);
+    
+    /* Card 2: Living Resort */
+    int c2_x = 377;
+    draw_rect_alpha(rc, c2_x, card_y, card_w, card_h, COLOR_RGB(18, 28, 38), 215);
+    draw_rect_border(rc, c2_x, card_y, card_w, card_h, COLOR_RGB(75, 125, 165));
+    draw_text(rc, c2_x + 12, card_y + 8, "[ LIVING RESORT LIFE ]", COLOR_RGB(255, 215, 75), true);
+    draw_text(rc, c2_x + 12, card_y + 24, "Clubhouse, caddy, gallery crowd", COLOR_RGB(210, 225, 235), false);
+    draw_text(rc, c2_x + 12, card_y + 36, "cheers & country club funds", COLOR_RGB(165, 185, 205), false);
+    
+    /* Card 3: Beverage Cart */
+    int c3_x = 679;
+    draw_rect_alpha(rc, c3_x, card_y, card_w, card_h, COLOR_RGB(18, 28, 38), 215);
+    draw_rect_border(rc, c3_x, card_y, card_w, card_h, COLOR_RGB(75, 125, 165));
+    draw_text(rc, c3_x + 12, card_y + 8, "[ BEVERAGE CART SERVICE ]", COLOR_RGB(255, 215, 75), true);
+    draw_text(rc, c3_x + 12, card_y + 24, "Roving cart girl sells drinks &", COLOR_RGB(210, 225, 235), false);
+    draw_text(rc, c3_x + 12, card_y + 36, "whistles cheerful golf melodies", COLOR_RGB(165, 185, 205), false);
+    
+    /* 11. Prominent Interactive START BUTTON & Guidance (y = 646..735) */
+    int btn_w = 440;
+    int btn_h = 44;
+    int btn_x = SCREEN_W / 2 - btn_w / 2;
+    int btn_y = 646;
+    
+    /* Pulsing button glow */
+    bool pulse = ((tick_count / 24) % 2 == 0);
+    uint32_t btn_bg = pulse ? COLOR_RGB(34, 105, 58) : COLOR_RGB(24, 82, 45);
+    uint32_t btn_border = pulse ? COLOR_RGB(255, 235, 95) : COLOR_RGB(225, 185, 55);
+    
+    draw_rect(rc, btn_x, btn_y, btn_w, btn_h, btn_bg);
+    draw_rect_border(rc, btn_x, btn_y, btn_w, btn_h, btn_border);
+    draw_rect_border(rc, btn_x + 2, btn_y + 2, btn_w - 4, btn_h - 4, btn_border);
+    
+    const char *btn_label = ">>  PRESS ENTER TO TEE OFF  <<";
+    int btx = SCREEN_W / 2 - (int)strlen(btn_label) * 8 / 2;
+    draw_text(rc, btx, btn_y + 17, btn_label, COLOR_RGB(255, 250, 160), true);
+    
+    /* Explicit Clear Instruction */
+    const char *note_text = "Press ENTER (or click button) to start  |  Spacebar is reserved for swings during play";
+    int ntx = SCREEN_W / 2 - (int)strlen(note_text) * 8 / 2;
+    draw_text(rc, ntx, btn_y + 54, note_text, COLOR_RGB(255, 225, 130), true);
+    
+    const char *keys_hint = "Controls: TAB Switch Modes | Mouse Aim & Drag | Arrow Keys Pan Camera | C Change Club";
+    int ktx = SCREEN_W / 2 - (int)strlen(keys_hint) * 8 / 2;
+    draw_text(rc, ktx, btn_y + 70, keys_hint, COLOR_RGB(155, 180, 200), false);
+    
+    /* Outer screen vignette border */
+    draw_rect_border(rc, 0, 0, SCREEN_W, SCREEN_H, COLOR_RGB(35, 45, 55));
 }
 
 /* BMP Screenshot Saver (1024x768) */

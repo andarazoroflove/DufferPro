@@ -10,6 +10,10 @@
 #define COLOR_RGB(r, g, b)     COLOR_ARGB(255, r, g, b)
 #endif
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
+
 /* Procedural Sprite Buffers */
 static uint32_t s_tile_rough[4][TILE_W * TILE_H];
 static uint32_t s_tile_fairway[16][TILE_W * TILE_H];
@@ -93,6 +97,19 @@ static uint32_t s_sprite_gopher_hole[SPRITE_GOPHER_HOLE_W * SPRITE_GOPHER_HOLE_H
 #define SPRITE_GOPHER_W 26
 #define SPRITE_GOPHER_H 28
 static uint32_t s_sprite_gopher[4][SPRITE_GOPHER_W * SPRITE_GOPHER_H]; /* [anim_frame] */
+
+/* Carl Spackler Greenskeeper & TNT Blasting Plunger */
+#define SPRITE_CARL_W 32
+#define SPRITE_CARL_H 40
+static uint32_t s_sprite_carl_walk[4][SPRITE_CARL_W * SPRITE_CARL_H];
+static uint32_t s_sprite_carl_plant[2][SPRITE_CARL_W * SPRITE_CARL_H];
+static uint32_t s_sprite_carl_plunge[2][SPRITE_CARL_W * SPRITE_CARL_H];
+static uint32_t s_sprite_carl_hose[2][SPRITE_CARL_W * SPRITE_CARL_H];
+static uint32_t s_sprite_carl_celebrate[2][SPRITE_CARL_W * SPRITE_CARL_H];
+
+#define SPRITE_TNT_BOX_W 16
+#define SPRITE_TNT_BOX_H 18
+static uint32_t s_sprite_tnt_box[2][SPRITE_TNT_BOX_W * SPRITE_TNT_BOX_H];
 
 /* Depth Buffer for screen-space occlusion (1024x768) */
 static int32_t s_depth_buffer[SCREEN_W * SCREEN_H];
@@ -1121,6 +1138,200 @@ static void generate_procedural_graphics(void) {
             }
         }
     }
+    
+    /* 26. Carl Spackler Greenskeeper & TNT Detonator Box */
+    /* TNT Detonator Box (16x18, Wooden blasting machine with T-bar handle) */
+    for (int f = 0; f < 2; ++f) {
+        memset(s_sprite_tnt_box[f], 0, sizeof(s_sprite_tnt_box[0]));
+        for (int y = 0; y < SPRITE_TNT_BOX_H; ++y) {
+            for (int x = 0; x < SPRITE_TNT_BOX_W; ++x) {
+                int idx = y * SPRITE_TNT_BOX_W + x;
+                
+                /* Hardwood Plunger T-Handle (f == 0: Raised up at y = 1..2, f == 1: Slammed flush at y = 6..7) */
+                int handle_y = (f == 0) ? 1 : 6;
+                if (y >= handle_y && y <= handle_y + 1 && x >= 4 && x <= 11) {
+                    s_sprite_tnt_box[f][idx] = (y == handle_y) ? COLOR_RGB(135, 82, 42) : COLOR_RGB(80, 48, 25);
+                    continue;
+                }
+                /* Brass Plunger Rod (Visible only when handle is raised) */
+                if (f == 0 && y >= 3 && y <= 7 && (x == 7 || x == 8)) {
+                    s_sprite_tnt_box[f][idx] = (x == 7) ? COLOR_RGB(240, 210, 95) : COLOR_RGB(180, 150, 60);
+                    continue;
+                }
+                
+                /* Oak Detonator Cabinet (y = 8..17, x = 2..13) */
+                if (y >= 8 && y <= 17 && x >= 2 && x <= 13) {
+                    /* Heavy Cast Iron Corner Brackets */
+                    if ((x <= 3 || x >= 12) || y == 8 || y == 17) {
+                        s_sprite_tnt_box[f][idx] = ((x == 3 && y == 9) || (x == 12 && y == 9) ||
+                                                    (x == 3 && y == 16) || (x == 12 && y == 16)) ?
+                                                    COLOR_RGB(210, 215, 220) /* Silver Rivet */ : COLOR_RGB(45, 48, 52);
+                    } else {
+                        /* Aged Oak Slats */
+                        int wood_shade = ((x + y) % 3 == 0) ? -12 : 8;
+                        s_sprite_tnt_box[f][idx] = COLOR_RGB(145 + wood_shade, 92 + wood_shade, 48 + wood_shade / 2);
+                        
+                        /* Red "TNT" Stencil (y = 11..14, x = 5..10) */
+                        if (y >= 11 && y <= 14 && x >= 5 && x <= 10) {
+                            if (y == 11 || (x == 5 && y <= 14) || (x == 7 && y <= 14) || (x == 10 && y <= 14)) {
+                                s_sprite_tnt_box[f][idx] = COLOR_RGB(225, 40, 40);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /* Helper to draw base Carl Spackler body (Hat, Stubble Face, Utility Vest, Muddy Pants & Boots) */
+    for (int pose = 0; pose < 5; ++pose) {
+        int max_f = (pose == 0) ? 4 : 2; /* 0: walk(4), 1: plant(2), 2: plunge(2), 3: hose(2), 4: celebrate(2) */
+        for (int f = 0; f < max_f; ++f) {
+            uint32_t *target_spr = NULL;
+            if (pose == 0) target_spr = s_sprite_carl_walk[f];
+            else if (pose == 1) target_spr = s_sprite_carl_plant[f];
+            else if (pose == 2) target_spr = s_sprite_carl_plunge[f];
+            else if (pose == 3) target_spr = s_sprite_carl_hose[f];
+            else target_spr = s_sprite_carl_celebrate[f];
+            
+            memset(target_spr, 0, SPRITE_CARL_W * SPRITE_CARL_H * sizeof(uint32_t));
+            
+            int cx = 15;
+            int head_y_off = 0;
+            if (pose == 1) head_y_off = 2; /* crouching to plant */
+            else if (pose == 2 && f == 1) head_y_off = 3; /* plunging down */
+            
+            for (int y = 0; y < SPRITE_CARL_H; ++y) {
+                for (int x = 0; x < SPRITE_CARL_W; ++x) {
+                    int idx = y * SPRITE_CARL_W + x;
+                    
+                    /* 1. Carl's Floppy Olive Drab Bucket Hat (Sun Hat with wavy brim) */
+                    int hy = y - head_y_off;
+                    if (hy >= 2 && hy <= 8 && abs(x - cx) <= 6) {
+                        /* Floppy downturned brim (wrinkled and cocked sideways) */
+                        if (hy >= 6 && hy <= 8) {
+                            if (abs(x - cx) <= 7) {
+                                int brim_shade = (x > cx) ? -15 : 12;
+                                target_spr[idx] = COLOR_RGB(95 + brim_shade, 110 + brim_shade, 72 + brim_shade / 2);
+                            }
+                        } else if (hy >= 3 && hy <= 5 && abs(x - cx) <= 5) {
+                            /* Crown with indent */
+                            int crown_shade = (hy == 4) ? -18 : 8;
+                            target_spr[idx] = COLOR_RGB(108 + crown_shade, 122 + crown_shade, 80 + crown_shade / 2);
+                        }
+                        continue;
+                    }
+                    
+                    /* 2. Carl's Face & Scruffy Stubble */
+                    if (hy >= 9 && hy <= 14 && abs(x - cx) <= 4) {
+                        /* Bushy furrowed eyebrows */
+                        if (hy == 9 && ((x >= cx - 3 && x <= cx - 1) || (x >= cx + 1 && x <= cx + 3))) {
+                            target_spr[idx] = COLOR_RGB(65, 50, 35);
+                        }
+                        /* Squinting eyes */
+                        else if (hy == 10 && (x == cx - 2 || x == cx + 2)) {
+                            target_spr[idx] = COLOR_RGB(25, 20, 18);
+                        }
+                        /* Bulbous sunburnt nose */
+                        else if (hy == 11 && abs(x - cx) <= 1) {
+                            target_spr[idx] = COLOR_RGB(225, 155, 125);
+                        }
+                        /* 5 O'Clock Stubble & Crooked Bill Murray Scowl/Grin */
+                        else if (hy >= 12 && hy <= 14) {
+                            if (hy == 13 && x >= cx - 2 && x <= cx + 2) {
+                                target_spr[idx] = COLOR_RGB(80, 40, 35); /* Crooked grin */
+                            } else {
+                                target_spr[idx] = COLOR_RGB(165, 142, 118); /* Scruffy stubble shadow */
+                            }
+                        } else {
+                            target_spr[idx] = COLOR_RGB(228, 185, 145); /* Sun-baked skin */
+                        }
+                        continue;
+                    }
+                    
+                    /* 3. Utility Work Vest & Dirty Undershirt */
+                    if (hy >= 15 && hy <= 23 && abs(x - cx) <= 5) {
+                        if (abs(x - cx) <= 2) {
+                            /* Grease-stained off-white t-shirt */
+                            int stain = ((x * 3 + y * 7) % 5 == 0) ? -28 : 5;
+                            target_spr[idx] = COLOR_RGB(202 + stain, 198 + stain, 188 + stain);
+                        } else {
+                            /* Olive green utility vest with pockets */
+                            int vest_shade = ((hy == 18 || hy == 19) && (x == cx - 4 || x == cx + 4)) ? 30 : 0;
+                            target_spr[idx] = COLOR_RGB(78 + vest_shade, 95 + vest_shade, 64 + vest_shade / 2);
+                        }
+                        continue;
+                    }
+                    
+                    /* 4. Arms & Hands depending on pose */
+                    if (pose == 4) {
+                        /* Celebrating: Both arms raised high in victory! (Cinderella Story!) */
+                        int arm_lift = (f == 1) ? 2 : 0;
+                        if (y >= 4 - arm_lift && y <= 16 && (abs(x - (cx - 7)) <= 1 || abs(x - (cx + 7)) <= 1)) {
+                            target_spr[idx] = (y <= 7 - arm_lift) ? COLOR_RGB(228, 185, 145) : COLOR_RGB(78, 95, 64);
+                        }
+                    } else if (pose == 2) {
+                        /* Plunging: Hands gripping T-handle */
+                        if (f == 0) {
+                            /* Hands raised up poised on handle */
+                            if (y >= 14 && y <= 18 && abs(x - cx) <= 3) {
+                                target_spr[idx] = COLOR_RGB(228, 185, 145);
+                            }
+                        } else {
+                            /* Slammed down with full body weight */
+                            if (y >= 21 && y <= 25 && abs(x - cx) <= 3) {
+                                target_spr[idx] = COLOR_RGB(228, 185, 145);
+                            }
+                        }
+                    } else if (pose == 3) {
+                        /* Hose Spray: Holding heavy brass nozzle forward */
+                        if (y >= 18 && y <= 23 && x >= cx + 2 && x <= cx + 8) {
+                            if (x >= cx + 6) {
+                                target_spr[idx] = COLOR_RGB(225, 188, 55); /* Brass Nozzle */
+                            } else {
+                                target_spr[idx] = COLOR_RGB(228, 185, 145); /* Grasping Hands */
+                            }
+                        }
+                        /* Heavy green hose trailing from behind */
+                        if (y >= 24 && y <= 30 && x >= cx - 6 && x <= cx - 2) {
+                            target_spr[idx] = COLOR_RGB(35, 115, 52);
+                        }
+                    } else {
+                        /* Stealth Walk / Plant Arms at sides */
+                        if (hy >= 16 && hy <= 23 && (abs(x - (cx - 6)) <= 1 || abs(x - (cx + 6)) <= 1)) {
+                            target_spr[idx] = (hy >= 21) ? COLOR_RGB(228, 185, 145) : COLOR_RGB(78, 95, 64);
+                        }
+                    }
+                    
+                    /* 5. Muddy Work Pants */
+                    int py_start = (pose == 1 || (pose == 2 && f == 1)) ? 22 : 24;
+                    if (y >= py_start && y <= 33 && abs(x - cx) <= 4) {
+                        /* Mud splatters on knees */
+                        int mud = (y >= 28 && y <= 31) ? -25 : 0;
+                        target_spr[idx] = COLOR_RGB(95 + mud, 85 + mud, 72 + mud / 2);
+                        continue;
+                    }
+                    
+                    /* 6. Heavy Oiled Leather Work Boots */
+                    if (y >= 34 && y <= 37) {
+                        bool boot_pixel = false;
+                        if (pose == 0) {
+                            /* Walk cycle strides */
+                            if (f == 0 && ((x >= cx - 5 && x <= cx - 2 && y <= 36) || (x >= cx + 1 && x <= cx + 4))) boot_pixel = true;
+                            else if (f == 1 && (abs(x - (cx - 2)) <= 1 || abs(x - (cx + 2)) <= 1)) boot_pixel = true;
+                            else if (f == 2 && ((x >= cx - 4 && x <= cx - 1) || (x >= cx + 2 && x <= cx + 5 && y <= 36))) boot_pixel = true;
+                            else if (abs(x - (cx - 2)) <= 1 || abs(x - (cx + 2)) <= 1) boot_pixel = true;
+                        } else {
+                            if (abs(x - (cx - 3)) <= 1 || abs(x - (cx + 3)) <= 1) boot_pixel = true;
+                        }
+                        if (boot_pixel) {
+                            target_spr[idx] = (y == 37) ? COLOR_RGB(25, 22, 20) : COLOR_RGB(52, 42, 32);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /* Initialization */
@@ -1446,7 +1657,9 @@ typedef enum {
     DRAWABLE_BALL,
     DRAWABLE_BEV_CART,
     DRAWABLE_GOPHER_HOLE,
-    DRAWABLE_GOPHER
+    DRAWABLE_GOPHER,
+    DRAWABLE_CARL,
+    DRAWABLE_TNT_BOX
 } DrawableType;
 
 typedef struct {
@@ -1782,6 +1995,34 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
         item->foot_sy = FROM_FIXED(FMUL(gs->gopher.x + gs->gopher.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->gopher.current_z) + rc->camera_y + TILE_HALF_H;
     }
     
+    /* 10. Carl Spackler Greenskeeper */
+    if (gs->mode == MODE_PLAY && gs->carl.active && s_drawable_count < MAX_DRAWABLES) {
+        DrawableItem *item = &s_drawables[s_drawable_count++];
+        item->type = DRAWABLE_CARL;
+        item->gx = FROM_FIXED(gs->carl.x);
+        item->gy = FROM_FIXED(gs->carl.y);
+        item->data = (int32_t)gs->carl.state;
+        item->sort_key = FROM_FIXED(FMUL(gs->carl.x + gs->carl.y, TO_FIXED(32))) + 14;
+        item->foot_sx = FROM_FIXED(FMUL(gs->carl.x - gs->carl.y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        item->foot_sy = FROM_FIXED(FMUL(gs->carl.x + gs->carl.y, TO_FIXED(TILE_HALF_H))) - FROM_FIXED(gs->carl.current_z) + rc->camera_y + TILE_HALF_H;
+    }
+    
+    /* 11. Carl's TNT Plunger Box */
+    if (gs->mode == MODE_PLAY && gs->carl.active &&
+        (gs->carl.state == CARL_STATE_DYNAMITE_PLANT || gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE ||
+         (gs->carl.state == CARL_STATE_CELEBRATING && gs->carl.attack_type == CARL_ATTACK_DYNAMITE)) &&
+        s_drawable_count < MAX_DRAWABLES) {
+        DrawableItem *item = &s_drawables[s_drawable_count++];
+        item->type = DRAWABLE_TNT_BOX;
+        item->gx = FROM_FIXED(gs->carl.plunger_x);
+        item->gy = FROM_FIXED(gs->carl.plunger_y);
+        item->data = (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE && gs->carl.timer >= 14) || gs->carl.state == CARL_STATE_CELEBRATING ? 1 : 0;
+        item->sort_key = FROM_FIXED(FMUL(gs->carl.plunger_x + gs->carl.plunger_y, TO_FIXED(32))) + 10;
+        item->foot_sx = FROM_FIXED(FMUL(gs->carl.plunger_x - gs->carl.plunger_y, TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+        item->foot_sy = FROM_FIXED(FMUL(gs->carl.plunger_x + gs->carl.plunger_y, TO_FIXED(TILE_HALF_H))) -
+                        FROM_FIXED(golf_get_ground_z_fixed(gs, gs->carl.plunger_x, gs->carl.plunger_y)) + rc->camera_y + TILE_HALF_H;
+    }
+    
     /* Sort all drawables back-to-front by sort_key */
     qsort(s_drawables, s_drawable_count, sizeof(DrawableItem), compare_drawables);
     
@@ -1953,6 +2194,174 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
                 if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
                     int note_y = fy - SPRITE_GOPHER_H - 4 - (int)((rc->tick_count / 10) % 4);
                     draw_text(rc, fx - 24, note_y, "HEE HEE!", COLOR_RGB(255, 235, 95), true);
+                }
+                break;
+            }
+            case DRAWABLE_TNT_BOX: {
+                int fx = item->foot_sx;
+                int fy = item->foot_sy;
+                int plunger_down = item->data;
+                
+                /* Small drop shadow under wooden detonator box */
+                draw_drop_shadow(rc, fx, fy, 8, 4, 120);
+                blit_sprite_depth(rc, fx - SPRITE_TNT_BOX_W / 2, fy - SPRITE_TNT_BOX_H + 2,
+                                  SPRITE_TNT_BOX_W, SPRITE_TNT_BOX_H, s_sprite_tnt_box[plunger_down], item->sort_key);
+                
+                /* Draw red/black detonation wire from TNT box to the gopher burrow */
+                int hole_sx = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) - TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+                int hole_sy = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) + TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_H))) -
+                              FROM_FIXED(golf_get_ground_z_fixed(gs, TO_FIXED(gs->carl.target_gx) + FIXED_HALF, TO_FIXED(gs->carl.target_gy) + FIXED_HALF)) + rc->camera_y + TILE_HALF_H;
+                
+                /* Render wire line with subtle sag/curve */
+                int steps = 24;
+                for (int s = 0; s <= steps; ++s) {
+                    float t = (float)s / (float)steps;
+                    int wx = (int)(fx + t * (hole_sx - fx));
+                    int wy = (int)(fy + t * (hole_sy - fy) + sinf(t * (float)M_PI) * 4.0f);
+                    if (wx >= 0 && wx < SCREEN_W && wy >= 0 && wy < SCREEN_H) {
+                        rc->framebuffer[wy * SCREEN_W + wx] = ((s & 3) == 0) ? COLOR_RGB(220, 45, 45) : COLOR_RGB(30, 25, 25);
+                    }
+                }
+                break;
+            }
+            case DRAWABLE_CARL: {
+                int fx = item->foot_sx;
+                int fy = item->foot_sy;
+                const uint32_t *carl_spr = s_sprite_carl_walk[gs->carl.anim_frame % 4];
+                
+                switch (gs->carl.state) {
+                    case CARL_STATE_APPROACHING:
+                    case CARL_STATE_LEAVING:
+                        carl_spr = s_sprite_carl_walk[gs->carl.anim_frame % 4];
+                        break;
+                    case CARL_STATE_DYNAMITE_PLANT:
+                        carl_spr = s_sprite_carl_plant[gs->carl.anim_frame % 2];
+                        break;
+                    case CARL_STATE_DYNAMITE_PLUNGE:
+                        carl_spr = s_sprite_carl_plunge[gs->carl.anim_frame % 2];
+                        break;
+                    case CARL_STATE_HOSE_SPRAY:
+                        carl_spr = s_sprite_carl_hose[gs->carl.anim_frame % 2];
+                        break;
+                    case CARL_STATE_CELEBRATING:
+                        carl_spr = s_sprite_carl_celebrate[gs->carl.anim_frame % 2];
+                        break;
+                    default:
+                        break;
+                }
+                
+                /* Carl drop shadow */
+                draw_drop_shadow(rc, fx, fy, 10, 5, 135);
+                blit_sprite_depth(rc, fx - SPRITE_CARL_W / 2, fy - SPRITE_CARL_H + 4,
+                                  SPRITE_CARL_W, SPRITE_CARL_H, carl_spr, item->sort_key);
+                
+                /* Target burrow screen coordinates for visual effects */
+                int hole_sx = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) - TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_W))) + rc->camera_x + TILE_HALF_W;
+                int hole_sy = FROM_FIXED(FMUL(TO_FIXED(gs->carl.target_gx) + TO_FIXED(gs->carl.target_gy), TO_FIXED(TILE_HALF_H))) -
+                              FROM_FIXED(golf_get_ground_z_fixed(gs, TO_FIXED(gs->carl.target_gx) + FIXED_HALF, TO_FIXED(gs->carl.target_gy) + FIXED_HALF)) + rc->camera_y + TILE_HALF_H;
+                
+                /* Effect 1: High-Pressure Water Jet Spray from Hose */
+                if (gs->carl.state == CARL_STATE_HOSE_SPRAY) {
+                    int nozzle_sx = fx + 7;
+                    int nozzle_sy = fy - 18;
+                    /* Draw multiple high pressure foaming stream lines */
+                    for (int stream = -1; stream <= 1; ++stream) {
+                        int steps = 30;
+                        for (int s = 0; s <= steps; ++s) {
+                            float t = (float)s / (float)steps;
+                            /* Parabolic water jet arc */
+                            int wx = (int)(nozzle_sx + t * (hole_sx - nozzle_sx) + stream * (1.0f - t) * 1.5f);
+                            int wy = (int)(nozzle_sy + t * (hole_sy - nozzle_sy) - sinf(t * (float)M_PI) * 12.0f);
+                            if (wx >= 0 && wx < SCREEN_W && wy >= 0 && wy < SCREEN_H) {
+                                uint32_t wcol = ((s + rc->tick_count * 2) % 4 == 0) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(80, 185, 245);
+                                rc->framebuffer[wy * SCREEN_W + wx] = wcol;
+                                if (wy + 1 < SCREEN_H && (s % 2 == 0)) {
+                                    rc->framebuffer[(wy + 1) * SCREEN_W + wx] = COLOR_RGB(45, 140, 215);
+                                }
+                            }
+                        }
+                    }
+                    /* Water bubbling foam around burrow lip */
+                    for (int sp = 0; sp < 12; ++sp) {
+                        int f_dx = ((sp * 7 + rc->tick_count * 5) % 25) - 12;
+                        int f_dy = ((sp * 11 + rc->tick_count * 3) % 15) - 7;
+                        int px = hole_sx + f_dx;
+                        int py = hole_sy + f_dy;
+                        if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                            rc->framebuffer[py * SCREEN_W + px] = (sp % 2 == 0) ? COLOR_RGB(255, 255, 255) : COLOR_RGB(130, 220, 255);
+                        }
+                    }
+                }
+                
+                /* Effect 2: Dynamite Detonation Explosion Burst */
+                if (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE && gs->carl.timer >= 14 && gs->carl.timer <= 48) {
+                    int blast_t = gs->carl.timer - 14;
+                    int max_rad = 12 + blast_t * 2;
+                    if (max_rad > 38) max_rad = 38;
+                    
+                    /* Fiery blast core & billowing smoke puffs */
+                    for (int dy = -max_rad; dy <= max_rad; ++dy) {
+                        for (int dx = -max_rad; dx <= max_rad; ++dx) {
+                            int r2 = dx * dx + dy * dy;
+                            if (r2 <= max_rad * max_rad) {
+                                int px = hole_sx + dx;
+                                int py = hole_sy - 12 + dy;
+                                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                    int dist = (int)sqrtf((float)r2);
+                                    if (dist < max_rad / 3) {
+                                        rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 250, 190); /* White-hot core */
+                                    } else if (dist < (max_rad * 2) / 3) {
+                                        rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(255, 140, 25);  /* Fiery orange */
+                                    } else {
+                                        /* Billowing dark smoke edge */
+                                        if (((dx * 7 + dy * 13 + blast_t) & 3) != 0) {
+                                            rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(75, 68, 62);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    /* Flying dirt chunks and blast shrapnel */
+                    for (int p = 0; p < 16; ++p) {
+                        float angle = (float)p * 0.3926f + (float)blast_t * 0.1f;
+                        float spd = 4.0f + (float)(p % 5) * 2.5f;
+                        int clod_x = hole_sx + (int)(cosf(angle) * spd * (float)blast_t * 0.7f);
+                        int clod_y = hole_sy - 12 + (int)(sinf(angle) * spd * (float)blast_t * 0.4f + 0.35f * blast_t * blast_t);
+                        for (int cdy = 0; cdy <= 1; ++cdy) {
+                            for (int cdx = 0; cdx <= 1; ++cdx) {
+                                int px = clod_x + cdx;
+                                int py = clod_y + cdy;
+                                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
+                                    rc->framebuffer[py * SCREEN_W + px] = COLOR_RGB(55, 38, 25);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                /* Carl's comic speech bubble */
+                const char *cmsg = NULL;
+                if (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE) {
+                    cmsg = "DIE GOPHER! lol";
+                } else if (gs->carl.state == CARL_STATE_HOSE_SPRAY) {
+                    cmsg = "HAVE SOME WATER! lol";
+                } else if (gs->carl.state == CARL_STATE_CELEBRATING) {
+                    cmsg = (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) ? "CINDERELLA STORY! lol" : "IN THE HOLE! lol";
+                }
+                
+                if (cmsg != NULL) {
+                    int bub_w = (int)strlen(cmsg) * 8 + 16;
+                    int bub_h = 22;
+                    int bub_x = fx - bub_w / 2;
+                    int bub_y = fy - SPRITE_CARL_H - 24;
+                    draw_rect(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(255, 255, 255));
+                    draw_rect_border(rc, bub_x, bub_y, bub_w, bub_h, COLOR_RGB(35, 45, 55));
+                    for (int dy = 0; dy < 5; ++dy) {
+                        draw_rect(rc, fx - 2 + dy / 2, bub_y + bub_h + dy, 5 - dy, 1, COLOR_RGB(255, 255, 255));
+                    }
+                    int b_tx = bub_x + 8;
+                    draw_text(rc, b_tx, bub_y + 7, cmsg, COLOR_RGB(25, 40, 60), false);
                 }
                 break;
             }

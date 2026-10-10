@@ -452,6 +452,33 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             break;
         }
         
+        case SFX_CARL_EXPLOSION: {
+            /* Carl Spackler Massive TNT Dynamite Detonation!
+             * Sub-bass boom falling 130 Hz down to 26 Hz + noise blast & falling clods */
+            float sub_bass = 0.0f;
+            if (t < 0.45f) {
+                float k_freq = 130.0f * expf(-t * 12.0f) + 26.0f;
+                float phase = 2.0f * (float)M_PI * k_freq * t;
+                sub_bass = sinf(phase) * expf(-t * 8.0f) * 0.95f;
+            }
+            float noise_blast = audio_noise() * expf(-t * 6.5f) * 0.75f;
+            float dirt_rumble = audio_noise() * expf(-t * 3.2f) * 0.35f;
+            out = (sub_bass + noise_blast + dirt_rumble) * v->volume * 1.35f;
+            if (out > 1.0f) out = 1.0f;
+            if (out < -1.0f) out = -1.0f;
+            break;
+        }
+        
+        case SFX_CARL_HOSE: {
+            /* Carl Spackler High-Pressure Water Hose Spray into burrow */
+            float hiss = audio_noise() * 0.50f;
+            float flow = sinf(t * 18.0f) * 0.15f + 0.85f;
+            float gurgle = sinf(2.0f * (float)M_PI * (160.0f + sinf(t * 32.0f) * 40.0f) * t) * 0.25f;
+            float env = (t < 0.1f) ? (t / 0.1f) : ((t > 0.9f) ? (1.0f - (t - 0.9f) / 0.3f) : 1.0f);
+            out = (hiss * flow + gurgle) * env * v->volume * 1.10f;
+            break;
+        }
+        
         default:
             break;
     }
@@ -743,6 +770,8 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
             case SFX_BEVERAGE_WHISTLE: v->total_samples = AUDIO_SAMPLE_RATE * 65 / 100; v->volume = 1.30f; break;
             case SFX_GOPHER_CHUCKLE:   v->total_samples = AUDIO_SAMPLE_RATE * 50 / 100; v->volume = 1.30f; break;
             case SFX_GOPHER_GULP:      v->total_samples = AUDIO_SAMPLE_RATE * 35 / 100; v->volume = 1.40f; break;
+            case SFX_CARL_EXPLOSION:   v->total_samples = AUDIO_SAMPLE_RATE * 180 / 100; v->volume = 1.60f; break;
+            case SFX_CARL_HOSE:        v->total_samples = AUDIO_SAMPLE_RATE * 140 / 100; v->volume = 1.25f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }

@@ -1,6 +1,7 @@
 #include "golf_core.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 /* 256-entry Sine Lookup Table (16.16 Fixed Point) */
 const int32_t g_sin_lut[256] = {
@@ -535,6 +536,13 @@ void golf_place_default_routing(GolfState *gs) {
         h2->current_z = golf_get_ground_z_fixed(gs, TO_FIXED(h2->gx) + FIXED_HALF, TO_FIXED(h2->gy) + FIXED_HALF);
         h2->active = true;
     }
+    
+    /* 11. Setup Carl Spackler Greenskeeper Nemesis */
+    memset(&gs->carl, 0, sizeof(gs->carl));
+    gs->carl.state = CARL_STATE_INACTIVE;
+    gs->carl.active = false;
+    gs->gopher_encounter_count = 0;
+    gs->carl_cooldown = 480; /* ~8 seconds before first possible Carl appearance */
     
     golf_update_autotile_masks(gs);
     golf_recalc_hole_stats(gs);
@@ -1291,6 +1299,7 @@ static bool check_gopher_collision(GolfState *gs) {
         gs->gopher.state = GOPHER_STATE_TAUNTING;
         gs->gopher.visible = true;
         gs->gopher.timer = 0;
+        gs->gopher_encounter_count++;
         
         /* Drop ball at lip of burrow on safe ground */
         gs->ball.x = TO_FIXED(hit_gx) + FIXED_HALF + 24000;
@@ -1882,6 +1891,7 @@ void golf_tick(GolfState *gs) {
                     gs->gopher.visible = true;
                     gs->gopher.anim_frame = 0;
                     gs->gopher.timer = 0;
+                    gs->gopher_encounter_count++;
                     gs->audio_event = AUDIO_EVT_GOPHER_CHUCKLE;
                     
                     /* Leave a permanent gopher hole hazard at this spot */
@@ -1930,6 +1940,244 @@ void golf_tick(GolfState *gs) {
                 gs->gopher.visible = false;
                 gs->gopher.timer = 0;
                 gs->gopher.pop_cooldown = 420 + (core_rand() % 480); /* 7..15 seconds cooldown */
+            }
+        }
+    }
+    
+    /* 8. Carl Spackler Greenskeeper Simulation (Caddyshack Nemesis Attacks) */
+    if (gs->mode == MODE_PLAY) {
+        if (gs->carl_cooldown > 0) {
+            gs->carl_cooldown--;
+        }
+        
+        /* Check if Carl should spawn to attack gopher */
+        if (!gs->carl.active && gs->carl_cooldown <= 0 && gs->gopher_encounter_count >= 3 &&
+            gs->gopher.state >= GOPHER_STATE_POPPING_UP && gs->gopher.state <= GOPHER_STATE_RETREATING) {
+            
+            int tgx = gs->gopher.gx;
+            int tgy = gs->gopher.gy;
+            
+            /* Course Protection: ensure safe distance from tee box, cup/green, and clubhouse */
+            bool safe_from_tee = (abs(tgx - gs->tee_gx) >= 4 || abs(tgy - gs->tee_gy) >= 4);
+            bool safe_from_pin = (abs(tgx - gs->pin_gx) >= 4 || abs(tgy - gs->pin_gy) >= 4);
+            bool safe_from_bounds = (tgx >= 3 && tgx < GRID_W - 3 && tgy >= 3 && tgy < GRID_H - 3);
+            bool safe_from_club = true;
+            for (int cy = tgy - 2; cy <= tgy + 2; ++cy) {
+                for (int cx = tgx - 2; cx <= tgx + 2; ++cx) {
+                    if (cx >= 0 && cx < GRID_W && cy >= 0 && cy < GRID_H) {
+                        if (gs->grid[cx][cy].feature == FEAT_CLUBHOUSE) safe_from_club = false;
+                    }
+                }
+            }
+            
+            if (safe_from_tee && safe_from_pin && safe_from_bounds && safe_from_club) {
+                gs->carl.active = true;
+                gs->carl.target_gx = tgx;
+                gs->carl.target_gy = tgy;
+                gs->carl.triggered_effect = false;
+                gs->carl.timer = 0;
+                gs->carl.anim_frame = 0;
+                gs->gopher_encounter_count = 0;
+                gs->carl_cooldown = 1500; /* ~25 seconds cooldown between Carl attacks */
+                
+                /* 50/50 Chance: Dynamite Blast vs High-Pressure Water Hose */
+                gs->carl.attack_type = (core_rand() % 2 == 0) ? CARL_ATTACK_DYNAMITE : CARL_ATTACK_HOSE;
+                
+                /* Pick approach starting point ~3-4 tiles away */
+                int off_x = (tgx < GRID_W / 2) ? 3 : -3;
+                int off_y = (tgy < GRID_H / 2) ? 3 : -3;
+                gs->carl.start_x = TO_FIXED(tgx + off_x) + FIXED_HALF;
+                gs->carl.start_y = TO_FIXED(tgy + off_y) + FIXED_HALF;
+                gs->carl.x = gs->carl.start_x;
+                gs->carl.y = gs->carl.start_y;
+                gs->carl.current_z = golf_get_ground_z_fixed(gs, gs->carl.x, gs->carl.y);
+                
+                /* For dynamite, place plunger box ~1.8 tiles from burrow */
+                gs->carl.plunger_x = TO_FIXED(tgx) + FIXED_HALF + TO_FIXED(off_x * 6 / 10);
+                gs->carl.plunger_y = TO_FIXED(tgy) + FIXED_HALF + TO_FIXED(off_y * 6 / 10);
+                
+                gs->carl.state = CARL_STATE_APPROACHING;
+                
+                /* Gopher notices Carl and ducks/dives down burrow! */
+                if (gs->gopher.state == GOPHER_STATE_TAUNTING) {
+                    gs->gopher.state = GOPHER_STATE_RETREATING;
+                    gs->gopher.timer = 0;
+                }
+            }
+        }
+        
+        /* Carl Spackler State Machine */
+        if (gs->carl.active) {
+            gs->carl.timer++;
+            
+            switch (gs->carl.state) {
+                case CARL_STATE_APPROACHING: {
+                    fixed dest_x, dest_y;
+                    if (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) {
+                        dest_x = gs->carl.plunger_x + TO_FIXED(0.2);
+                        dest_y = gs->carl.plunger_y + TO_FIXED(0.2);
+                    } else {
+                        /* Walk to within 0.8 tiles of the hole */
+                        dest_x = TO_FIXED(gs->carl.target_gx) + FIXED_HALF + (gs->carl.start_x > TO_FIXED(gs->carl.target_gx) ? TO_FIXED(0.8) : -TO_FIXED(0.8));
+                        dest_y = TO_FIXED(gs->carl.target_gy) + FIXED_HALF + (gs->carl.start_y > TO_FIXED(gs->carl.target_gy) ? TO_FIXED(0.6) : -TO_FIXED(0.6));
+                    }
+                    
+                    fixed dx = dest_x - gs->carl.x;
+                    fixed dy = dest_y - gs->carl.y;
+                    fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+                    fixed step = TO_FIXED(0.05); /* Stealth sneak speed */
+                    
+                    if (dist <= step || gs->carl.timer >= 120) {
+                        gs->carl.x = dest_x;
+                        gs->carl.y = dest_y;
+                        gs->carl.timer = 0;
+                        if (gs->carl.attack_type == CARL_ATTACK_DYNAMITE) {
+                            gs->carl.state = CARL_STATE_DYNAMITE_PLANT;
+                        } else {
+                            gs->carl.state = CARL_STATE_HOSE_SPRAY;
+                            gs->audio_event = AUDIO_EVT_CARL_HOSE;
+                        }
+                    } else {
+                        gs->carl.x += FDIV(FMUL(dx, step), dist);
+                        gs->carl.y += FDIV(FMUL(dy, step), dist);
+                        gs->carl.current_z = golf_get_ground_z_fixed(gs, gs->carl.x, gs->carl.y);
+                        gs->carl.anim_frame = (gs->carl.timer / 8) % 4;
+                    }
+                    break;
+                }
+                
+                case CARL_STATE_DYNAMITE_PLANT: {
+                    gs->carl.anim_frame = (gs->carl.timer / 15) % 2;
+                    if (gs->carl.timer >= 35) {
+                        gs->carl.state = CARL_STATE_DYNAMITE_PLUNGE;
+                        gs->carl.timer = 0;
+                    }
+                    break;
+                }
+                
+                case CARL_STATE_DYNAMITE_PLUNGE: {
+                    gs->carl.anim_frame = (gs->carl.timer < 14) ? 0 : 1;
+                    
+                    /* Detonation instant */
+                    if (gs->carl.timer == 14 && !gs->carl.triggered_effect) {
+                        gs->carl.triggered_effect = true;
+                        gs->audio_event = AUDIO_EVT_CARL_EXPLOSION;
+                        
+                        int tgx = gs->carl.target_gx;
+                        int tgy = gs->carl.target_gy;
+                        
+                        /* Deepen the bomb crater: drop elevation by 1 if above 0 */
+                        if (gs->grid[tgx][tgy].elevation > 0) {
+                            gs->grid[tgx][tgy].elevation--;
+                        }
+                        
+                        /* Create bomb crater in 3x3 radius */
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                int cx = tgx + dx;
+                                int cy = tgy + dy;
+                                if (cx >= 1 && cx < GRID_W - 1 && cy >= 1 && cy < GRID_H - 1) {
+                                    if (abs(cx - gs->tee_gx) <= 1 && abs(cy - gs->tee_gy) <= 1) continue;
+                                    if (abs(cx - gs->pin_gx) <= 1 && abs(cy - gs->pin_gy) <= 1) continue;
+                                    if (gs->grid[cx][cy].feature == FEAT_CLUBHOUSE) continue;
+                                    
+                                    gs->grid[cx][cy].feature = FEAT_NONE;
+                                    if (dx == 0 && dy == 0) {
+                                        gs->grid[cx][cy].surface = SURF_SAND; /* Crater pit bunker */
+                                    } else if (abs(dx) + abs(dy) == 1) {
+                                        gs->grid[cx][cy].surface = ((dx + dy) & 1) ? SURF_SAND : SURF_ROUGH;
+                                    } else {
+                                        gs->grid[cx][cy].surface = SURF_ROUGH;
+                                    }
+                                }
+                            }
+                        }
+                        golf_update_autotile_masks(gs);
+                        set_banner(gs, "CARL SPACKLER: 'CINDERELLA STORY!' DYNAMITE CRATER CREATED! lol", 240);
+                    }
+                    
+                    if (gs->carl.timer >= 70) {
+                        gs->carl.state = CARL_STATE_CELEBRATING;
+                        gs->carl.timer = 0;
+                    }
+                    break;
+                }
+                
+                case CARL_STATE_HOSE_SPRAY: {
+                    gs->carl.anim_frame = (gs->carl.timer / 6) % 2;
+                    if (gs->carl.timer == 45) {
+                        gs->audio_event = AUDIO_EVT_CARL_HOSE;
+                    }
+                    
+                    /* Flooding effect at mid-spray */
+                    if (gs->carl.timer == 50 && !gs->carl.triggered_effect) {
+                        gs->carl.triggered_effect = true;
+                        
+                        int tgx = gs->carl.target_gx;
+                        int tgy = gs->carl.target_gy;
+                        
+                        /* Flood 3x3 footprint centered on burrow into water hazard */
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                int cx = tgx + dx;
+                                int cy = tgy + dy;
+                                if (cx >= 1 && cx < GRID_W - 1 && cy >= 1 && cy < GRID_H - 1) {
+                                    if (abs(cx - gs->tee_gx) <= 1 && abs(cy - gs->tee_gy) <= 1) continue;
+                                    if (abs(cx - gs->pin_gx) <= 1 && abs(cy - gs->pin_gy) <= 1) continue;
+                                    if (gs->grid[cx][cy].feature == FEAT_CLUBHOUSE) continue;
+                                    
+                                    gs->grid[cx][cy].feature = FEAT_NONE;
+                                    if (abs(dx) + abs(dy) <= 1 || (abs(dx) == 1 && abs(dy) == 1 && ((cx + cy) & 1))) {
+                                        gs->grid[cx][cy].surface = SURF_WATER;
+                                    }
+                                }
+                            }
+                        }
+                        golf_update_autotile_masks(gs);
+                        set_banner(gs, "CARL SPACKLER: 'IN THE HOLE!' HOSE FLOODED A WATER HAZARD! lol", 240);
+                    }
+                    
+                    if (gs->carl.timer >= 95) {
+                        gs->carl.state = CARL_STATE_CELEBRATING;
+                        gs->carl.timer = 0;
+                    }
+                    break;
+                }
+                
+                case CARL_STATE_CELEBRATING: {
+                    gs->carl.anim_frame = (gs->carl.timer / 12) % 2;
+                    if (gs->carl.timer >= 85) {
+                        gs->carl.state = CARL_STATE_LEAVING;
+                        gs->carl.timer = 0;
+                    }
+                    break;
+                }
+                
+                case CARL_STATE_LEAVING: {
+                    fixed dest_x = gs->carl.start_x;
+                    fixed dest_y = gs->carl.start_y;
+                    fixed dx = dest_x - gs->carl.x;
+                    fixed dy = dest_y - gs->carl.y;
+                    fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+                    fixed step = TO_FIXED(0.06);
+                    
+                    if (dist <= step || gs->carl.timer >= 100) {
+                        gs->carl.state = CARL_STATE_INACTIVE;
+                        gs->carl.active = false;
+                        gs->carl.timer = 0;
+                    } else {
+                        gs->carl.x += FDIV(FMUL(dx, step), dist);
+                        gs->carl.y += FDIV(FMUL(dy, step), dist);
+                        gs->carl.current_z = golf_get_ground_z_fixed(gs, gs->carl.x, gs->carl.y);
+                        gs->carl.anim_frame = (gs->carl.timer / 8) % 4;
+                    }
+                    break;
+                }
+                
+                default:
+                    gs->carl.state = CARL_STATE_INACTIVE;
+                    gs->carl.active = false;
+                    break;
             }
         }
     }

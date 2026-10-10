@@ -30,6 +30,8 @@ typedef enum {
     SFX_BEVERAGE_WHISTLE = 20,
     SFX_GOPHER_CHUCKLE = 21,
     SFX_GOPHER_GULP = 22,
+    SFX_CARL_EXPLOSION = 23,
+    SFX_CARL_HOSE = 24,
     SFX_COUNT
 } GolfSfxType;
 

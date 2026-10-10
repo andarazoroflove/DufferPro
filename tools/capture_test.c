@@ -195,7 +195,65 @@ int main(void) {
     render_pan_camera(&rc, 0, 70);
     render_frame(&rc, &gs);
     render_save_bmp(&rc, "screenshot_gopher_trap.bmp");
-    printf("[10/10] Saved screenshot_gopher_trap.bmp (Gopher Hole Trap: %s)\n", gopher_gulp_ok ? "SUCCESS" : "FAILED");
+    printf("[10/12] Saved screenshot_gopher_trap.bmp (Gopher Hole Trap: %s)\n", gopher_gulp_ok ? "SUCCESS" : "FAILED");
+    
+    /* 11. Carl Spackler Greenskeeper: Dynamite Blasting & Crater Formation */
+    printf("\n--- Testing Carl Spackler Dynamite Attack ---\n");
+    gs.carl.active = true;
+    gs.carl.target_gx = h_gx;
+    gs.carl.target_gy = h_gy;
+    gs.carl.attack_type = CARL_ATTACK_DYNAMITE;
+    gs.carl.plunger_x = TO_FIXED(h_gx + 2) + FIXED_HALF;
+    gs.carl.plunger_y = TO_FIXED(h_gy + 1) + FIXED_HALF;
+    gs.carl.x = gs.carl.plunger_x + TO_FIXED(0.2);
+    gs.carl.y = gs.carl.plunger_y + TO_FIXED(0.2);
+    gs.carl.current_z = golf_get_ground_z_fixed(&gs, gs.carl.x, gs.carl.y);
+    gs.carl.state = CARL_STATE_DYNAMITE_PLUNGE;
+    gs.carl.timer = 13;
+    gs.carl.triggered_effect = false;
+    gs.audio_event = AUDIO_EVT_NONE;
+    
+    golf_tick(&gs); /* Timer hits 14: Detonation instant! */
+    printf("Carl Dynamite: AudioEvent=%d (Expected 23/CARL_EXPLOSION), Crater Surface=%d (Expected 4/SAND), Banner: %s\n",
+           gs.audio_event, gs.grid[h_gx][h_gy].surface, gs.banner_text);
+    gs.audio_event = AUDIO_EVT_NONE;
+    
+    /* Frame during detonation smoke & blast particles */
+    gs.carl.timer = 20;
+    render_center_camera_on(&rc, h_gx + 1, h_gy, gs.grid[h_gx][h_gy].elevation);
+    render_pan_camera(&rc, 0, 70);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_carl_dynamite.bmp");
+    printf("[11/12] Saved screenshot_carl_dynamite.bmp (Carl Detonating Dynamite Bomb Crater)\n");
+    
+    /* 12. Carl Spackler Greenskeeper: High-Pressure Water Hose Flood Hazard */
+    printf("\n--- Testing Carl Spackler Hose Flood Attack ---\n");
+    int flood_gx = gs.tee_gx + 4;
+    int flood_gy = gs.tee_gy - 2;
+    gs.carl.active = true;
+    gs.carl.target_gx = flood_gx;
+    gs.carl.target_gy = flood_gy;
+    gs.carl.attack_type = CARL_ATTACK_HOSE;
+    gs.carl.x = TO_FIXED(flood_gx + 1) + FIXED_HALF;
+    gs.carl.y = TO_FIXED(flood_gy) + FIXED_HALF;
+    gs.carl.current_z = golf_get_ground_z_fixed(&gs, gs.carl.x, gs.carl.y);
+    gs.carl.state = CARL_STATE_HOSE_SPRAY;
+    gs.carl.timer = 44;
+    gs.carl.triggered_effect = false;
+    gs.audio_event = AUDIO_EVT_NONE;
+    
+    golf_tick(&gs); /* Timer hits 45: Carl hose audio event */
+    int hose_audio = gs.audio_event;
+    for (int t = 46; t <= 50; ++t) golf_tick(&gs); /* Timer hits 50: Water hazard flood! */
+    printf("Carl Hose Flood: AudioEvent=%d (Expected 24/CARL_HOSE), Flooded Surface=%d (Expected 0/WATER), Banner: %s\n",
+           hose_audio, gs.grid[flood_gx][flood_gy].surface, gs.banner_text);
+    gs.audio_event = AUDIO_EVT_NONE;
+    
+    render_center_camera_on(&rc, flood_gx, flood_gy, gs.grid[flood_gx][flood_gy].elevation);
+    render_pan_camera(&rc, 0, 70);
+    render_frame(&rc, &gs);
+    render_save_bmp(&rc, "screenshot_carl_hose.bmp");
+    printf("[12/12] Saved screenshot_carl_hose.bmp (Carl Flooding Course with Water Hose)\n");
     
     render_free(&rc);
     printf("=== ALL VERIFICATION TESTS PASSED ===\n");

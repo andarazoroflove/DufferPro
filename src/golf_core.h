@@ -286,6 +286,36 @@ typedef struct {
     int32_t hole_count;
 } GopherEntity;
 
+/* Carl Spackler Greenskeeper Entity (Caddyshack Nemesis) */
+typedef enum {
+    CARL_STATE_INACTIVE = 0,
+    CARL_STATE_APPROACHING,     /* Sneaking toward gopher hole */
+    CARL_STATE_DYNAMITE_PLANT,  /* Placing TNT plunger box & wire */
+    CARL_STATE_DYNAMITE_PLUNGE, /* Pushing plunger handle down -> BOOM! */
+    CARL_STATE_HOSE_SPRAY,      /* Blasting water hose into burrow -> FLOOD! */
+    CARL_STATE_CELEBRATING,     /* Taunting/admiring damage ("Cinderella story!") */
+    CARL_STATE_LEAVING          /* Walking off */
+} CarlState;
+
+typedef enum {
+    CARL_ATTACK_DYNAMITE = 0,
+    CARL_ATTACK_HOSE
+} CarlAttackType;
+
+typedef struct {
+    fixed x, y;                 /* Continuous course position (16.16 fixed) */
+    fixed current_z;
+    fixed start_x, start_y;     /* Entry and exit position */
+    fixed plunger_x, plunger_y; /* Plunger detonator box position */
+    int32_t target_gx, target_gy;/* Target gopher hole */
+    CarlState state;
+    CarlAttackType attack_type;
+    int32_t timer;              /* Ticks in current phase */
+    int32_t anim_frame;         /* Animation frame */
+    bool active;
+    bool triggered_effect;      /* True once crater or flood has occurred */
+} CarlEntity;
+
 /* Audio Events Triggered by Physics & Actions */
 typedef enum {
     AUDIO_EVT_NONE = 0,
@@ -310,7 +340,9 @@ typedef enum {
     AUDIO_EVT_TERRAIN_SCULPT = 19,
     AUDIO_EVT_BEV_WHISTLE = 20,
     AUDIO_EVT_GOPHER_CHUCKLE = 21,
-    AUDIO_EVT_GOPHER_GULP = 22
+    AUDIO_EVT_GOPHER_GULP = 22,
+    AUDIO_EVT_CARL_EXPLOSION = 23,
+    AUDIO_EVT_CARL_HOSE = 24
 } GolfAudioEvent;
 
 /* Wind system */
@@ -366,6 +398,9 @@ typedef struct {
     int32_t spectator_count;
     BeverageCartEntity bev_cart;
     GopherEntity gopher;
+    CarlEntity carl;
+    int32_t gopher_encounter_count;
+    int32_t carl_cooldown;
     
     Wind wind;
     GolfAudioEvent audio_event; /* Audio event generated this tick */

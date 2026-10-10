@@ -76,12 +76,12 @@
 
 ## 📦 Downloads & Releases (`v0.75-noonan`)
 
-| Package | Format | Details |
-| :--- | :--- | :--- |
-| **[All-in-One Release Bundle](release/Duffer_Pro_v0.75-noonan.zip)** | `.zip` (4.7 MB) | Contains Windows, macOS Sonoma, and GBA builds |
-| **Windows PC** | `release/windows/` | `duffer_pro.exe` + `SDL2.dll` (no installer required) |
-| **macOS Sonoma** | `release/macos/` | Universal 2 `Duffer Pro.app` (Apple Silicon & Intel) |
-| **Game Boy Advance** | `release/gba/` | `duffer_pro.gba` (real hardware / SuperCard ready) |
+| Package | Format | Direct Download | Details |
+| :--- | :---: | :---: | :--- |
+| **All-in-One Release Bundle** | `.zip` (4.7 MB) | [Download ZIP](https://github.com/andarazoroflove/DufferPro/releases/download/v0.75-noonan/Duffer_Pro_v0.75-noonan.zip) | Windows, macOS Sonoma Universal 2, and GBA builds |
+| **macOS Sonoma App** | `.zip` (1.9 MB) | [Download App](https://github.com/andarazoroflove/DufferPro/releases/download/v0.75-noonan/Duffer_Pro_macOS_Sonoma.zip) | Universal 2 `Duffer Pro.app` (Apple Silicon & Intel) |
+| **Game Boy Advance ROM** | `.gba` (512 KB) | [Download ROM](https://github.com/andarazoroflove/DufferPro/releases/download/v0.75-noonan/duffer_pro.gba) | Real hardware & SuperCard / EverDrive ready |
+| **Windows Standalone** | Executable | [View Folder](release/windows/) | `duffer_pro.exe` + `SDL2.dll` (no installer needed) |
 
 ---
 

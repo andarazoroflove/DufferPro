@@ -78,27 +78,54 @@ bool gba_key_pressed(uint16_t key) {
 /* ========================================================================= */
 
 void gba_sfx_swing_hit(int club_type) {
-    /* Noise Channel 4: Club Strike Crack */
     if (club_type == 0) {
-        /* Driver: Heavy crack + resonance */
-        *REG_SOUND4CNT_L = 0xF100; /* Max volume, envelope decay 1 */
-        *REG_SOUND4CNT_H = 0x8023; /* Initial trigger, 7-stage noise */
+        /* Driver: Dual-channel crack + explosive sub-bass cavity punch */
+        *REG_SOUND4CNT_L = 0xF100; /* Noise Channel 4: Max volume titanium face crack */
+        *REG_SOUND4CNT_H = 0x8011;
+        *REG_SOUND1CNT_L = 0x003A; /* Sweep down, time 3, shift 2 */
+        *REG_SOUND1CNT_H = 0xF280; /* 50% duty, vol 15, punch decay */
+        *REG_SOUND1CNT_X = 0x8640; /* Low punch dropping down */
     } else if (club_type == 4) {
-        /* Putter: Soft click tap */
-        *REG_SOUND4CNT_L = 0x7100;
-        *REG_SOUND4CNT_H = 0x8035;
-    } else {
-        /* Iron / Wedge */
+        /* Putter: Soft click tap on noise + gentle chime on Channel 2 */
+        *REG_SOUND4CNT_L = 0x6100;
+        *REG_SOUND4CNT_H = 0x8045;
+        *REG_SOUND2CNT_L = 0xB180;
+        *REG_SOUND2CNT_H = 0x8540;
+    } else if (club_type == 2) {
+        /* Wedge: High face groove zip on Channel 2 + turf divot slice on Channel 4 */
         *REG_SOUND4CNT_L = 0xC100;
+        *REG_SOUND4CNT_H = 0x8023;
+        *REG_SOUND2CNT_L = 0xD180;
+        *REG_SOUND2CNT_H = 0x8750;
+    } else {
+        /* Iron: Forged steel ping on Channel 2 + solid turf shear on Channel 4 */
+        *REG_SOUND4CNT_L = 0xD100;
         *REG_SOUND4CNT_H = 0x8014;
+        *REG_SOUND2CNT_L = 0xE180;
+        *REG_SOUND2CNT_H = 0x8710;
     }
 }
 
+void gba_sfx_ball_landing(void) {
+    /* Initial Ball Impact on Turf: Heavy downward acoustic thud + ground rustle */
+    *REG_SOUND1CNT_L = 0x002A; /* Downward sweep (bit 3=1), time 2, shifts 2 */
+    *REG_SOUND1CNT_H = 0xE180; /* 50% duty, vol 14, quick punch decay */
+    *REG_SOUND1CNT_X = 0x8460; /* Low thump: ~250 Hz down to 80 Hz */
+    *REG_SOUND4CNT_L = 0x9100; /* Low-frequency turf contact rustle */
+    *REG_SOUND4CNT_H = 0x8052;
+}
+
+void gba_sfx_pin_ding(void) {
+    /* Channel 2: High crystal bell ding on placing aim flag (C7 chime: ~2093 Hz) */
+    *REG_SOUND2CNT_L = 0xE280; /* 50% duty, vol 14, decay 2 */
+    *REG_SOUND2CNT_H = 0x8772; /* C7 crystal bell frequency */
+}
+
 void gba_sfx_bounce(void) {
-    /* Channel 1: Short acoustic pitch drop chirp */
-    *REG_SOUND1CNT_L = 0x0052; /* Sweep down, time 5 */
-    *REG_SOUND1CNT_H = 0x8200; /* 50% duty, decay */
-    *REG_SOUND1CNT_X = 0x8520; /* Trigger, frequency ~700 Hz */
+    /* Secondary hop / UI bounce on Channel 1 */
+    *REG_SOUND1CNT_L = 0x001A; /* Sweep down, time 1 */
+    *REG_SOUND1CNT_H = 0xB180; /* 50% duty, vol 11, quick decay */
+    *REG_SOUND1CNT_X = 0x8540; /* ~700 Hz */
 }
 
 void gba_sfx_cup_sink(void) {
@@ -225,15 +252,17 @@ static const uint16_t s_melody_bass[64] = {
 };
 
 void gba_audio_tick_splash(int tick) {
-    /* 16th note triggers every 8 frames (~115 BPM) */
-    if (tick % 8 != 0) return;
-    int step = (tick / 8) % 64;
+    /* 16th note triggers every 7 frames at 60 FPS (~128.5 BPM, exact tempo of Caddyshack theme) */
+    if (tick % 7 != 0) return;
+    int step = (tick / 7) % 64;
 
     /* Lead Synth on Channel 2 (50% duty, full volume 15, crisp decay) */
     uint16_t lead_freq = s_melody_lead[step];
     if (lead_freq > 0) {
         *REG_SOUND2CNT_L = 0xF280; /* 50% duty, vol 15, decay */
         *REG_SOUND2CNT_H = 0x8000 | lead_freq;
+    } else {
+        *REG_SOUND2CNT_L = 0; /* Clean rest cut for crisp syncopation */
     }
 
     /* Slap Bass on Channel 1 */
@@ -242,6 +271,8 @@ void gba_audio_tick_splash(int tick) {
         *REG_SOUND1CNT_L = 0x0000;
         *REG_SOUND1CNT_H = 0xE280; /* 50% duty, vol 14, decay */
         *REG_SOUND1CNT_X = 0x8000 | bass_freq;
+    } else {
+        *REG_SOUND1CNT_H = 0; /* Clean rest cut */
     }
 
     /* Percussion Beat on Channel 4 */
@@ -249,8 +280,33 @@ void gba_audio_tick_splash(int tick) {
         *REG_SOUND4CNT_L = 0xE100; /* Snare drum */
         *REG_SOUND4CNT_H = 0x8021;
     } else if ((step & 3) == 0) {
-        *REG_SOUND4CNT_L = 0xA100; /* Kick / Hi-hat */
+        *REG_SOUND4CNT_L = 0xB100; /* Kick / Hi-hat */
         *REG_SOUND4CNT_H = 0x8011;
+    }
+}
+
+/* Ambient Nature Soundscape on GBA (intermittent bird chirps & light breeze with intervals of quietude) */
+static int s_ambient_timer = 60 * 4; /* First ambient sound in ~4s */
+static int s_ambient_counter = 0;
+
+void gba_audio_tick_ambient(void) {
+    s_ambient_timer--;
+    if (s_ambient_timer <= 0) {
+        s_ambient_counter++;
+        if ((s_ambient_counter & 1) == 0) {
+            /* Sweet little high bird chirp on Channel 1 */
+            *REG_SOUND1CNT_L = 0x0011; /* Slight upward chirp */
+            *REG_SOUND1CNT_H = 0x8180; /* Gentle volume 8, quick decay */
+            *REG_SOUND1CNT_X = 0x8740; /* High natural frequency ~2400 Hz */
+            /* Quiet interval of silence: ~7 to 14 seconds */
+            s_ambient_timer = 60 * 7 + ((s_ambient_counter * 37) % (60 * 7));
+        } else {
+            /* Gentle light breeze whisper through trees on Channel 4 */
+            *REG_SOUND4CNT_L = 0x4300; /* Soft volume 4, slow decay */
+            *REG_SOUND4CNT_H = 0x8043; /* Soft broad-spectrum airy rustle */
+            /* Quiet interval of silence: ~8 to 16 seconds */
+            s_ambient_timer = 60 * 8 + ((s_ambient_counter * 43) % (60 * 8));
+        }
     }
 }
 

@@ -820,18 +820,25 @@ static void draw_gba_caddy(uint16_t *fb, int sx, int sy, int walk_frame) {
 
 /* 5. Golf Ball */
 static void draw_gba_ball(uint16_t *fb, int sx, int sy, int ball_z_px) {
-    /* Drop shadow on turf */
-    if (sx >= 0 && sx < GBA_SCREEN_W && sy >= 0 && sy < GBA_SCREEN_H) {
-        fb[sy * GBA_SCREEN_W + sx] = GBA_BLACK;
+    /* Drop shadow on turf (3x2 oval) */
+    for (int sdy = -1; sdy <= 0; ++sdy) {
+        for (int sdx = -1; sdx <= 1; ++sdx) {
+            int px = sx + sdx;
+            int py = sy + sdy;
+            if (px >= 0 && px < GBA_SCREEN_W && py >= 0 && py < GBA_SCREEN_H) {
+                fb[py * GBA_SCREEN_W + px] = RGB15(2, 6, 2);
+            }
+        }
     }
-    /* Elevated Ball */
+    /* Elevated Ball (Crisp 3x3 white circle with specular highlight) */
     int by = sy - ball_z_px;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             int px = sx + dx;
             int py = by + dy;
             if (px >= 0 && px < GBA_SCREEN_W && py >= 0 && py < GBA_SCREEN_H) {
-                fb[py * GBA_SCREEN_W + px] = (dx == -1 && dy == -1) ? GBA_WHITE : RGB15(26, 26, 28);
+                uint16_t col = (dx == -1 && dy == -1) ? GBA_WHITE : ((dx == 1 && dy == 1) ? RGB15(20, 20, 22) : RGB15(28, 28, 30));
+                fb[py * GBA_SCREEN_W + px] = col;
             }
         }
     }
@@ -940,8 +947,14 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         if (track_gx < 0) track_gx = 0; if (track_gx >= GRID_W) track_gx = GRID_W - 1;
         if (track_gy < 0) track_gy = 0; if (track_gy >= GRID_H) track_gy = GRID_H - 1;
         int32_t track_elev = gs->grid[track_gx][track_gy].elevation;
-        int32_t target_sx = (track_gx - track_gy) * GBA_TILE_HALF_W;
-        int32_t target_sy = (track_gx + track_gy) * GBA_TILE_HALF_H - (track_elev * GBA_HEIGHT_STEP);
+        int32_t target_sx, target_sy;
+        if (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
+            target_sx = (track_gx - track_gy) * GBA_TILE_HALF_W;
+            target_sy = (track_gx + track_gy) * GBA_TILE_HALF_H - (track_elev * GBA_HEIGHT_STEP);
+        } else {
+            target_sx = FROM_FIXED((gs->ball.x - gs->ball.y) * GBA_TILE_HALF_W);
+            target_sy = FROM_FIXED((gs->ball.x + gs->ball.y) * GBA_TILE_HALF_H) - (track_elev * GBA_HEIGHT_STEP);
+        }
         grc->target_cam_x = (GBA_SCREEN_W / 2) - target_sx - GBA_TILE_HALF_W;
         grc->target_cam_y = (GBA_SCREEN_H / 2) - target_sy - GBA_TILE_HALF_H;
         if (grc->tick_count <= 1 || (grc->cam_x == 0 && grc->cam_y == 0)) {
@@ -1064,9 +1077,9 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     /* Caddy stands just behind golfer */
     add_drawable(GBA_ENT_CADDY, g_sx - 10, g_sy - 3, (golfer_gx + golfer_gy) * 32 + 15, gs->golfer.walk_anim_frame);
     
-    /* Ball */
-    int b_sx = (ball_gx - ball_gy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
-    int b_sy = (ball_gx + ball_gy) * GBA_TILE_HALF_H - (b_elev * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+    /* Ball: Continuous sub-pixel isometric position */
+    int b_sx = FROM_FIXED((gs->ball.x - gs->ball.y) * GBA_TILE_HALF_W) + grc->cam_x + GBA_TILE_HALF_W;
+    int b_sy = FROM_FIXED((gs->ball.x + gs->ball.y) * GBA_TILE_HALF_H) - (b_elev * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
     int ball_z_px = FROM_FIXED(gs->ball.z - gs->ball.ground_z);
     add_drawable(GBA_ENT_BALL, b_sx, b_sy, (ball_gx + ball_gy) * 32 + 18, ball_z_px);
     
@@ -1737,18 +1750,22 @@ static void draw_gba_giant_gopher(uint16_t *fb, int gx, int gy, int anim_f) {
 }
 
 
-void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
-    uint16_t *fb = gba_get_backbuffer();
-    grc->tick_count = anim_tick;
+__attribute__((aligned(4))) static uint16_t s_splash_bg[GBA_SCREEN_W * GBA_SCREEN_H];
+static bool s_splash_bg_ready = false;
+
+static void gba_init_splash_bg(void) {
+    uint16_t *fb = s_splash_bg;
     
-    /* 1. Sunset Sky Gradient (Dusk Purple -> Peach -> Gold Horizon) */
+    /* 1. Sunset Sky Gradient (Dusk Purple -> Peach -> Gold Horizon) - zero divisions */
     for (int y = 0; y < 65; ++y) {
-        int r = 16 + (y * 15) / 65;
-        int g = 6  + (y * 18) / 65;
-        int b = 14 + (y * 4)  / 65;
+        int r = 16 + (y * 15 * 1008) / 65536;
+        int g = 6  + (y * 18 * 1008) / 65536;
+        int b = 14 + (y * 4  * 1008) / 65536;
         uint16_t sky_col = RGB15(r, g, b);
-        for (int x = 0; x < GBA_SCREEN_W; ++x) {
-            fb[y * GBA_SCREEN_W + x] = sky_col;
+        uint32_t sky32 = ((uint32_t)sky_col << 16) | sky_col;
+        uint32_t *line32 = (uint32_t*)&fb[y * GBA_SCREEN_W];
+        for (int x = 0; x < GBA_SCREEN_W / 2; ++x) {
+            line32[x] = sky32;
         }
     }
 
@@ -1768,25 +1785,24 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
 
     /* 3. Distant Slate Mountain Silhouette */
     for (int x = 0; x < GBA_SCREEN_W; ++x) {
-        int my = 50 + (((x * 7) ^ (x / 13)) % 5);
+        int my = 50 + (((x * 7) ^ (x >> 3)) & 3);
         for (int y = my; y < 65; ++y) {
             fb[y * GBA_SCREEN_W + x] = RGB15(9, 7, 12);
         }
     }
 
-    /* 4. Rolling Emerald Fairway Turf */
+    /* 4. Rolling Emerald Fairway Turf - fast bit shift, zero software division */
     for (int y = 65; y < GBA_SCREEN_H; ++y) {
         int t = y - 65;
+        uint16_t turf0 = RGB15(3 + (t >> 5), 15 + (t >> 4), 4 + (t >> 5));
+        uint16_t turf1 = RGB15(4 + (t >> 5), 18 + (t >> 4), 5 + (t >> 5));
         for (int x = 0; x < GBA_SCREEN_W; ++x) {
-            /* Mowed diagonal fairway stripes */
-            int stripe = ((x + y) / 10) & 1;
-            uint16_t turf = stripe ? RGB15(4 + t / 32, 18 + t / 16, 5 + t / 32) : RGB15(3 + t / 32, 15 + t / 16, 4 + t / 32);
-            fb[y * GBA_SCREEN_W + x] = turf;
+            int stripe = ((x + y) >> 3) & 1;
+            fb[y * GBA_SCREEN_W + x] = stripe ? turf1 : turf0;
         }
     }
 
     /* 5. Putting Green & White Sand Bunker on Right */
-    /* Sand trap */
     for (int dy = -7; dy <= 7; ++dy) {
         int py = 76 + dy;
         if (py >= 0 && py < GBA_SCREEN_H) {
@@ -1800,7 +1816,6 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
             }
         }
     }
-    /* Putting Green surface */
     for (int dy = -8; dy <= 8; ++dy) {
         int py = 66 + dy;
         if (py >= 0 && py < GBA_SCREEN_H) {
@@ -1814,23 +1829,50 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
             }
         }
     }
-    /* Flagstick & Fluttering Red Pennant */
     gba_draw_rect(fb, 218, 50, 1, 20, GBA_WHITE);
     gba_draw_rect(fb, 219, 50, 7, 5, GBA_RED);
 
     /* 6. The Caddyshack Building with Caddy Kids & Bushwood Sign */
     draw_gba_caddyshack_building(fb, 4, 44);
 
-    /* 7. Big Dancing Caddyshack Gopher */
-    int goph_frame = (anim_tick / 8) % 4;
-    draw_gba_giant_gopher(fb, 184, 82, goph_frame);
-
-    /* 8. Title Banner at Top */
+    /* 7. Title Banner at Top */
     gba_draw_text(fb, 44, 7, "DUFFER PRO GBA", GBA_BLACK, false);
     gba_draw_text(fb, 42, 6, "DUFFER PRO GBA", GBA_GOLD, true);
     gba_draw_text(fb, 36, 18, "CHAMPIONSHIP SIMGOLF", RGB15(29, 29, 31), true);
 
-    /* 9. Interactive Splash Buttons: "JUMP ON" vs "PLAY HOLE" */
+    /* 8. Navigation Hints */
+    gba_draw_text(fb, 8, 136, "[D-PAD]SELECT  [A/START]PLAY", GBA_WHITE, true);
+
+    s_splash_bg_ready = true;
+}
+
+void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
+    if (!s_splash_bg_ready) {
+        gba_init_splash_bg();
+    }
+    
+    uint16_t *fb = gba_get_backbuffer();
+    grc->tick_count = anim_tick;
+    
+    /* Fast 32-bit copy of pre-rendered background into backbuffer */
+    const uint32_t *src = (const uint32_t*)s_splash_bg;
+    uint32_t *dst = (uint32_t*)fb;
+    for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H) / 2; i += 8) {
+        dst[i + 0] = src[i + 0];
+        dst[i + 1] = src[i + 1];
+        dst[i + 2] = src[i + 2];
+        dst[i + 3] = src[i + 3];
+        dst[i + 4] = src[i + 4];
+        dst[i + 5] = src[i + 5];
+        dst[i + 6] = src[i + 6];
+        dst[i + 7] = src[i + 7];
+    }
+
+    /* Big Dancing Caddyshack Gopher */
+    int goph_frame = (anim_tick / 7) % 4;
+    draw_gba_giant_gopher(fb, 184, 82, goph_frame);
+
+    /* Interactive Splash Buttons: "JUMP ON" vs "PLAY HOLE" */
     int b0_x = 16, b0_y = 114, b0_w = 98, b0_h = 18;
     int b1_x = 126, b1_y = 114, b1_w = 98, b1_h = 18;
 
@@ -1856,9 +1898,7 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
         gba_draw_text(fb, b1_x + 5, b1_y + 5, "  PLAY HOLE  ", RGB15(15, 17, 19), false);
     }
 
-    /* 10. Navigation Hints & Mode Info */
-    gba_draw_text(fb, 8, 136, "[D-PAD]SELECT  [A/START]PLAY", GBA_WHITE, true);
-
+    /* Mode Info */
     if (menu_choice == 0) {
         gba_draw_text(fb, 12, 148, "* JUMP ON: AVOID RANGER! *", GBA_YELLOW, true);
     } else {

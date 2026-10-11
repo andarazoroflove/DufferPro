@@ -82,6 +82,8 @@ bool gba_key_pressed(uint16_t key);
 
 /* Hardware Sound Effects */
 void gba_sfx_swing_hit(int club_type);
+void gba_sfx_ball_landing(void);
+void gba_sfx_pin_ding(void);
 void gba_sfx_bounce(void);
 void gba_sfx_cup_sink(void);
 void gba_sfx_water_splash(void);
@@ -90,6 +92,7 @@ void gba_sfx_gopher_gulp(void);
 void gba_sfx_carl_explosion(void);
 void gba_sfx_carl_hose(void);
 void gba_sfx_whistle(void);
+void gba_audio_tick_ambient(void);
 void gba_audio_tick_splash(int tick);
 void gba_audio_stop_music(void);
 

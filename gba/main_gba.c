@@ -25,12 +25,19 @@ static ClubType gba_recommend_club(int32_t yds, SurfaceType surf) {
 }
 
 static void dispatch_gba_audio(GolfAudioEvent evt, int club) {
+    (void)club;
     switch (evt) {
         case AUDIO_EVT_SWING_DRIVER:   gba_sfx_swing_hit(0); break;
         case AUDIO_EVT_SWING_IRON:     gba_sfx_swing_hit(1); break;
         case AUDIO_EVT_SWING_WEDGE:    gba_sfx_swing_hit(2); break;
         case AUDIO_EVT_SWING_PUTTER:   gba_sfx_swing_hit(4); break;
-        case AUDIO_EVT_BALL_BOUNCE:    gba_sfx_bounce(); break;
+        case AUDIO_EVT_BALL_BOUNCE:
+            if (s_gba_game_state.ball.bounce_count <= 1) {
+                gba_sfx_ball_landing();
+            } else {
+                gba_sfx_bounce();
+            }
+            break;
         case AUDIO_EVT_WATER_SPLASH:   gba_sfx_water_splash(); break;
         case AUDIO_EVT_CUP_SINK:       gba_sfx_cup_sink(); break;
         case AUDIO_EVT_GOPHER_CHUCKLE: gba_sfx_gopher_chuckle(); break;
@@ -207,7 +214,7 @@ int main(void) {
                         s_gba_render_ctx.cam_x = s_gba_render_ctx.target_cam_x;
                         s_gba_render_ctx.cam_y = s_gba_render_ctx.target_cam_y;
                         
-                        gba_sfx_cup_sink();
+                        gba_sfx_pin_ding();
                     } else {
                         /* Click 2: Untimed Shot Execution with Full Club Power */
                         const ClubData *cd = golf_get_club_data(s_gba_game_state.current_club);
@@ -236,8 +243,10 @@ int main(void) {
             
             /* Multi-tick Game Physics & Entity Simulation */
             int num_ticks = 1;
-            if (s_gba_game_state.ball.state == BALL_IN_FLIGHT || s_gba_game_state.ball.state == BALL_BOUNCING || s_gba_game_state.ball.state == BALL_ROLLING) {
-                num_ticks = 2; /* 2x faster flight/roll */
+            if (s_gba_game_state.ball.state == BALL_IN_FLIGHT) {
+                num_ticks = 3; /* Turned up: 3x faster flight animation */
+            } else if (s_gba_game_state.ball.state == BALL_BOUNCING || s_gba_game_state.ball.state == BALL_ROLLING) {
+                num_ticks = 2; /* 2x faster bounce & roll */
             } else if (s_gba_game_state.golfer.state == GOLFER_STATE_WALKING) {
                 num_ticks = 3; /* 3x faster walking */
             }
@@ -257,6 +266,9 @@ int main(void) {
                 dispatch_gba_audio(s_gba_game_state.audio_event, (int)s_gba_game_state.current_club);
                 s_gba_game_state.audio_event = AUDIO_EVT_NONE;
             }
+            
+            /* Ambient background sound generator (chirps & breeze with silence intervals) */
+            gba_audio_tick_ambient();
             
             /* Render Frame & Display via VSync Double-Buffer Flip */
             gba_render_draw_frame(&s_gba_render_ctx, &s_gba_game_state);

@@ -52,6 +52,25 @@ static float s_water_phase2 = 0.0f;
 static float s_clubhouse_target_vol = 0.0f;
 static float s_clubhouse_current_vol = 0.0f;
 
+/* Random Water Gurgle Generator (intermittent with intervals of silence) */
+static int32_t s_gurgle_timer_samples = 44100 * 5; /* First gurgle in ~5s */
+static bool s_gurgle_active = false;
+static uint32_t s_gurgle_pos = 0;
+static uint32_t s_gurgle_dur = 0;
+static float s_gurgle_pan = 0.0f;
+static float s_gurgle_phases[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+static float s_gurgle_freqs[4]  = { 260.0f, 390.0f, 520.0f, 320.0f };
+static float s_gurgle_stream_phase = 0.0f;
+
+/* Random Light Breeze Generator (intermittent with intervals of silence) */
+static int32_t s_breeze_timer_samples = 44100 * 11; /* First breeze in ~11s */
+static bool s_breeze_active = false;
+static uint32_t s_breeze_pos = 0;
+static uint32_t s_breeze_dur = 0;
+static float s_breeze_pan = 0.0f;
+static float s_breeze_filter1 = 0.0f;
+static float s_breeze_filter2 = 0.0f;
+
 /* Bird Chirp Generator */
 static int32_t s_bird_timer_samples = 44100 * 2; /* First chirp in 2s */
 static bool s_bird_active = false;
@@ -164,71 +183,119 @@ static float synthesize_sfx_sample(SfxVoice *v) {
     
     switch (v->type) {
         case SFX_SWING_DRIVER: {
-            /* Aerodynamic club whoosh transitioning into explosive titanium face crack and sub-thump */
+            /* PGA Tour Grade Driver: 115mph aerodynamic clubhead swoosh into explosive titanium crack,
+             * massive 460cc hollow cavity sub-bass thump, and crystalline 2920 Hz titanium face ring */
             float whoosh = 0.0f;
-            if (t < 0.07f) {
-                float w_env = sinf((t / 0.07f) * (float)M_PI);
-                whoosh = audio_noise() * w_env * 0.75f;
+            if (t < 0.065f) {
+                float w_env = sinf((t / 0.065f) * (float)M_PI);
+                float f_whoosh = 190.0f + 680.0f * (t / 0.065f);
+                whoosh = (audio_noise() * 0.7f + sinf(2.0f * (float)M_PI * f_whoosh * t) * 0.3f) * w_env * 0.85f;
             }
             float hit_t = (t >= 0.035f) ? (t - 0.035f) : 0.0f;
-            float hit_env = expf(-hit_t * 14.0f);
-            float freq = 175.0f * expf(-hit_t * 28.0f) + 42.0f;
-            float thump = sinf(2.0f * (float)M_PI * freq * hit_t) * hit_env * 0.95f;
-            float crack_env = (hit_t < 0.07f) ? expf(-hit_t * 35.0f) : 0.0f;
-            float crack = audio_noise() * crack_env * 1.35f;
-            out = (whoosh * 0.6f + thump * 0.85f + crack * 1.0f) * v->volume;
+            if (t >= 0.035f) {
+                /* 1. Explosive Titanium Face Crack: dual high-frequency shell modes */
+                float crack_env = expf(-hit_t * 36.0f);
+                float face_modes = (sinf(2.0f * (float)M_PI * 3600.0f * hit_t) * 0.70f +
+                                    sinf(2.0f * (float)M_PI * 4850.0f * hit_t) * 0.45f) * crack_env;
+                float snap = audio_noise() * expf(-hit_t * 55.0f) * 1.45f;
+                
+                /* 2. Hollow 460cc Head Cavity Sub-Bass Thump: 220 Hz down to 68 Hz */
+                float f_thump = 220.0f * expf(-hit_t * 32.0f) + 68.0f;
+                float sub_kick = (sinf(2.0f * (float)M_PI * f_thump * hit_t) * 0.85f +
+                                  sinf(2.0f * (float)M_PI * 38.0f * hit_t) * 0.45f) * expf(-hit_t * 15.0f);
+                
+                /* 3. Pure Titanium Overtone Ring (2920 Hz sustained for 90ms) */
+                float ring = sinf(2.0f * (float)M_PI * 2920.0f * hit_t) * expf(-hit_t * 18.0f) * 0.45f;
+                
+                out = (whoosh * 0.4f + face_modes + snap + sub_kick + ring) * v->volume * 1.35f;
+            } else {
+                out = whoosh * v->volume * 0.85f;
+            }
             break;
         }
         
         case SFX_SWING_IRON: {
-            /* Club swoosh into crisp metallic steel ping (920 Hz & 2760 Hz) and firm impact snap */
+            /* Forged Carbon Steel Iron: Aerodynamic swish into pure solid blade impact (1180, 2360, 3540 Hz),
+             * solid core mass transfer thud (290 Hz), and crisp fairway turf shear */
             float whoosh = 0.0f;
             if (t < 0.05f) {
-                whoosh = audio_noise() * sinf((t / 0.05f) * (float)M_PI) * 0.55f;
+                whoosh = audio_noise() * sinf((t / 0.05f) * (float)M_PI) * 0.65f;
             }
             float hit_t = (t >= 0.025f) ? (t - 0.025f) : 0.0f;
-            float hit_env = expf(-hit_t * 16.0f);
-            float ping = (sinf(2.0f * (float)M_PI * 920.0f * hit_t) * 0.75f +
-                          sinf(2.0f * (float)M_PI * 2760.0f * hit_t) * 0.35f) * hit_env;
-            float snap = audio_noise() * expf(-hit_t * 45.0f) * 1.0f;
-            out = (whoosh * 0.5f + ping * 0.85f + snap * 0.9f) * v->volume;
+            if (t >= 0.025f) {
+                float hit_env = expf(-hit_t * 19.0f);
+                /* Forged steel harmonics */
+                float steel_ping = (sinf(2.0f * (float)M_PI * 1180.0f * hit_t) * 0.80f +
+                                    sinf(2.0f * (float)M_PI * 2360.0f * hit_t) * 0.45f +
+                                    sinf(2.0f * (float)M_PI * 3540.0f * hit_t) * 0.22f) * hit_env;
+                /* Solid core mass transfer */
+                float core_thud = sinf(2.0f * (float)M_PI * 290.0f * hit_t) * expf(-hit_t * 24.0f) * 0.75f;
+                /* Immediate ball compression snap & turf divot shear */
+                float snap = audio_noise() * expf(-hit_t * 48.0f) * 1.15f;
+                float turf = audio_noise() * expf(-hit_t * 16.0f) * 0.35f;
+                
+                out = (whoosh * 0.35f + steel_ping + core_thud + snap + turf) * v->volume * 1.25f;
+            } else {
+                out = whoosh * v->volume * 0.7f;
+            }
             break;
         }
         
         case SFX_SWING_WEDGE: {
-            /* Aerodynamic swish into crisp turf slice and firm 250 Hz ball strike */
+            /* Spin-Milled High-Loft Wedge: Steep swish into aggressive groove friction "ZIP",
+             * lush organic turf divot slice ("SHH-WUP!"), and solid urethane compression */
             float whoosh = 0.0f;
             if (t < 0.05f) {
-                whoosh = audio_noise() * sinf((t / 0.05f) * (float)M_PI) * 0.6f;
+                whoosh = audio_noise() * sinf((t / 0.05f) * (float)M_PI) * 0.65f;
             }
             float hit_t = (t >= 0.02f) ? (t - 0.02f) : 0.0f;
-            float thump = sinf(2.0f * (float)M_PI * 250.0f * hit_t) * expf(-hit_t * 18.0f) * 0.75f;
-            float turf = audio_noise() * expf(-hit_t * 32.0f) * 1.05f;
-            out = (whoosh * 0.5f + thump * 0.75f + turf * 0.85f) * v->volume;
+            if (t >= 0.02f) {
+                /* Spin-milled groove bite friction (3400 Hz texture hiss) */
+                float groove_zip = audio_noise() * sinf(2.0f * (float)M_PI * 3400.0f * hit_t) * expf(-hit_t * 32.0f) * 0.95f;
+                /* Earth divot slice + low turf displacement */
+                float turf_thump = sinf(2.0f * (float)M_PI * 210.0f * hit_t) * expf(-hit_t * 18.0f) * 0.85f;
+                float grass_slice = audio_noise() * expf(-hit_t * 22.0f) * 1.10f;
+                
+                out = (whoosh * 0.4f + groove_zip + turf_thump + grass_slice) * v->volume * 1.20f;
+            } else {
+                out = whoosh * v->volume * 0.7f;
+            }
             break;
         }
         
         case SFX_SWING_PUTTER: {
-            /* Putting stroke swoosh into rich hollow composite tock */
+            /* Precision Milled Putter: Gentle smooth takeaway into sweet hollow composite chime
+             * (480 Hz & 1120 Hz) with warm rubber-insert undertone (185 Hz) and dimpled ball roll */
             float whoosh = 0.0f;
-            if (t < 0.04f) {
-                whoosh = audio_noise() * sinf((t / 0.04f) * (float)M_PI) * 0.35f;
+            if (t < 0.035f) {
+                whoosh = audio_noise() * sinf((t / 0.035f) * (float)M_PI) * 0.30f;
             }
             float hit_t = (t >= 0.015f) ? (t - 0.015f) : 0.0f;
-            float env = expf(-hit_t * 22.0f);
-            float tock = sinf(2.0f * (float)M_PI * 340.0f * hit_t) * env * 0.9f;
-            float sub = sinf(2.0f * (float)M_PI * 170.0f * hit_t) * env * 0.55f;
-            float tap = audio_noise() * expf(-hit_t * 40.0f) * 0.5f;
-            out = (whoosh * 0.4f + tock + sub + tap) * v->volume;
+            if (t >= 0.015f) {
+                float env = expf(-hit_t * 24.0f);
+                /* Milled face bell-like composite click */
+                float chime = (sinf(2.0f * (float)M_PI * 480.0f * hit_t) * 0.75f +
+                               sinf(2.0f * (float)M_PI * 1120.0f * hit_t) * 0.35f) * env;
+                /* Soft insert cushion undertone */
+                float insert = sinf(2.0f * (float)M_PI * 185.0f * hit_t) * env * 0.65f;
+                float tap = audio_noise() * expf(-hit_t * 45.0f) * 0.45f;
+                
+                out = (whoosh * 0.3f + chime + insert + tap) * v->volume * 1.20f;
+            } else {
+                out = whoosh * v->volume * 0.5f;
+            }
             break;
         }
         
         case SFX_BALL_BOUNCE: {
-            /* Ground impact thud */
-            float env = expf(-progress * 22.0f);
-            float thud = sinf(2.0f * (float)M_PI * 110.0f * t) * env;
-            float tap = audio_noise() * expf(-progress * 30.0f) * 0.4f;
-            out = (thud + tap) * v->volume * 0.7f;
+            /* Multi-layer Urethane Golf Ball Turf Rebound: Sharp cover click (2100 Hz),
+             * dense polybutadiene elastic core thump (140 Hz down to 85 Hz), and turf blade rustle */
+            float env = expf(-progress * 24.0f);
+            float core_f = 140.0f * expf(-progress * 18.0f) + 85.0f;
+            float core_thud = sinf(2.0f * (float)M_PI * core_f * t) * env * 0.95f;
+            float cover_click = sinf(2.0f * (float)M_PI * 2100.0f * t) * expf(-progress * 42.0f) * 0.55f;
+            float turf_brush = audio_noise() * expf(-progress * 28.0f) * 0.45f;
+            out = (core_thud + cover_click + turf_brush) * v->volume * 0.95f;
             break;
         }
         
@@ -389,24 +456,74 @@ static float synthesize_sfx_sample(SfxVoice *v) {
         }
         
         case SFX_BEVERAGE_WHISTLE: {
-            /* Cheerful 2-tone melodic whistle: Note 1 (A6/1760Hz), brief gap, Note 2 (C#7->E7 glissando) */
-            float w_freq = 0.0f;
-            float w_env = 0.0f;
-            if (t < 0.20f) {
-                /* First note: 1760 Hz with soft attack and decay */
-                w_freq = 1760.0f;
-                w_env = sinf((t / 0.20f) * (float)M_PI);
-            } else if (t >= 0.24f && t < 0.62f) {
-                /* Second note: 2200 Hz gliding up to 2640 Hz with vibrato */
-                float t2 = (t - 0.24f) / 0.38f;
-                w_freq = 2200.0f + t2 * 440.0f + sinf(t2 * 26.0f) * 16.0f;
-                w_env = sinf(t2 * (float)M_PI);
-            }
-            if (w_env > 0.0f) {
-                float phase = 2.0f * (float)M_PI * w_freq * t;
-                float tone = sinf(phase) + sinf(phase * 2.0f) * 0.08f;
-                float breath = audio_noise() * 0.035f;
-                out = (tone + breath) * w_env * v->volume * 1.15f;
+            /* Cart Girl Playful Vocalization: Synthesized Voice saying "BOOM-STICK!" with cold beverage can clink-pop!
+             * Syllable 1: "BOOM" (t = 0.00s to 0.28s)
+             * Syllable 2: "STICK!" (t = 0.31s to 0.65s) */
+            if (t < 0.28f) {
+                /* Syllable 1: "BOOM" (/b/ -> /u/ -> /m/) */
+                float t_syll = t / 0.28f;
+                float f0 = 225.0f - t_syll * 25.0f; /* Pitch: 225 Hz to 200 Hz */
+                float phase = 2.0f * (float)M_PI * f0 * t;
+                /* Asymmetric glottal pulse */
+                float glot = sinf(phase) + 0.35f * sinf(phase * 2.0f) + 0.15f * sinf(phase * 3.0f);
+                
+                /* Formants for /u/ ("oo"): F1 ~ 320 Hz, F2 ~ 880 Hz, F3 ~ 2300 Hz */
+                float f1 = sinf(2.0f * (float)M_PI * 320.0f * t) * 0.60f;
+                float f2 = sinf(2.0f * (float)M_PI * 880.0f * t) * 0.40f;
+                float f3 = sinf(2.0f * (float)M_PI * 2300.0f * t) * 0.18f;
+                
+                /* Initial /b/ plosive pop (first 25ms) */
+                float b_burst = (t < 0.025f) ? (sinf(2.0f * (float)M_PI * 135.0f * t) * 0.45f + audio_noise() * 0.15f) : 0.0f;
+                
+                /* Vowel amplitude envelope with smooth onset and nasal decay */
+                float env = sinf(t_syll * (float)M_PI);
+                if (t_syll > 0.75f) {
+                    /* /m/ nasal closure */
+                    f1 = sinf(2.0f * (float)M_PI * 260.0f * t) * 0.50f;
+                    f2 = sinf(2.0f * (float)M_PI * 1050.0f * t) * 0.20f;
+                    f3 = 0.0f;
+                }
+                
+                out = (b_burst + glot * (f1 + f2 + f3) * 0.55f) * env * v->volume * 0.85f;
+            } else if (t >= 0.31f && t < 0.65f) {
+                /* Syllable 2: "STICK!" (/s/ -> /t/ -> /ih/ -> /k/) */
+                float t_syll2 = t - 0.31f;
+                
+                if (t_syll2 < 0.075f) {
+                    /* /s/ sibilant: bandpassed high frequency white noise (5500-7500 Hz) */
+                    float s_env = sinf((t_syll2 / 0.075f) * (float)M_PI);
+                    float hiss = audio_noise() * (0.45f + 0.3f * sinf(2.0f * (float)M_PI * 6200.0f * t_syll2));
+                    out = hiss * s_env * v->volume * 0.55f;
+                } else if (t_syll2 >= 0.075f && t_syll2 < 0.095f) {
+                    /* /t/ closure gap + tiny 3ms transient burst */
+                    float t_burst_t = t_syll2 - 0.090f;
+                    if (t_burst_t >= 0.0f && t_burst_t < 0.005f) {
+                        out = (sinf(2.0f * (float)M_PI * 3800.0f * t_burst_t) * 0.5f + audio_noise() * 0.25f) * v->volume * 0.65f;
+                    }
+                } else if (t_syll2 >= 0.095f && t_syll2 < 0.22f) {
+                    /* /ih/ ("ih") vowel: F0 ~ 255 Hz -> 238 Hz */
+                    float v_t = t_syll2 - 0.095f;
+                    float v_prog = v_t / 0.125f;
+                    float f0_2 = 255.0f - v_prog * 17.0f;
+                    float phase2 = 2.0f * (float)M_PI * f0_2 * v_t;
+                    float glot2 = sinf(phase2) + 0.35f * sinf(phase2 * 2.0f) + 0.15f * sinf(phase2 * 3.0f);
+                    
+                    /* Formants for /ih/: F1 ~ 430 Hz, F2 ~ 1980 Hz, F3 ~ 2650 Hz */
+                    float f1 = sinf(2.0f * (float)M_PI * 430.0f * v_t) * 0.60f;
+                    float f2 = sinf(2.0f * (float)M_PI * 1980.0f * v_t) * 0.45f;
+                    float f3 = sinf(2.0f * (float)M_PI * 2650.0f * v_t) * 0.25f;
+                    float env2 = sinf(v_prog * (float)M_PI);
+                    out = glot2 * (f1 + f2 + f3) * 0.50f * env2 * v->volume * 0.85f;
+                } else {
+                    /* /k/ plosive release + ice-cold beverage can tab "click-pop!" */
+                    float k_t = t_syll2 - 0.22f;
+                    float k_env = expf(-k_t * 38.0f);
+                    float k_burst = audio_noise() * expf(-k_t * 48.0f) * 0.45f;
+                    /* Crisp metallic can pop & glass clink (2850 Hz & 4150 Hz) */
+                    float can_pop = (sinf(2.0f * (float)M_PI * 2850.0f * k_t) * 0.45f +
+                                     sinf(2.0f * (float)M_PI * 4150.0f * k_t) * 0.30f) * k_env;
+                    out = (k_burst + can_pop) * v->volume * 0.85f;
+                }
             }
             break;
         }
@@ -707,7 +824,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
             s_bird_pos++;
             if (s_bird_pos >= s_bird_dur) {
                 s_bird_active = false;
-                s_bird_timer_samples = AUDIO_SAMPLE_RATE * 2 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 4));
+                /* Intervals of quietude between bird calls: 8 to 20 seconds */
+                s_bird_timer_samples = AUDIO_SAMPLE_RATE * 8 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 12));
             }
         } else {
             s_bird_timer_samples--;
@@ -718,6 +836,109 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
                 s_bird_base_freq = 2400.0f + (float)(s_audio_rand % 1200);
                 s_bird_pan = audio_noise();
                 s_bird_phase = 0.0f;
+            }
+        }
+        
+        /* 4b. Procedural Random Water Gurgle (intermittent with intervals of silence) */
+        float gurgle_left = 0.0f;
+        float gurgle_right = 0.0f;
+        
+        if (s_gurgle_active) {
+            float g_prog = (float)s_gurgle_pos / (float)s_gurgle_dur;
+            /* Smooth bell curve envelope: sin^2 for seamless onset and offset */
+            float g_env = sinf(g_prog * (float)M_PI);
+            g_env = g_env * g_env;
+            
+            /* Continuous low liquid murmur */
+            s_gurgle_stream_phase += 2.0f * (float)M_PI * 180.0f / (float)AUDIO_SAMPLE_RATE;
+            if (s_gurgle_stream_phase > 2.0f * (float)M_PI) s_gurgle_stream_phase -= 2.0f * (float)M_PI;
+            float stream = (sinf(s_gurgle_stream_phase) * 0.4f + audio_noise() * 0.15f) * 0.035f;
+            
+            /* 4 overlapping resonant micro-bubbles (Minnaert bubble acoustics) */
+            float bubble_sum = 0.0f;
+            for (int b = 0; b < 4; ++b) {
+                uint32_t b_cycle = (AUDIO_SAMPLE_RATE / (7 + b * 3));
+                uint32_t b_subpos = (s_gurgle_pos + b * 2200) % b_cycle;
+                float b_subprog = (float)b_subpos / (float)b_cycle;
+                
+                /* Each bubble has pitch rise: f(t) = f0 * (1 + 0.35 * t) and fast exponential decay */
+                float b_freq = s_gurgle_freqs[b] * (1.0f + b_subprog * 0.35f);
+                s_gurgle_phases[b] += 2.0f * (float)M_PI * b_freq / (float)AUDIO_SAMPLE_RATE;
+                if (s_gurgle_phases[b] > 2.0f * (float)M_PI) s_gurgle_phases[b] -= 2.0f * (float)M_PI;
+                
+                float b_decay = expf(-b_subprog * 12.0f);
+                float bubble = sinf(s_gurgle_phases[b]) * b_decay * 0.065f;
+                bubble_sum += bubble;
+            }
+            
+            float gurgle_total = (stream + bubble_sum) * g_env * 0.75f;
+            float pan_l = 0.5f - (s_gurgle_pan * 0.35f);
+            float pan_r = 0.5f + (s_gurgle_pan * 0.35f);
+            gurgle_left = gurgle_total * pan_l;
+            gurgle_right = gurgle_total * pan_r;
+            
+            s_gurgle_pos++;
+            if (s_gurgle_pos >= s_gurgle_dur) {
+                s_gurgle_active = false;
+                /* Tranquil interval of silence: 14 to 32 seconds */
+                s_gurgle_timer_samples = AUDIO_SAMPLE_RATE * 14 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 18));
+            }
+        } else {
+            s_gurgle_timer_samples--;
+            if (s_gurgle_timer_samples <= 0) {
+                s_gurgle_active = true;
+                s_gurgle_pos = 0;
+                /* Active gurgle lasts 2.5 to 4.2 seconds */
+                s_gurgle_dur = AUDIO_SAMPLE_RATE * 2 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 2 + AUDIO_SAMPLE_RATE / 4));
+                s_gurgle_pan = audio_noise() * 0.7f;
+                s_gurgle_freqs[0] = 260.0f + (float)(s_audio_rand % 80);
+                s_gurgle_freqs[1] = 380.0f + (float)(s_audio_rand % 120);
+                s_gurgle_freqs[2] = 510.0f + (float)(s_audio_rand % 160);
+                s_gurgle_freqs[3] = 330.0f + (float)(s_audio_rand % 100);
+            }
+        }
+        
+        /* 4c. Procedural Random Light Breeze (intermittent with intervals of silence) */
+        float breeze_left = 0.0f;
+        float breeze_right = 0.0f;
+        
+        if (s_breeze_active) {
+            float brz_prog = (float)s_breeze_pos / (float)s_breeze_dur;
+            /* Smooth bell curve envelope: sin^2 rises and falls seamlessly */
+            float brz_env = sinf(brz_prog * (float)M_PI);
+            brz_env = brz_env * brz_env;
+            
+            /* Two-pole resonant low-pass/band-pass filter on white noise */
+            float white = audio_noise();
+            /* Cutoff frequency gently wavers around 520 Hz */
+            float cutoff = 0.07f + 0.02f * sinf(brz_prog * 6.0f * (float)M_PI);
+            s_breeze_filter1 += cutoff * (white - s_breeze_filter1);
+            s_breeze_filter2 += cutoff * (s_breeze_filter1 - s_breeze_filter2);
+            
+            /* Light rustling breeze sound */
+            float breeze_raw = (s_breeze_filter1 * 0.6f + s_breeze_filter2 * 0.4f) * brz_env * 0.065f;
+            
+            /* Gentle spatial drift */
+            float drift_pan = s_breeze_pan + 0.15f * sinf(brz_prog * (float)M_PI);
+            float pan_l = 0.5f - (drift_pan * 0.35f);
+            float pan_r = 0.5f + (drift_pan * 0.35f);
+            breeze_left = breeze_raw * pan_l;
+            breeze_right = breeze_raw * pan_r;
+            
+            s_breeze_pos++;
+            if (s_breeze_pos >= s_breeze_dur) {
+                s_breeze_active = false;
+                /* Tranquil interval of silence: 16 to 34 seconds */
+                s_breeze_timer_samples = AUDIO_SAMPLE_RATE * 16 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 18));
+            }
+        } else {
+            s_breeze_timer_samples--;
+            if (s_breeze_timer_samples <= 0) {
+                s_breeze_active = true;
+                s_breeze_pos = 0;
+                /* Breeze lasts 3.5 to 5.5 seconds */
+                s_breeze_dur = AUDIO_SAMPLE_RATE * 3 + (s_audio_rand % (AUDIO_SAMPLE_RATE * 2 + AUDIO_SAMPLE_RATE / 2));
+                s_breeze_pan = audio_noise() * 0.6f;
             }
         }
         
@@ -749,8 +970,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
         }
         
         /* Master Mix */
-        float left = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_left + sfx_mix_left + music_left);
-        float right = (water_sample * 0.6f + clubhouse_sample * 0.5f + bird_right + sfx_mix_right + music_right);
+        float left = (water_sample * 0.5f + clubhouse_sample * 0.4f + gurgle_left + breeze_left + bird_left + sfx_mix_left + music_left);
+        float right = (water_sample * 0.5f + clubhouse_sample * 0.4f + gurgle_right + breeze_right + bird_right + sfx_mix_right + music_right);
         
         /* Soft Limiting */
         if (left > 0.95f) left = 0.95f;
@@ -839,26 +1060,26 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
         v->pan = 0.0f;
         
         switch (sfx) {
-            case SFX_SWING_DRIVER:   v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.35f; break;
-            case SFX_SWING_IRON:     v->total_samples = AUDIO_SAMPLE_RATE * 30 / 100; v->volume = 1.25f; break;
-            case SFX_SWING_WEDGE:    v->total_samples = AUDIO_SAMPLE_RATE * 26 / 100; v->volume = 1.20f; break;
-            case SFX_SWING_PUTTER:   v->total_samples = AUDIO_SAMPLE_RATE * 18 / 100; v->volume = 1.15f; break;
-            case SFX_BALL_BOUNCE:    v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.80f; break;
-            case SFX_TREE_HIT:       v->total_samples = AUDIO_SAMPLE_RATE * 42 / 100; v->volume = 1.25f; break;
-            case SFX_ROCK_HIT:       v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.25f; break;
-            case SFX_WATER_SPLASH:   v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.20f; break;
-            case SFX_FOOTSTEP_GRASS: v->total_samples = AUDIO_SAMPLE_RATE * 10 / 100; v->volume = 0.50f; break;
-            case SFX_FOOTSTEP_SAND:  v->total_samples = AUDIO_SAMPLE_RATE * 13 / 100; v->volume = 0.55f; break;
-            case SFX_FOOTSTEP_ROUGH: v->total_samples = AUDIO_SAMPLE_RATE * 15 / 100; v->volume = 0.55f; break;
-            case SFX_FOOTSTEP_WOOD:  v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.65f; break;
-            case SFX_CUP_SINK:       v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.45f; break;
-            case SFX_SWEETSPOT:      v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 0.95f; break;
-            case SFX_APPLAUSE_GOLF:  v->total_samples = AUDIO_SAMPLE_RATE * 160 / 100; v->volume = 1.25f; break;
-            case SFX_CROWD_CHEER:    v->total_samples = AUDIO_SAMPLE_RATE * 220 / 100; v->volume = 1.35f; break;
-            case SFX_CROWD_OOH:      v->total_samples = AUDIO_SAMPLE_RATE * 90 / 100; v->volume = 1.15f; break;
-            case SFX_BUILD_PLACE:    v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.95f; break;
-            case SFX_TERRAIN_SCULPT: v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 0.90f; break;
-            case SFX_BEVERAGE_WHISTLE: v->total_samples = AUDIO_SAMPLE_RATE * 65 / 100; v->volume = 1.30f; break;
+            case SFX_SWING_DRIVER:     v->total_samples = AUDIO_SAMPLE_RATE * 42 / 100; v->volume = 1.40f; break;
+            case SFX_SWING_IRON:       v->total_samples = AUDIO_SAMPLE_RATE * 34 / 100; v->volume = 1.30f; break;
+            case SFX_SWING_WEDGE:      v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 1.25f; break;
+            case SFX_SWING_PUTTER:     v->total_samples = AUDIO_SAMPLE_RATE * 22 / 100; v->volume = 1.20f; break;
+            case SFX_BALL_BOUNCE:      v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.90f; break;
+            case SFX_TREE_HIT:         v->total_samples = AUDIO_SAMPLE_RATE * 42 / 100; v->volume = 1.25f; break;
+            case SFX_ROCK_HIT:         v->total_samples = AUDIO_SAMPLE_RATE * 38 / 100; v->volume = 1.25f; break;
+            case SFX_WATER_SPLASH:     v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.20f; break;
+            case SFX_FOOTSTEP_GRASS:   v->total_samples = AUDIO_SAMPLE_RATE * 10 / 100; v->volume = 0.50f; break;
+            case SFX_FOOTSTEP_SAND:    v->total_samples = AUDIO_SAMPLE_RATE * 13 / 100; v->volume = 0.55f; break;
+            case SFX_FOOTSTEP_ROUGH:   v->total_samples = AUDIO_SAMPLE_RATE * 15 / 100; v->volume = 0.55f; break;
+            case SFX_FOOTSTEP_WOOD:    v->total_samples = AUDIO_SAMPLE_RATE * 12 / 100; v->volume = 0.65f; break;
+            case SFX_CUP_SINK:         v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.45f; break;
+            case SFX_SWEETSPOT:        v->total_samples = AUDIO_SAMPLE_RATE * 40 / 100; v->volume = 0.95f; break;
+            case SFX_APPLAUSE_GOLF:    v->total_samples = AUDIO_SAMPLE_RATE * 160 / 100; v->volume = 1.25f; break;
+            case SFX_CROWD_CHEER:      v->total_samples = AUDIO_SAMPLE_RATE * 220 / 100; v->volume = 1.35f; break;
+            case SFX_CROWD_OOH:        v->total_samples = AUDIO_SAMPLE_RATE * 90 / 100; v->volume = 1.15f; break;
+            case SFX_BUILD_PLACE:      v->total_samples = AUDIO_SAMPLE_RATE * 14 / 100; v->volume = 0.95f; break;
+            case SFX_TERRAIN_SCULPT:   v->total_samples = AUDIO_SAMPLE_RATE * 28 / 100; v->volume = 0.90f; break;
+            case SFX_BEVERAGE_WHISTLE: v->total_samples = AUDIO_SAMPLE_RATE * 72 / 100; v->volume = 1.45f; break;
             case SFX_GOPHER_CHUCKLE:   v->total_samples = AUDIO_SAMPLE_RATE * 50 / 100; v->volume = 1.30f; break;
             case SFX_GOPHER_GULP:      v->total_samples = AUDIO_SAMPLE_RATE * 35 / 100; v->volume = 1.40f; break;
             case SFX_CARL_EXPLOSION:   v->total_samples = AUDIO_SAMPLE_RATE * 180 / 100; v->volume = 1.60f; break;

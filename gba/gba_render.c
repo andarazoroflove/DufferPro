@@ -751,13 +751,13 @@ static void draw_gba_bev_cart(uint16_t *fb, int sx, int sy, int state, int anim_
 
     /* Speech Bubble / Prompts */
     if (state == BEV_STATE_APPROACHING_PLAYER || state == BEV_STATE_DRINKING) {
-        gba_draw_rect(fb, sx - 22, sy - 30, 44, 9, GBA_WHITE);
-        gba_draw_rect(fb, sx - 21, sy - 29, 42, 7, RGB15(31, 8, 16));
-        gba_draw_text(fb, sx - 19, sy - 28, "COLD DRINK!", GBA_WHITE, false);
+        gba_draw_rect(fb, sx - 26, sy - 30, 52, 9, GBA_WHITE);
+        gba_draw_rect(fb, sx - 25, sy - 29, 50, 7, RGB15(31, 8, 16));
+        gba_draw_text(fb, sx - 24, sy - 28, "DRINKS", GBA_WHITE, false);
     } else if (state == BEV_STATE_BURPING) {
         gba_draw_rect(fb, sx - 22, sy - 32, 44, 9, GBA_GOLD);
         gba_draw_rect(fb, sx - 21, sy - 31, 42, 7, GBA_BLACK);
-        gba_draw_text(fb, sx - 18, sy - 30, "* BURP! *", GBA_YELLOW, false);
+        gba_draw_text(fb, sx - 20, sy - 30, "BURP!", GBA_YELLOW, false);
     }
 }
 
@@ -996,10 +996,16 @@ static void draw_gba_carl(uint16_t *fb, int sx, int sy, const CarlEntity *carl) 
         /* Raised arms in victory: Cinderella Story! */
         gba_draw_rect(fb, sx - 5, sy - 19, 2, 6, RGB15(10, 13, 8));
         gba_draw_rect(fb, sx + 4, sy - 19, 2, 6, RGB15(10, 13, 8));
-        gba_draw_text(fb, sx - 20, sy - 30, "CINDERELLA!", GBA_YELLOW, true);
+        int tx = sx - 44;
+        if (tx < 2) tx = 2;
+        if (tx + 88 > GBA_SCREEN_W - 2) tx = GBA_SCREEN_W - 90;
+        gba_draw_text(fb, tx, sy - 30, "CINDERELLA!", GBA_YELLOW, true);
     } else if (carl->state == CARL_STATE_DYNAMITE_PLUNGE) {
         /* Pushing plunger */
-        gba_draw_text(fb, sx - 16, sy - 28, "DIE GOPHER!", GBA_RED, true);
+        int tx = sx - 44;
+        if (tx < 2) tx = 2;
+        if (tx + 88 > GBA_SCREEN_W - 2) tx = GBA_SCREEN_W - 90;
+        gba_draw_text(fb, tx, sy - 28, "DIE GOPHER!", GBA_RED, true);
     } else if (carl->state == CARL_STATE_HOSE_SPRAY) {
         /* Green Garden Hose & Brass Nozzle */
         gba_draw_rect(fb, sx + 4, sy - 10, 4, 3, RGB15(26, 22, 6)); /* Brass Nozzle */
@@ -1025,6 +1031,98 @@ static void draw_gba_tnt_box(uint16_t *fb, int sx, int sy, bool plunged) {
 /* ========================================================================= */
 /* MAIN GBA FRAME RENDERER                                                   */
 /* ========================================================================= */
+
+static bool gba_str_contains(const char *haystack, const char *needle) {
+    if (!haystack || !needle) return false;
+    for (int i = 0; haystack[i]; ++i) {
+        int j = 0;
+        while (needle[j] && haystack[i + j] == needle[j]) {
+            j++;
+        }
+        if (!needle[j]) return true;
+    }
+    return false;
+}
+
+/* Format and render punchy, fitted GBA banner text (max 14 chars to fit tray x=126..238) */
+static void gba_draw_banner_fitted(uint16_t *fb, int base_x, int base_y, const char *msg) {
+    if (!msg || !msg[0]) return;
+    const char *out = msg;
+    
+    if (gba_str_contains(msg, "BEVERAGE") || gba_str_contains(msg, "CART GIRL")) {
+        out = "CART GIRL!";
+    } else if (gba_str_contains(msg, "GLUG") || gba_str_contains(msg, "REFRESHING")) {
+        out = "REFRESHING!";
+    } else if (gba_str_contains(msg, "BURP") || gba_str_contains(msg, "BUUURRRRRP")) {
+        out = "* BURP! *";
+    } else if (gba_str_contains(msg, "DRIVES AWAY") || gba_str_contains(msg, "PLAY ON")) {
+        out = "PLAY ON!";
+    } else if (gba_str_contains(msg, "SUPER LEAP")) {
+        out = "SUPER LEAP!";
+    } else if (gba_str_contains(msg, "HIGH COLUMN") || gba_str_contains(msg, "LOB WEDGE")) {
+        out = "LW FOR COL";
+    } else if (gba_str_contains(msg, "SNEAK ON") || gba_str_contains(msg, "JUMP ON")) {
+        out = "SNEAK ON!";
+    } else if (gba_str_contains(msg, "PLAY HOLE")) {
+        out = "PLAY HOLE!";
+    } else if (gba_str_contains(msg, "BOOMSTICK")) {
+        out = "BOOMSTICK!";
+    } else if (gba_str_contains(msg, "ZOMBIE")) {
+        out = "ZOMBIE!";
+    } else if (gba_str_contains(msg, "RAVER")) {
+        out = "RAVER DANCE";
+    } else if (gba_str_contains(msg, "OFFICER") || gba_str_contains(msg, "PARTY OVER")) {
+        out = "PARTY OVER!";
+    } else if (gba_str_contains(msg, "CINDERELLA") || gba_str_contains(msg, "SPACKLER") || gba_str_contains(msg, "DYNAMITE")) {
+        out = "SPACKLER!";
+    } else if (gba_str_contains(msg, "LEVIATHAN") || gba_str_contains(msg, "LOCH NESS")) {
+        out = "SEA MONSTER!";
+    } else if (gba_str_contains(msg, "HOLE IN ONE") || gba_str_contains(msg, "HOLE-IN-ONE")) {
+        out = "HOLE IN 1!";
+    } else if (gba_str_contains(msg, "EAGLE")) {
+        out = "EAGLE!";
+    } else if (gba_str_contains(msg, "BIRDIE")) {
+        out = "BIRDIE!";
+    } else if (gba_str_contains(msg, "PAR!")) {
+        out = "* PAR! *";
+    } else if (gba_str_contains(msg, "HOLED OUT")) {
+        out = "HOLED OUT!";
+    } else if (gba_str_contains(msg, "LIPPED OUT")) {
+        out = "LIPPED OUT";
+    } else if (gba_str_contains(msg, "OUT OF BOUNDS")) {
+        out = "OB! +1 PEN";
+    } else if (gba_str_contains(msg, "WATER HAZARD") || gba_str_contains(msg, "SPLASH")) {
+        out = "WATER HAZARD";
+    } else if (gba_str_contains(msg, "SWEET SPOT") || gba_str_contains(msg, "CRACK")) {
+        out = "SWEET SHOT!";
+    } else if (gba_str_contains(msg, "HOOK")) {
+        out = "HOOK / DRAW";
+    } else if (gba_str_contains(msg, "SLICE")) {
+        out = "SLICE/FADE";
+    } else if (gba_str_contains(msg, "STRUCK TREE")) {
+        out = "TREE STRIKE!";
+    } else if (gba_str_contains(msg, "BOULDER")) {
+        out = "BOULDER HIT!";
+    } else if (gba_str_contains(msg, "GOPHER")) {
+        out = "GOPHER HOLE!";
+    } else if (gba_str_contains(msg, "RANGER")) {
+        out = "RANGER!";
+    }
+    
+    char buf[16];
+    int len = 0;
+    while (out[len] && len < 14) {
+        buf[len] = out[len];
+        len++;
+    }
+    buf[len] = '\0';
+    
+    /* Center text within 112-pixel right tray (base_x = 126..238) */
+    int text_w = len * 8;
+    int draw_x = base_x + (112 - text_w) / 2;
+    if (draw_x < base_x) draw_x = base_x;
+    gba_draw_text(fb, draw_x, base_y, buf, GBA_YELLOW, true);
+}
 
 void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     uint16_t *fb = gba_get_backbuffer();
@@ -1407,10 +1505,18 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         uint16_t reticle_col;
         if (grc->pin_magnet_locked) {
             reticle_col = (grc->tick_count & 4) ? GBA_GOLD : RGB15(31, 31, 10);
-            gba_draw_text(fb, cx - 24, cy - 20, "* PIN LOCK *", GBA_GOLD, true);
+            int tx = cx - 32;
+            if (tx < 2) tx = 2;
+            if (tx + 64 > GBA_SCREEN_W - 2) tx = GBA_SCREEN_W - 66;
+            int ty = (cy >= 36) ? (cy - 20) : (cy + 14);
+            gba_draw_text(fb, tx, ty, "PIN LOCK", GBA_GOLD, true);
         } else if (golf_is_high_column(gs, grc->cross_gx, grc->cross_gy)) {
             reticle_col = GBA_RED;
-            gba_draw_text(fb, cx - 28, cy - 20, "* HIGH COLUMN *", GBA_RED, true);
+            int tx = cx - 28;
+            if (tx < 2) tx = 2;
+            if (tx + 56 > GBA_SCREEN_W - 2) tx = GBA_SCREEN_W - 58;
+            int ty = (cy >= 36) ? (cy - 20) : (cy + 14);
+            gba_draw_text(fb, tx, ty, "LW ONLY", GBA_RED, true);
         } else {
             reticle_col = (grc->tick_count & 8) ? GBA_YELLOW : GBA_WHITE;
         }
@@ -1491,6 +1597,9 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         int pill_w = (p_idx + 3) * 8 + 8;
         int pill_x = cx - (pill_w / 2);
         int pill_y = cy - 24;
+        if (pill_x < 2) pill_x = 2;
+        if (pill_x + pill_w > GBA_SCREEN_W - 2) pill_x = GBA_SCREEN_W - 2 - pill_w;
+        if (pill_y < 15) pill_y = 15;
         gba_draw_rect(fb, pill_x - 1, pill_y - 1, pill_w + 2, 11, GBA_GOLD);
         gba_draw_rect(fb, pill_x, pill_y, pill_w, 9, RGB15(2, 4, 10));
         gba_draw_text(fb, pill_x + 3, pill_y + 1, pill_str, GBA_WHITE, false);
@@ -1520,9 +1629,9 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     gba_draw_rect(fb, 0, 0, GBA_SCREEN_W, 13, RGB15(2, 4, 10));
     const ClubData *cd = golf_get_club_data(gs->current_club);
     
-    /* Header Mode / Hole Info */
+    /* Header Mode / Hole Info: x = 4..44 */
     if (gs->is_sneak_on) {
-        gba_draw_text(fb, 4, 3, "JUMP ON", GBA_GOLD, false);
+        gba_draw_text(fb, 4, 3, "JUMP", GBA_GOLD, false);
     } else {
         char h_str[10];
         h_str[0] = 'H'; h_str[1] = '1'; h_str[2] = ' ';
@@ -1530,10 +1639,10 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         gba_draw_text(fb, 4, 3, h_str, GBA_WHITE, false);
     }
     
-    /* Club Short Name (All 14 clubs: DR, 1W..3W, 4I..9I, PW, SW, LW, PT) */
-    gba_draw_text(fb, 52, 3, cd->short_name, GBA_GOLD, false);
+    /* Club Short Name: x = 46..69 */
+    gba_draw_text(fb, 46, 3, cd->short_name, GBA_GOLD, false);
     
-    /* Distance to Pin */
+    /* Distance to Pin: x = 76..115 */
     int pin_dist = (int)(fixed_sqrt(FMUL(gs->ball.x - TO_FIXED(gs->pin_gx), gs->ball.x - TO_FIXED(gs->pin_gx)) +
                                     FMUL(gs->ball.y - TO_FIXED(gs->pin_gy), gs->ball.y - TO_FIXED(gs->pin_gy))) / 65536 * YARDS_PER_TILE);
     if (pin_dist < 1) pin_dist = 1;
@@ -1550,23 +1659,24 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         dist_str[d_idx++] = '0' + (pin_dist % 10);
     }
     dist_str[d_idx++] = 'Y'; dist_str[d_idx++] = 'D'; dist_str[d_idx] = '\0';
-    gba_draw_text(fb, 82, 3, dist_str, GBA_WHITE, false);
+    gba_draw_text(fb, 76, 3, dist_str, GBA_WHITE, false);
     
-    /* Wind */
-    gba_draw_text(fb, 126, 3, "W12M", GBA_SKY_BLUE, false);
+    /* Wind: x = 120..151 */
+    gba_draw_text(fb, 120, 3, "W12M", GBA_SKY_BLUE, false);
     
-    /* Corner Status Box (LOCKED when pin dropped, or [A]LOCK prompt) */
+    /* Corner Status Box: x = 166..237 (width 72 px) */
     if (grc->aim_locked && gs->ball.state == BALL_IDLE && gs->golfer.state != GOLFER_STATE_WALKING) {
         bool pulse = (grc->tick_count & 8) != 0;
         uint16_t border_col = pulse ? GBA_YELLOW : GBA_GOLD;
         uint16_t bg_col = pulse ? RGB15(4, 20, 6) : RGB15(2, 12, 4);
         uint16_t text_col = pulse ? GBA_WHITE : GBA_YELLOW;
-        gba_draw_rect(fb, 168, 1, 68, 11, border_col);
-        gba_draw_rect(fb, 169, 2, 66, 9, bg_col);
+        gba_draw_rect(fb, 166, 1, 72, 11, border_col);
+        gba_draw_rect(fb, 167, 2, 70, 9, bg_col);
         gba_draw_text(fb, 170, 3, "*LOCKED*", text_col, false);
     } else if (gs->ball.state == BALL_IDLE && gs->golfer.state != GOLFER_STATE_WALKING) {
-        gba_draw_rect(fb, 170, 1, 66, 11, RGB15(6, 10, 16));
-        gba_draw_text(fb, 171, 3, "[A] LOCK", GBA_YELLOW, false);
+        gba_draw_rect(fb, 166, 1, 72, 11, RGB15(6, 10, 16));
+        gba_draw_rect(fb, 167, 2, 70, 9, RGB15(2, 4, 8));
+        gba_draw_text(fb, 170, 3, "[A] LOCK", GBA_YELLOW, false);
     }
     
     /* 7. Bottom Bar: Full-Width Modern Arcade Golf Swing Bar & HUD (240x26) */
@@ -1583,16 +1693,15 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         club_col = GBA_SAND_YELLOW;
     }
     
-    /* Left: Club Name & Nominal Distance formatted to exact 14 chars: "[L] XX YYYY [R]" */
-    char club_label[20];
+    /* Left: Club Name & Nominal Distance formatted to exact 15 chars: "[L] DR 260Y [R]" */
+    char club_label[18];
     int cl_idx = 0;
     club_label[cl_idx++] = '[';
     club_label[cl_idx++] = 'L';
     club_label[cl_idx++] = ']';
     club_label[cl_idx++] = ' ';
-    const char *sn = cd->short_name;
-    while (*sn && cl_idx < 7) club_label[cl_idx++] = *sn++;
-    while (cl_idx < 7) club_label[cl_idx++] = ' ';
+    club_label[cl_idx++] = cd->short_name[0];
+    club_label[cl_idx++] = cd->short_name[1] ? cd->short_name[1] : ' ';
     club_label[cl_idx++] = ' ';
     
     int nom_y = cd->nominal_yards;
@@ -1615,33 +1724,33 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     club_label[cl_idx++] = 'R';
     club_label[cl_idx++] = ']';
     club_label[cl_idx] = '\0';
-    gba_draw_text(fb, 4, 136, club_label, club_col, false);
+    gba_draw_text(fb, 2, 136, club_label, club_col, false);
     
-    /* Right: Action Prompt or Status (cleanly placed between x=126 and x=236) */
+    /* Right: Action Prompt or Status (cleanly placed between x=126 and x=238) */
     if (gs->banner_timer > 0 && gs->banner_text[0]) {
-        gba_draw_text(fb, 126, 136, gs->banner_text, GBA_YELLOW, true);
+        gba_draw_banner_fitted(fb, 126, 136, gs->banner_text);
     } else if (gs->ball.state == BALL_IN_FLIGHT || gs->ball.state == BALL_BOUNCING) {
-        gba_draw_text(fb, 138, 136, "IN FLIGHT...", GBA_GOLD, false);
+        gba_draw_text(fb, 134, 136, "IN FLIGHT...", GBA_GOLD, false);
     } else if (gs->ball.state == BALL_ROLLING) {
-        gba_draw_text(fb, 150, 136, "ROLLING...", GBA_WHITE, false);
+        gba_draw_text(fb, 142, 136, "ROLLING...", GBA_WHITE, false);
     } else if (gs->golfer.state == GOLFER_STATE_DRINKING || gs->bev_cart.state == BEV_STATE_BURPING) {
-        gba_draw_text(fb, 134, 136, "TAKING DRINK", GBA_YELLOW, true);
+        gba_draw_text(fb, 138, 136, "DRINKING...", GBA_YELLOW, true);
     } else if (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
         bool blink = (grc->tick_count & 8) != 0;
-        gba_draw_text(fb, 130, 136, blink ? "[A] SKIP WALK" : "WALKING...", GBA_YELLOW, false);
+        gba_draw_text(fb, 134, 136, blink ? "[A] SKIP" : "WALKING...", GBA_YELLOW, false);
     } else if (grc->aim_locked) {
         if (grc->flag_linger_timer > 0) {
-            gba_draw_text(fb, 136, 136, "* PIN PLANTED *", GBA_GOLD, true);
+            gba_draw_text(fb, 136, 136, "* PLANTED *", GBA_GOLD, true);
         } else {
             bool blink = (grc->tick_count & 8) != 0;
-            gba_draw_text(fb, 136, 136, blink ? "[A] SHOOT NOW" : "[B] TO RE-AIM", GBA_YELLOW, true);
+            gba_draw_text(fb, 134, 136, blink ? "[A] SHOOT" : "[B] RE-AIM", GBA_YELLOW, true);
         }
     } else if (grc->pin_magnet_locked) {
-        gba_draw_text(fb, 132, 136, "[A] LOCK TO PIN", GBA_GOLD, true);
+        gba_draw_text(fb, 130, 136, "[A] PIN LOCK", GBA_GOLD, true);
     } else if (golf_is_high_column(gs, grc->cross_gx, grc->cross_gy) && gs->current_club != CLUB_LW) {
-        gba_draw_text(fb, 126, 136, "LW REQUIRED", GBA_RED, true);
+        gba_draw_text(fb, 134, 136, "LW REQUIRED", GBA_RED, true);
     } else {
-        gba_draw_text(fb, 138, 136, "[A] LOCK PIN", GBA_WHITE, false);
+        gba_draw_text(fb, 136, 136, "[A] LOCK PIN", GBA_WHITE, false);
     }
     
     /* Row 2: FULL-WIDTH ARCADE SWING BAR / POWER METER TRACK (y = 146..157) */
@@ -2066,26 +2175,26 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
     int b0_x = 16, b0_y = 114, b0_w = 98, b0_h = 18;
     int b1_x = 126, b1_y = 114, b1_w = 98, b1_h = 18;
 
-    /* Button 0: JUMP ON */
+    /* Button 0: JUMP ON (11 chars = 88 px, centered in 98 px: offset +5) */
     if (menu_choice == 0) {
         gba_draw_rect(fb, b0_x - 1, b0_y - 1, b0_w + 2, b0_h + 2, GBA_GOLD);
         gba_draw_rect(fb, b0_x, b0_y, b0_w, b0_h, RGB15(3, 14, 5));
-        gba_draw_text(fb, b0_x + 9, b0_y + 5, "> JUMP ON <", GBA_GOLD, true);
+        gba_draw_text(fb, b0_x + 5, b0_y + 5, "> JUMP ON <", GBA_GOLD, true);
     } else {
         gba_draw_rect(fb, b0_x - 1, b0_y - 1, b0_w + 2, b0_h + 2, RGB15(8, 10, 12));
         gba_draw_rect(fb, b0_x, b0_y, b0_w, b0_h, RGB15(2, 3, 5));
-        gba_draw_text(fb, b0_x + 9, b0_y + 5, "  JUMP ON  ", RGB15(15, 17, 19), false);
+        gba_draw_text(fb, b0_x + 5, b0_y + 5, "  JUMP ON  ", RGB15(15, 17, 19), false);
     }
 
-    /* Button 1: PLAY HOLE */
+    /* Button 1: PLAY HOLE (11 chars = 88 px, centered in 98 px: offset +5) */
     if (menu_choice == 1) {
         gba_draw_rect(fb, b1_x - 1, b1_y - 1, b1_w + 2, b1_h + 2, GBA_GOLD);
         gba_draw_rect(fb, b1_x, b1_y, b1_w, b1_h, RGB15(3, 14, 5));
-        gba_draw_text(fb, b1_x + 5, b1_y + 5, "> PLAY HOLE <", GBA_GOLD, true);
+        gba_draw_text(fb, b1_x + 5, b1_y + 5, ">PLAY HOLE<", GBA_GOLD, true);
     } else {
         gba_draw_rect(fb, b1_x - 1, b1_y - 1, b1_w + 2, b1_h + 2, RGB15(8, 10, 12));
         gba_draw_rect(fb, b1_x, b1_y, b1_w, b1_h, RGB15(2, 3, 5));
-        gba_draw_text(fb, b1_x + 5, b1_y + 5, "  PLAY HOLE  ", RGB15(15, 17, 19), false);
+        gba_draw_text(fb, b1_x + 5, b1_y + 5, " PLAY HOLE ", RGB15(15, 17, 19), false);
     }
 
     /* Mode Info */

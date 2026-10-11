@@ -182,7 +182,31 @@ int main(void) {
     grc.aim_locked = false;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_look_mode.bmp", 3);
-    printf("[9/9] Saved screenshot_gba_look_mode.bmp (720x480 GBA Look Mode Compatibility)\n");
+    printf("[9/11] Saved screenshot_gba_look_mode.bmp (720x480 GBA Look Mode Compatibility)\n");
+
+    /* 9. GBA Beverage Cart & Cart Girl Delivery Encounter */
+    gs.theme = THEME_BUSHWOOD;
+    gs.is_sneak_on = false;
+    gs.ranger.active = false;
+    grc.look_mode = false;
+    gs.bev_cart.active = true;
+    gs.bev_cart.x = gs.ball.x - TO_FIXED(1);
+    gs.bev_cart.y = gs.ball.y + TO_FIXED(1);
+    gs.bev_cart.state = BEV_STATE_APPROACHING_PLAYER;
+    gs.golfer.state = GOLFER_STATE_DRINKING;
+    grc.cam_x = (GBA_SCREEN_W / 2) - b_sx - GBA_TILE_HALF_W;
+    grc.cam_y = (GBA_SCREEN_H / 2) - b_sy - GBA_TILE_HALF_H;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_bev_cart.bmp", 3);
+    printf("[10/11] Saved screenshot_gba_bev_cart.bmp (720x480 GBA Beverage Cart & Cart Girl Encounter)\n");
+
+    /* 10. GBA Column Lob Wedge Target & Jumping Golfer */
+    gs.golfer.state = GOLFER_STATE_JUMPING;
+    gs.golfer.walk_anim_frame = 6;
+    gs.bev_cart.active = false;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_column_jump.bmp", 3);
+    printf("[11/11] Saved screenshot_gba_column_jump.bmp (720x480 GBA Column Jump & Lob Wedge Target)\n");
 
     printf("=== ALL GBA VERIFICATION TESTS PASSED ===\n");
     return 0;

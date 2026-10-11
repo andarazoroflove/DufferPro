@@ -40,7 +40,18 @@
 #define REG_WAITCNT     ((volatile uint16_t*)0x04000204)
 #define REG_IME         ((volatile uint16_t*)0x04000208)
 
-
+/* GBA Timer & DMA Registers */
+#define REG_TM0CNT_L    ((volatile uint16_t*)0x04000100)
+#define REG_TM0CNT_H    ((volatile uint16_t*)0x04000102)
+#define REG_DMA1SAD     ((volatile uint32_t*)0x040000BC)
+#define REG_DMA1DAD     ((volatile uint32_t*)0x040000C0)
+#define REG_DMA1CNT_L   ((volatile uint16_t*)0x040000C4)
+#define REG_DMA1CNT_H   ((volatile uint16_t*)0x040000C6)
+#define REG_DMA3SAD     ((volatile uint32_t*)0x040000D4)
+#define REG_DMA3DAD     ((volatile uint32_t*)0x040000D8)
+#define REG_DMA3CNT_L   ((volatile uint16_t*)0x040000DC)
+#define REG_DMA3CNT_H   ((volatile uint16_t*)0x040000DE)
+#define REG_FIFO_A      ((volatile uint32_t*)0x040000A0)
 
 /* GBA Sound Registers */
 #define REG_SOUND1CNT_L ((volatile uint16_t*)0x04000060)
@@ -92,6 +103,9 @@ void gba_sfx_gopher_gulp(void);
 void gba_sfx_carl_explosion(void);
 void gba_sfx_carl_hose(void);
 void gba_sfx_whistle(void);
+void gba_sfx_burp(void);
+void gba_sfx_boomstick(void);
+void gba_sfx_play_ambient(int ambient_type);
 void gba_audio_tick_ambient(void);
 void gba_audio_tick_splash(int tick);
 void gba_audio_stop_music(void);

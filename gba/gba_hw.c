@@ -1,4 +1,5 @@
 #include "gba_hw.h"
+#include "gba_audio.h"
 
 /* Offscreen Backbuffer in 256KB EWRAM (76,800 bytes) - strictly 4-byte aligned */
 __attribute__((aligned(4))) static uint16_t s_backbuffer[GBA_SCREEN_W * GBA_SCREEN_H];
@@ -14,15 +15,21 @@ void gba_hw_init(void) {
     *REG_IE = 0;
     *REG_IF = 0xFFFF;
 
-    /* 2. Set Video Mode 3 (240x160 15-bit color bitmap) + BG2 layer enable */
+    /* 2. Configure ROM waitstates and ENABLE HARDWARE PREFETCH BUFFER (0x4314: 3-1 cycle ROM + prefetch) */
+    *REG_WAITCNT = 0x4314;
+
+    /* 3. Set Video Mode 3 (240x160 15-bit color bitmap) + BG2 layer enable */
     *REG_DISPCNT = 0x0403;
 
-    /* 3. Initialize Sound Hardware (Master Enable + 100% Volume on all PSG channels) */
+    /* 4. Initialize Sound Hardware (Master Enable + 100% Volume on all PSG channels) */
     *REG_SOUNDCNT_X = 0x0080;
     *REG_SOUNDCNT_L = 0xFF77;
     *REG_SOUNDCNT_H = 0x0002;
 
-    /* 4. Clear VRAM and Backbuffer safely with native 16-bit stores */
+    /* 5. Initialize DirectSound A 16 kHz DMA Audio Engine */
+    gba_audio_init();
+
+    /* 6. Clear VRAM and Backbuffer safely with native 16-bit stores */
     for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H); ++i) {
         VRAM[i] = 0;
         s_backbuffer[i] = 0;
@@ -38,20 +45,15 @@ void gba_vsync(void) {
 void gba_flip(void) {
     gba_vsync();
 
-    /* Fast 32-bit copy from EWRAM backbuffer to VRAM */
-    const uint32_t *src = (const uint32_t*)s_backbuffer;
-    volatile uint32_t *dst = (volatile uint32_t*)VRAM;
-    
-    for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H) / 2; i += 8) {
-        dst[i + 0] = src[i + 0];
-        dst[i + 1] = src[i + 1];
-        dst[i + 2] = src[i + 2];
-        dst[i + 3] = src[i + 3];
-        dst[i + 4] = src[i + 4];
-        dst[i + 5] = src[i + 5];
-        dst[i + 6] = src[i + 6];
-        dst[i + 7] = src[i + 7];
-    }
+    /* Hardware DMA3 Transfer: 19,200 32-bit words at silicon bus speed */
+    *REG_DMA3CNT_H = 0; /* Clear previous DMA */
+    *REG_DMA3SAD = (uint32_t)s_backbuffer;
+    *REG_DMA3DAD = (uint32_t)VRAM;
+    *REG_DMA3CNT_L = (GBA_SCREEN_W * GBA_SCREEN_H) / 2;
+    *REG_DMA3CNT_H = 0x8400; /* Enable DMA3, 32-bit word transfer */
+
+    /* Update DirectSound multi-channel audio mixer buffer for this frame */
+    gba_audio_update();
 }
 
 uint16_t* gba_get_backbuffer(void) {
@@ -79,26 +81,30 @@ bool gba_key_pressed(uint16_t key) {
 
 void gba_sfx_swing_hit(int club_type) {
     if (club_type == 0) {
-        /* Driver: Dual-channel crack + explosive sub-bass cavity punch */
-        *REG_SOUND4CNT_L = 0xF100; /* Noise Channel 4: Max volume titanium face crack */
+        /* Driver: DirectSound 16kHz PCM titanium crack + PSG sub-bass punch */
+        gba_audio_play_sfx(GBA_SFX_DRIVER, 256);
+        *REG_SOUND4CNT_L = 0xF100;
         *REG_SOUND4CNT_H = 0x8011;
-        *REG_SOUND1CNT_L = 0x003A; /* Sweep down, time 3, shift 2 */
-        *REG_SOUND1CNT_H = 0xF280; /* 50% duty, vol 15, punch decay */
-        *REG_SOUND1CNT_X = 0x8640; /* Low punch dropping down */
+        *REG_SOUND1CNT_L = 0x003A;
+        *REG_SOUND1CNT_H = 0xF280;
+        *REG_SOUND1CNT_X = 0x8640;
     } else if (club_type == 4) {
-        /* Putter: Soft click tap on noise + gentle chime on Channel 2 */
+        /* Putter: DirectSound 16kHz PCM hollow click + gentle chime */
+        gba_audio_play_sfx(GBA_SFX_PUTTER, 220);
         *REG_SOUND4CNT_L = 0x6100;
         *REG_SOUND4CNT_H = 0x8045;
         *REG_SOUND2CNT_L = 0xB180;
         *REG_SOUND2CNT_H = 0x8540;
     } else if (club_type == 2) {
-        /* Wedge: High face groove zip on Channel 2 + turf divot slice on Channel 4 */
+        /* Wedge: DirectSound 16kHz PCM groove zip + turf divot slice */
+        gba_audio_play_sfx(GBA_SFX_WEDGE, 240);
         *REG_SOUND4CNT_L = 0xC100;
         *REG_SOUND4CNT_H = 0x8023;
         *REG_SOUND2CNT_L = 0xD180;
         *REG_SOUND2CNT_H = 0x8750;
     } else {
-        /* Iron: Forged steel ping on Channel 2 + solid turf shear on Channel 4 */
+        /* Iron: DirectSound 16kHz PCM forged steel ping + turf shear */
+        gba_audio_play_sfx(GBA_SFX_IRON, 250);
         *REG_SOUND4CNT_L = 0xD100;
         *REG_SOUND4CNT_H = 0x8014;
         *REG_SOUND2CNT_L = 0xE180;
@@ -107,60 +113,65 @@ void gba_sfx_swing_hit(int club_type) {
 }
 
 void gba_sfx_ball_landing(void) {
-    /* Initial Ball Impact on Turf: Heavy downward acoustic thud + ground rustle */
-    *REG_SOUND1CNT_L = 0x002A; /* Downward sweep (bit 3=1), time 2, shifts 2 */
-    *REG_SOUND1CNT_H = 0xE180; /* 50% duty, vol 14, quick punch decay */
-    *REG_SOUND1CNT_X = 0x8460; /* Low thump: ~250 Hz down to 80 Hz */
-    *REG_SOUND4CNT_L = 0x9100; /* Low-frequency turf contact rustle */
+    /* DirectSound 16kHz PCM heavy turf impact + PSG low thump */
+    gba_audio_play_sfx(GBA_SFX_BALL_THUD, 256);
+    *REG_SOUND1CNT_L = 0x002A;
+    *REG_SOUND1CNT_H = 0xE180;
+    *REG_SOUND1CNT_X = 0x8460;
+    *REG_SOUND4CNT_L = 0x9100;
     *REG_SOUND4CNT_H = 0x8052;
 }
 
 void gba_sfx_pin_ding(void) {
-    /* Channel 2: High crystal bell ding on placing aim flag (C7 chime: ~2093 Hz) */
-    *REG_SOUND2CNT_L = 0xE280; /* 50% duty, vol 14, decay 2 */
-    *REG_SOUND2CNT_H = 0x8772; /* C7 crystal bell frequency */
+    /* DirectSound 16kHz PCM crystal bell chime + Channel 2 ding */
+    gba_audio_play_sfx(GBA_SFX_PIN_DING, 256);
+    *REG_SOUND2CNT_L = 0xE280;
+    *REG_SOUND2CNT_H = 0x8772;
 }
 
 void gba_sfx_bounce(void) {
     /* Secondary hop / UI bounce on Channel 1 */
-    *REG_SOUND1CNT_L = 0x001A; /* Sweep down, time 1 */
-    *REG_SOUND1CNT_H = 0xB180; /* 50% duty, vol 11, quick decay */
-    *REG_SOUND1CNT_X = 0x8540; /* ~700 Hz */
+    *REG_SOUND1CNT_L = 0x001A;
+    *REG_SOUND1CNT_H = 0xB180;
+    *REG_SOUND1CNT_X = 0x8540;
 }
 
 void gba_sfx_cup_sink(void) {
-    /* Channel 2: Two resonant chime tones dropping into cup */
+    /* DirectSound 16kHz PCM double cup drop rattle + Channel 2 tone */
+    gba_audio_play_sfx(GBA_SFX_CUP_SINK, 256);
     *REG_SOUND2CNT_L = 0xB200;
-    *REG_SOUND2CNT_H = 0x8680; /* High tone */
+    *REG_SOUND2CNT_H = 0x8680;
 }
 
 void gba_sfx_water_splash(void) {
-    /* Channel 4: White noise water splash */
-    *REG_SOUND4CNT_L = 0xE300; /* High volume, slower decay */
-    *REG_SOUND4CNT_H = 0x8052; /* Rumbling noise */
+    /* DirectSound 16kHz PCM whitewater splash + Channel 4 noise */
+    gba_audio_play_sfx(GBA_SFX_WATER_SPLASH, 256);
+    *REG_SOUND4CNT_L = 0xE300;
+    *REG_SOUND4CNT_H = 0x8052;
 }
 
 void gba_sfx_gopher_chuckle(void) {
-    /* Channel 1: High-pitched Caddyshack chirp */
+    /* DirectSound 16kHz PCM staccato laughter + Channel 1 Caddyshack chirp */
+    gba_audio_play_sfx(GBA_SFX_GOPHER_CHUCKLE, 240);
     *REG_SOUND1CNT_L = 0x0011;
     *REG_SOUND1CNT_H = 0xC100;
-    *REG_SOUND1CNT_X = 0x8760; /* ~1800 Hz chirp */
+    *REG_SOUND1CNT_X = 0x8760;
 }
 
 void gba_sfx_gopher_gulp(void) {
-    /* Channel 1: Comical subterranean suction drop */
-    *REG_SOUND1CNT_L = 0x0074; /* Steep downward sweep */
+    /* DirectSound 16kHz PCM subterranean drop + Channel 1 sweep */
+    gba_audio_play_sfx(GBA_SFX_GOPHER_GULP, 240);
+    *REG_SOUND1CNT_L = 0x0074;
     *REG_SOUND1CNT_H = 0xF200;
     *REG_SOUND1CNT_X = 0x8600;
 }
 
 void gba_sfx_carl_explosion(void) {
-    /* Carl Spackler Massive TNT Explosion */
-    /* Channel 4: Detonation rumble */
-    *REG_SOUND4CNT_L = 0xF500; /* Max volume, long rumble */
-    *REG_SOUND4CNT_H = 0x8071; /* Heavy low-frequency noise */
-    /* Channel 1: Sub-bass boom drop */
-    *REG_SOUND1CNT_L = 0x0077; /* Deep sweep */
+    /* DirectSound 16kHz PCM massive detonation + Channel 4 rumble */
+    gba_audio_play_sfx(GBA_SFX_CARL_EXPLOSION, 256);
+    *REG_SOUND4CNT_L = 0xF500;
+    *REG_SOUND4CNT_H = 0x8071;
+    *REG_SOUND1CNT_L = 0x0077;
     *REG_SOUND1CNT_H = 0xF400;
     *REG_SOUND1CNT_X = 0x8180;
 }
@@ -168,13 +179,34 @@ void gba_sfx_carl_explosion(void) {
 void gba_sfx_carl_hose(void) {
     /* Carl High-Pressure Water Hose Spray */
     *REG_SOUND4CNT_L = 0xB100;
-    *REG_SOUND4CNT_H = 0x8043; /* Continuous turbulent hiss */
+    *REG_SOUND4CNT_H = 0x8043;
 }
 
 void gba_sfx_whistle(void) {
-    /* Beverage Girl Whistle on Channel 2 */
+    /* DirectSound 16kHz PCM two-tone whistle + Channel 2 clear whistle */
+    gba_audio_play_sfx(GBA_SFX_BEV_WHISTLE, 250);
     *REG_SOUND2CNT_L = 0xA200;
-    *REG_SOUND2CNT_H = 0x8740; /* High clear whistle */
+    *REG_SOUND2CNT_H = 0x8740;
+}
+
+void gba_sfx_burp(void) {
+    /* DirectSound 16kHz PCM guttural vocal fry burp */
+    gba_audio_play_sfx(GBA_SFX_GOLFER_BURP, 256);
+}
+
+void gba_sfx_boomstick(void) {
+    /* DirectSound 16kHz PCM Ash shotgun blast & Groovy vocal resonance */
+    gba_audio_play_sfx(GBA_SFX_BOOMSTICK, 256);
+}
+
+void gba_sfx_play_ambient(int ambient_type) {
+    if (ambient_type == 1) {
+        gba_audio_play_ambient(GBA_SFX_AMBIENT_WIND, 130);
+    } else if (ambient_type == 2) {
+        gba_audio_play_ambient(GBA_SFX_AMBIENT_WATER, 130);
+    } else {
+        gba_audio_play_ambient(GBA_SFX_NONE, 0);
+    }
 }
 
 /* ========================================================================= */

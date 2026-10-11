@@ -69,13 +69,13 @@ endif
 gba: $(GBAFIX)
 ifeq ($(OS),Windows_NT)
 	@if not exist build mkdir build
-	"$(ARM_GCC)" -std=c99 -O2 -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -fno-builtin -fno-common -fno-exceptions -fno-asynchronous-unwind-tables -fno-unwind-tables -nostdlib -Isrc -Igba gba/crt0.s gba/gba_hw.c gba/gba_render.c gba/main_gba.c src/golf_core.c -T gba/gba.ld -o build/duffer_pro.elf -lgcc
+	"$(ARM_GCC)" -std=c99 -O2 -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -fno-builtin -fno-common -fno-exceptions -fno-asynchronous-unwind-tables -fno-unwind-tables -nostdlib -Isrc -Igba gba/crt0.s gba/gba_hw.c gba/gba_audio.c gba/gba_render.c gba/main_gba.c src/golf_core.c -T gba/gba.ld -o build/duffer_pro.elf -lgcc
 	"$(ARM_OBJCOPY)" -O binary -S build/duffer_pro.elf build/duffer_pro.gba
 	$(GBAFIX) build/duffer_pro.gba -p -t"DUFFER PRO" -cADFP -m01 -r0
 	@echo Successfully built GBA ROM: build/duffer_pro.gba
 else
 	@mkdir -p build
-	"$(ARM_GCC)" -std=c99 -O2 -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -fno-builtin -fno-common -fno-exceptions -fno-asynchronous-unwind-tables -fno-unwind-tables -nostdlib -Isrc -Igba gba/crt0.s gba/gba_hw.c gba/gba_render.c gba/main_gba.c src/golf_core.c -T gba/gba.ld -o build/duffer_pro.elf -lgcc
+	"$(ARM_GCC)" -std=c99 -O2 -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -fno-builtin -fno-common -fno-exceptions -fno-asynchronous-unwind-tables -fno-unwind-tables -nostdlib -Isrc -Igba gba/crt0.s gba/gba_hw.c gba/gba_audio.c gba/gba_render.c gba/main_gba.c src/golf_core.c -T gba/gba.ld -o build/duffer_pro.elf -lgcc
 	"$(ARM_OBJCOPY)" -O binary -S build/duffer_pro.elf build/duffer_pro.gba
 	$(GBAFIX) build/duffer_pro.gba -p -t"DUFFER PRO" -cADFP -m01 -r0
 	@echo Successfully built GBA ROM: build/duffer_pro.gba

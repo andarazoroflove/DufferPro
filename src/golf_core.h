@@ -12,9 +12,9 @@
  * - Rollover: When reaching x.x.99, increment middle step (e.g., 0.7.99 -> 0.8.0)
  * - Formal Releases: Published strictly on multiples of 5 (0.7.5, 0.7.10, 0.7.15...)
  */
-#define DUFFER_VERSION      "0.710-noonan"
-#define DUFFER_VERSION_NAME "0.710-noonan"
-#define DUFFER_SEMVER       "0.7.10"
+#define DUFFER_VERSION      "0.711-noonan"
+#define DUFFER_VERSION_NAME "0.711-noonan"
+#define DUFFER_SEMVER       "0.7.11"
 
 /* Grid Dimensions */
 #define GRID_W              32

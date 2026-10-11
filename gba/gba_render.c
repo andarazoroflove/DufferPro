@@ -203,6 +203,10 @@ static void draw_gba_diamond(uint16_t *fb, int sx, int sy, SurfaceType surf, int
         }
     }
 
+    /* Precalculate animation phase shifts outside scanline loops */
+    int anim_div6 = anim_t / 6;
+    int anim_div8 = anim_t >> 3;
+
     /* Plot 32x16 isometric diamond scanlines */
     for (int dy = 0; dy < GBA_TILE_H; ++dy) {
         int py = sy + dy;
@@ -219,10 +223,10 @@ static void draw_gba_diamond(uint16_t *fb, int sx, int sy, SurfaceType surf, int
             uint16_t c = base_col;
             if (surf == SURF_WATER) {
                 if (theme == THEME_LA_PLAYA) {
-                    if (dx >= span / 2 - 2 && dx <= span / 2 + 2 && ((dy + (anim_t / 6)) & 2) == 0) {
+                    if (dx >= span / 2 - 2 && dx <= span / 2 + 2 && ((dy + anim_div6) & 2) == 0) {
                         c = alt_col; /* Whitewater rapids froth */
                     }
-                } else if (dx == span / 2 && ((dy + (anim_t / 8)) & 3) == 0) {
+                } else if (dx == span / 2 && ((dy + anim_div8) & 3) == 0) {
                     c = alt_col; /* Water shimmer */
                 }
             } else if (surf == SURF_SAND && ((dx ^ dy) & 3) == 0) {
@@ -278,6 +282,8 @@ typedef enum {
     GBA_ENT_GOPHER,
     GBA_ENT_CARL,
     GBA_ENT_TNT_BOX,
+    GBA_ENT_TUMBLEWEED,
+    GBA_ENT_SEAMONSTER,
     GBA_ENT_CLUBHOUSE
 } GbaEntType;
 
@@ -302,16 +308,16 @@ static void add_drawable(GbaEntType type, int sx, int sy, int sort_y, int data) 
     s_drawable_count++;
 }
 
-/* Simple bubble sort for drawables */
+/* Fast O(N) insertion sort for nearly-sorted isometric drawables */
 static void sort_drawables(void) {
-    for (int i = 0; i < s_drawable_count - 1; ++i) {
-        for (int j = i + 1; j < s_drawable_count; ++j) {
-            if (s_drawables[i].sort_y > s_drawables[j].sort_y) {
-                GbaDrawable tmp = s_drawables[i];
-                s_drawables[i] = s_drawables[j];
-                s_drawables[j] = tmp;
-            }
+    for (int i = 1; i < s_drawable_count; ++i) {
+        GbaDrawable key = s_drawables[i];
+        int j = i - 1;
+        while (j >= 0 && s_drawables[j].sort_y > key.sort_y) {
+            s_drawables[j + 1] = s_drawables[j];
+            j--;
         }
+        s_drawables[j + 1] = key;
     }
 }
 
@@ -696,6 +702,98 @@ static void draw_gba_ranger_cart(uint16_t *fb, int sx, int sy, int state, int an
     }
 }
 
+/* 2.8 Beverage Cart & Cart Girl */
+static void draw_gba_bev_cart(uint16_t *fb, int sx, int sy, int state, int anim_t) {
+    /* Shadow */
+    for (int dx = -10; dx <= 10; ++dx) {
+        int px = sx + dx;
+        if (px >= 0 && px < GBA_SCREEN_W && sy >= 0 && sy < GBA_SCREEN_H) {
+            fb[sy * GBA_SCREEN_W + px] = GBA_BLACK;
+        }
+    }
+    /* 4 Black Rubber Wheels with Chrome Hubcaps */
+    gba_draw_rect(fb, sx - 9, sy - 3, 4, 4, GBA_BLACK);
+    gba_draw_rect(fb, sx + 5, sy - 3, 4, 4, GBA_BLACK);
+    gba_draw_rect(fb, sx - 8, sy - 2, 2, 2, GBA_WHITE);
+    gba_draw_rect(fb, sx + 6, sy - 2, 2, 2, GBA_WHITE);
+
+    /* Cart Chassis (Glossy White Body) */
+    gba_draw_rect(fb, sx - 10, sy - 8, 20, 6, RGB15(30, 30, 31));
+    /* Sporty Hot Pink Speed Stripe */
+    gba_draw_rect(fb, sx - 10, sy - 6, 20, 2, RGB15(31, 8, 16));
+
+    /* Canopy Roof Support Posts */
+    gba_draw_rect(fb, sx - 8, sy - 18, 1, 10, RGB15(18, 18, 20));
+    gba_draw_rect(fb, sx + 7, sy - 18, 1, 10, RGB15(18, 18, 20));
+    /* Canopy Roof */
+    gba_draw_rect(fb, sx - 10, sy - 19, 20, 2, RGB15(28, 28, 30));
+
+    /* Tinted Windshield */
+    gba_draw_rect(fb, sx + 4, sy - 17, 3, 9, RGB15(18, 24, 28));
+
+    /* Blonde Cart Girl */
+    /* Blonde Ponytail / Hair */
+    gba_draw_rect(fb, sx - 4, sy - 17, 5, 4, RGB15(31, 26, 8));
+    /* Face & Smile */
+    gba_draw_rect(fb, sx - 2, sy - 15, 4, 3, RGB15(31, 25, 21));
+    gba_draw_rect(fb, sx - 1, sy - 13, 2, 1, RGB15(28, 6, 6)); /* Smile */
+    /* Pink Athletic Polo */
+    gba_draw_rect(fb, sx - 3, sy - 12, 6, 5, RGB15(31, 8, 16));
+
+    /* Royal Blue Beverage Cooler in back */
+    gba_draw_rect(fb, sx - 9, sy - 12, 6, 5, RGB15(4, 11, 26));
+    gba_draw_rect(fb, sx - 6, sy - 10, 1, 1, GBA_WHITE); /* Chrome latch */
+
+    /* Colorful Soda Cans on Ice */
+    gba_draw_rect(fb, sx - 9, sy - 14, 2, 2, GBA_RED);   /* Red Cola */
+    gba_draw_rect(fb, sx - 7, sy - 14, 2, 2, GBA_BLUE);  /* Blue Sport */
+    gba_draw_rect(fb, sx - 5, sy - 14, 2, 2, GBA_GREEN); /* Lemon Lime */
+
+    /* Speech Bubble / Prompts */
+    if (state == BEV_STATE_APPROACHING_PLAYER || state == BEV_STATE_DRINKING) {
+        gba_draw_rect(fb, sx - 22, sy - 30, 44, 9, GBA_WHITE);
+        gba_draw_rect(fb, sx - 21, sy - 29, 42, 7, RGB15(31, 8, 16));
+        gba_draw_text(fb, sx - 19, sy - 28, "COLD DRINK!", GBA_WHITE, false);
+    } else if (state == BEV_STATE_BURPING) {
+        gba_draw_rect(fb, sx - 22, sy - 32, 44, 9, GBA_GOLD);
+        gba_draw_rect(fb, sx - 21, sy - 31, 42, 7, GBA_BLACK);
+        gba_draw_text(fb, sx - 18, sy - 30, "* BURP! *", GBA_YELLOW, false);
+    }
+}
+
+/* 2.9 Tumbleweed Entity (La Playa Desert Theme) */
+static void draw_gba_tumbleweed(uint16_t *fb, int sx, int sy, int rot) {
+    for (int dy = -4; dy <= 4; ++dy) {
+        int py = sy + dy;
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+        int rw = 4 - (dy * dy) / 4;
+        for (int dx = -rw; dx <= rw; ++dx) {
+            int px = sx + dx;
+            if (px < 0 || px >= GBA_SCREEN_W) continue;
+            uint16_t tw_col = ((dx + dy + rot) & 2) ? RGB15(24, 18, 10) : RGB15(18, 13, 7);
+            fb[py * GBA_SCREEN_W + px] = tw_col;
+        }
+    }
+}
+
+/* 2.10 Sea Monster Entity (Nocturnal Green Theme) */
+static void draw_gba_seamonster(uint16_t *fb, int sx, int sy, int anim_t) {
+    int wave = ((anim_t / 8) & 3);
+    for (int y = -14; y <= 0; ++y) {
+        int py = sy + y;
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+        int curve = (y < -7) ? (wave - 1) : 0;
+        int px = sx + curve;
+        if (px >= 0 && px + 2 < GBA_SCREEN_W) {
+            fb[py * GBA_SCREEN_W + px] = RGB15(2, 12, 6);
+            fb[py * GBA_SCREEN_W + px + 1] = RGB15(4, 18, 10);
+            if (y == -14) {
+                fb[py * GBA_SCREEN_W + px] = GBA_YELLOW; /* Monster Eye */
+            }
+        }
+    }
+}
+
 /* 3. Golfer */
 static void draw_gba_golfer(uint16_t *fb, int sx, int sy, int state, int walk_frame, int anim_t) {
     int bob = 0;
@@ -707,30 +805,20 @@ static void draw_gba_golfer(uint16_t *fb, int sx, int sy, int state, int walk_fr
     if (state == GOLFER_STATE_WALKING) {
         int step = walk_frame % 4;
         if (step == 0) {
-            leg_l_off = -2;
-            leg_r_off = 2;
-            arm_l_off = 1;
-            arm_r_off = -1;
-            bob = 0;
+            leg_l_off = -2; leg_r_off = 2; arm_l_off = 1; arm_r_off = -1; bob = 0;
         } else if (step == 1) {
-            leg_l_off = 0;
-            leg_r_off = 0;
-            arm_l_off = 0;
-            arm_r_off = 0;
-            bob = -1;
+            leg_l_off = 0; leg_r_off = 0; arm_l_off = 0; arm_r_off = 0; bob = -1;
         } else if (step == 2) {
-            leg_l_off = 2;
-            leg_r_off = -2;
-            arm_l_off = -1;
-            arm_r_off = 1;
-            bob = 0;
+            leg_l_off = 2; leg_r_off = -2; arm_l_off = -1; arm_r_off = 1; bob = 0;
         } else {
-            leg_l_off = 0;
-            leg_r_off = 0;
-            arm_l_off = 0;
-            arm_r_off = 0;
-            bob = -1;
+            leg_l_off = 0; leg_r_off = 0; arm_l_off = 0; arm_r_off = 0; bob = -1;
         }
+    } else if (state == GOLFER_STATE_JUMPING) {
+        /* High athletic jump arc up onto vertical columns */
+        int jump_arc = 12 - (walk_frame % 16 > 8 ? 16 - (walk_frame % 16) : (walk_frame % 16));
+        bob = -jump_arc;
+        leg_l_off = -1;
+        leg_r_off = 1;
     }
     
     /* Shadow */
@@ -751,6 +839,13 @@ static void draw_gba_golfer(uint16_t *fb, int sx, int sy, int state, int walk_fr
     gba_draw_rect(fb, sx - 3, gy - 13, 6, 6, RGB15(28, 5, 5));
     /* Khaki Shorts */
     gba_draw_rect(fb, sx - 2, gy - 7, 5, 4, RGB15(24, 20, 14));
+
+    /* Drinking / Burping Animation Extras */
+    if (state == GOLFER_STATE_DRINKING) {
+        /* Raised cold beverage can to mouth */
+        gba_draw_rect(fb, sx + 2, gy - 16, 3, 4, GBA_RED);
+        gba_draw_rect(fb, sx + 3, gy - 18, 1, 2, GBA_WHITE); /* Straw */
+    }
     
     /* Animated Legs & White Golf Shoes */
     if (state == GOLFER_STATE_WALKING) {
@@ -1152,6 +1247,43 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         int r_sy = (rgx + rgy) * GBA_TILE_HALF_H - (gs->grid[rgx][rgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
         add_drawable(GBA_ENT_RANGER, r_sx, r_sy, (rgx + rgy) * 32 + 16, gs->ranger.state);
     }
+
+    /* Beverage Cart & Cart Girl */
+    if (gs->bev_cart.active) {
+        int bgx = FROM_FIXED(gs->bev_cart.x);
+        int bgy = FROM_FIXED(gs->bev_cart.y);
+        if (bgx < 0) bgx = 0; if (bgx >= GRID_W) bgx = GRID_W - 1;
+        if (bgy < 0) bgy = 0; if (bgy >= GRID_H) bgy = GRID_H - 1;
+        int b_sx = (bgx - bgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
+        int b_sy = (bgx + bgy) * GBA_TILE_HALF_H - (gs->grid[bgx][bgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+        add_drawable(GBA_ENT_BEV_CART, b_sx, b_sy, (bgx + bgy) * 32 + 16, gs->bev_cart.state);
+    }
+    
+    /* Tumbleweeds for La Playa Desert Theme */
+    if (gs->theme == THEME_LA_PLAYA) {
+        for (int i = 0; i < MAX_TUMBLEWEEDS; ++i) {
+            if (gs->tumbleweeds[i].active) {
+                int tgx = FROM_FIXED(gs->tumbleweeds[i].x);
+                int tgy = FROM_FIXED(gs->tumbleweeds[i].y);
+                if (tgx >= 0 && tgx < GRID_W && tgy >= 0 && tgy < GRID_H) {
+                    int t_sx = (tgx - tgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
+                    int t_sy = (tgx + tgy) * GBA_TILE_HALF_H - (gs->grid[tgx][tgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+                    add_drawable(GBA_ENT_TUMBLEWEED, t_sx, t_sy, (tgx + tgy) * 32 + 15, gs->tumbleweeds[i].rotation);
+                }
+            }
+        }
+    }
+    
+    /* Sea Monster for Nocturnal Green Theme */
+    if (gs->theme == THEME_NOCTURNAL_GREEN && gs->sea_monster.active) {
+        int mgx = FROM_FIXED(gs->sea_monster.x);
+        int mgy = FROM_FIXED(gs->sea_monster.y);
+        if (mgx >= 0 && mgx < GRID_W && mgy >= 0 && mgy < GRID_H) {
+            int m_sx = (mgx - mgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
+            int m_sy = (mgx + mgy) * GBA_TILE_HALF_H - (gs->grid[mgx][mgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+            add_drawable(GBA_ENT_SEAMONSTER, m_sx, m_sy, (mgx + mgy) * 32 + 14, gs->sea_monster.state);
+        }
+    }
     
     /* 4. Depth-Sort & Render Drawables */
     sort_drawables();
@@ -1176,6 +1308,9 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
             case GBA_ENT_RANGER:
                 draw_gba_ranger_cart(fb, d->sx, d->sy, d->data, grc->tick_count);
                 break;
+            case GBA_ENT_BEV_CART:
+                draw_gba_bev_cart(fb, d->sx, d->sy, d->data, grc->tick_count);
+                break;
             case GBA_ENT_GOLFER:
                 draw_gba_golfer(fb, d->sx, d->sy, d->data & 0xFF, (d->data >> 8) & 0xFF, grc->tick_count);
                 break;
@@ -1193,6 +1328,12 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
                 break;
             case GBA_ENT_TNT_BOX:
                 draw_gba_tnt_box(fb, d->sx, d->sy, d->data != 0);
+                break;
+            case GBA_ENT_TUMBLEWEED:
+                draw_gba_tumbleweed(fb, d->sx, d->sy, d->data);
+                break;
+            case GBA_ENT_SEAMONSTER:
+                draw_gba_seamonster(fb, d->sx, d->sy, grc->tick_count);
                 break;
             default:
                 break;
@@ -1267,6 +1408,9 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         if (grc->pin_magnet_locked) {
             reticle_col = (grc->tick_count & 4) ? GBA_GOLD : RGB15(31, 31, 10);
             gba_draw_text(fb, cx - 24, cy - 20, "* PIN LOCK *", GBA_GOLD, true);
+        } else if (golf_is_high_column(gs, grc->cross_gx, grc->cross_gy)) {
+            reticle_col = GBA_RED;
+            gba_draw_text(fb, cx - 28, cy - 20, "* HIGH COLUMN *", GBA_RED, true);
         } else {
             reticle_col = (grc->tick_count & 8) ? GBA_YELLOW : GBA_WHITE;
         }
@@ -1480,6 +1624,8 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         gba_draw_text(fb, 138, 136, "IN FLIGHT...", GBA_GOLD, false);
     } else if (gs->ball.state == BALL_ROLLING) {
         gba_draw_text(fb, 150, 136, "ROLLING...", GBA_WHITE, false);
+    } else if (gs->golfer.state == GOLFER_STATE_DRINKING || gs->bev_cart.state == BEV_STATE_BURPING) {
+        gba_draw_text(fb, 134, 136, "TAKING DRINK", GBA_YELLOW, true);
     } else if (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
         bool blink = (grc->tick_count & 8) != 0;
         gba_draw_text(fb, 130, 136, blink ? "[A] SKIP WALK" : "WALKING...", GBA_YELLOW, false);
@@ -1492,6 +1638,8 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         }
     } else if (grc->pin_magnet_locked) {
         gba_draw_text(fb, 132, 136, "[A] LOCK TO PIN", GBA_GOLD, true);
+    } else if (golf_is_high_column(gs, grc->cross_gx, grc->cross_gy) && gs->current_club != CLUB_LW) {
+        gba_draw_text(fb, 126, 136, "LW REQUIRED", GBA_RED, true);
     } else {
         gba_draw_text(fb, 138, 136, "[A] LOCK PIN", GBA_WHITE, false);
     }

@@ -1,5 +1,5 @@
 Add-Type -AssemblyName System.Drawing
-$bmps = @('screenshot_gba_aiming', 'screenshot_gba_locked', 'screenshot_gba_pinned_flag', 'screenshot_gba_walking', 'screenshot_gba_la_playa', 'screenshot_gba_nocturnal_green', 'screenshot_gba_sneak_on_ranger')
+$bmps = @('screenshot_gba_aiming', 'screenshot_gba_locked', 'screenshot_gba_pinned_flag', 'screenshot_gba_walking', 'screenshot_gba_la_playa', 'screenshot_gba_nocturnal_green', 'screenshot_gba_sneak_on_ranger', 'screenshot_gba_bev_cart', 'screenshot_gba_column_jump')
 $artDir = 'C:\Users\adam\.gemini\antigravity\brain\1c635384-03d5-4087-b256-c838f707f215'
 
 foreach ($b in $bmps) {

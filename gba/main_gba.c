@@ -45,6 +45,9 @@ static void dispatch_gba_audio(GolfAudioEvent evt, int club) {
         case AUDIO_EVT_CARL_EXPLOSION: gba_sfx_carl_explosion(); break;
         case AUDIO_EVT_CARL_HOSE:      gba_sfx_carl_hose(); break;
         case AUDIO_EVT_BEV_WHISTLE:    gba_sfx_whistle(); break;
+        case AUDIO_EVT_BURP:           gba_sfx_burp(); break;
+        case AUDIO_EVT_SHOTGUN:        gba_sfx_boomstick(); break;
+        case AUDIO_EVT_GOLFER_JUMP:    gba_sfx_bounce(); break;
         default: break;
     }
 }
@@ -140,8 +143,23 @@ int main(void) {
                 }
             }
             
-            /* Controls active when ball is idle and golfer is ready */
-            if (s_gba_game_state.ball.state == BALL_IDLE && s_gba_game_state.golfer.state != GOLFER_STATE_WALKING && s_gba_game_state.golfer.state != GOLFER_STATE_JUMPING) {
+            /* Ambient audio soundscape management based on course theme */
+            static CourseTheme s_prev_theme = (CourseTheme)-1;
+            if (s_gba_game_state.theme != s_prev_theme) {
+                s_prev_theme = s_gba_game_state.theme;
+                if (s_gba_game_state.theme == THEME_LA_PLAYA) {
+                    gba_sfx_play_ambient(1); /* Desert breeze loop */
+                } else {
+                    gba_sfx_play_ambient(2); /* Country club water brook loop */
+                }
+            }
+
+            /* Controls active when ball is idle and golfer is not walking, jumping, or taking a drink */
+            if (s_gba_game_state.ball.state == BALL_IDLE && 
+                s_gba_game_state.golfer.state != GOLFER_STATE_WALKING && 
+                s_gba_game_state.golfer.state != GOLFER_STATE_JUMPING &&
+                s_gba_game_state.golfer.state != GOLFER_STATE_DRINKING &&
+                s_gba_game_state.bev_cart.state != BEV_STATE_BURPING) {
                 /* D-PAD: Camera / Crosshair Movement across course (fast & turbo speeds) */
                 int speed_x = gba_key_held(KEY_B) ? 56 : 32;
                 int speed_y = gba_key_held(KEY_B) ? 36 : 20;
@@ -179,7 +197,11 @@ int main(void) {
                 
                 /* Auto-recommend club when aiming if player hasn't manually chosen one yet */
                 if (!s_gba_render_ctx.aim_locked && !s_club_manually_chosen) {
-                    s_gba_game_state.current_club = gba_recommend_club(s_gba_render_ctx.cross_dist_yds, s_gba_game_state.ball.current_surf);
+                    if (golf_is_high_column(&s_gba_game_state, s_gba_render_ctx.cross_gx, s_gba_render_ctx.cross_gy)) {
+                        s_gba_game_state.current_club = CLUB_LW;
+                    } else {
+                        s_gba_game_state.current_club = gba_recommend_club(s_gba_render_ctx.cross_dist_yds, s_gba_game_state.ball.current_surf);
+                    }
                 }
                 
                 /* A BUTTON: 2-Click Sequence
@@ -194,6 +216,11 @@ int main(void) {
                         s_gba_render_ctx.aim_locked = true;
                         s_club_manually_chosen = true;
                         s_gba_render_ctx.flag_linger_timer = 28; /* Linger ~0.46s at target */
+                        
+                        /* High column restriction: Level tops only targetable with Lob Wedge */
+                        if (golf_is_high_column(&s_gba_game_state, s_gba_render_ctx.aim_target_gx, s_gba_render_ctx.aim_target_gy)) {
+                            chosen_club = CLUB_LW;
+                        }
                         
                         golf_set_aim_target(&s_gba_game_state,
                             TO_FIXED(s_gba_render_ctx.aim_target_gx) + FIXED_HALF,

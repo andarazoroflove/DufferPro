@@ -12,9 +12,9 @@
  * - Rollover: When reaching x.x.99, increment middle step (e.g., 0.7.99 -> 0.8.0)
  * - Formal Releases: Published strictly on multiples of 5 (0.7.5, 0.7.10, 0.7.15...)
  */
-#define DUFFER_VERSION      "0.76-noonan"
-#define DUFFER_VERSION_NAME "0.76-noonan"
-#define DUFFER_SEMVER       "0.7.6"
+#define DUFFER_VERSION      "0.77-noonan"
+#define DUFFER_VERSION_NAME "0.77-noonan"
+#define DUFFER_SEMVER       "0.7.7"
 
 /* Grid Dimensions */
 #define GRID_W              32
@@ -136,14 +136,22 @@ typedef enum {
     TOOL_COUNT
 } BuildTool;
 
-/* Golf Clubs */
+/* Golf Clubs (Descending order of power/distance) */
 typedef enum {
-    CLUB_1W = 0,   /* Driver */
-    CLUB_3W,       /* 3 Wood */
-    CLUB_5I,       /* 5 Iron */
-    CLUB_9I,       /* 9 Iron */
-    CLUB_PW,       /* Pitching Wedge */
-    CLUB_PT,       /* Putter */
+    CLUB_DRV = 0,   /* Driver */
+    CLUB_1W,        /* 1 Wood */
+    CLUB_2W,        /* 2 Wood */
+    CLUB_3W,        /* 3 Wood */
+    CLUB_4I,        /* 4 Iron */
+    CLUB_5I,        /* 5 Iron */
+    CLUB_6I,        /* 6 Iron */
+    CLUB_7I,        /* 7 Iron */
+    CLUB_8I,        /* 8 Iron */
+    CLUB_9I,        /* 9 Iron */
+    CLUB_PW,        /* Pitching Wedge */
+    CLUB_SW,        /* Sand Wedge */
+    CLUB_LW,        /* Lob Wedge */
+    CLUB_PT,        /* Putter */
     CLUB_COUNT
 } ClubType;
 
@@ -537,6 +545,7 @@ void golf_change_club(GolfState *gs, int delta);
 void golf_adjust_aim(GolfState *gs, int delta_angle);
 void golf_set_aim_target(GolfState *gs, fixed target_x, fixed target_y);
 void golf_swing_click(GolfState *gs);
+void golf_execute_shot(GolfState *gs);
 void golf_reset_ball_to_tee(GolfState *gs);
 
 /* Physics & Simulation Tick (60 Hz deterministic fixed-point) */

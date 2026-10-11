@@ -39,7 +39,7 @@ def main():
         subprocess.run(['git', 'add', '.'], cwd=tmp_dir, check=True)
         diff = subprocess.run(['git', 'status', '--porcelain'], cwd=tmp_dir, capture_output=True, text=True)
         if diff.stdout.strip():
-            subprocess.run(['git', 'commit', '-m', 'Update Duffer Pro Wiki and User Manual for v0.75-noonan'], cwd=tmp_dir, check=True)
+            subprocess.run(['git', 'commit', '-m', 'Update Duffer Pro Wiki and User Manual for v0.77-noonan'], cwd=tmp_dir, check=True)
             subprocess.run(['git', 'push', 'origin', 'master'], cwd=tmp_dir, check=True)
             print("Successfully pushed wiki documentation!")
         else:

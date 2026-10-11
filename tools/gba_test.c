@@ -82,30 +82,78 @@ int main(void) {
     save_gba_bmp_scaled("screenshot_gba_splash_play_hole.bmp", 3);
     printf("[2/8] Saved screenshot_gba_splash_play_hole.bmp (720x480 GBA Title with PLAY HOLE)\n");
 
-    /* 2. GBA Play Mode: Bushwood Theme with Full-Width Swing Meter */
+    /* 2. GBA Aiming Mode: High-Visibility Center Crosshair & Yardage Tag */
     golf_set_mode(&gs, MODE_PLAY);
     gs.theme = THEME_BUSHWOOD;
     gs.banner_timer = 0;
     gs.banner_text[0] = '\0';
-    grc.tick_count = 0;
-    grc.cam_x = 0;
-    grc.cam_y = 0;
+    grc.tick_count = 10;
+    grc.aim_locked = false;
+    
+    /* Pan camera forward into fairway to demonstrate crosshair aiming */
+    int32_t ball_gx = FROM_FIXED(gs.ball.x);
+    int32_t ball_gy = FROM_FIXED(gs.ball.y);
+    int32_t aim_target_gx = ball_gx + 1;
+    int32_t aim_target_gy = ball_gy - 12;
+    int32_t aim_target_sx = (aim_target_gx - aim_target_gy) * GBA_TILE_HALF_W;
+    int32_t aim_target_sy = (aim_target_gx + aim_target_gy) * GBA_TILE_HALF_H - (gs.grid[aim_target_gx][aim_target_gy].elevation * GBA_HEIGHT_STEP);
+    grc.cam_x = (GBA_SCREEN_W / 2) - aim_target_sx - GBA_TILE_HALF_W;
+    grc.cam_y = (GBA_SCREEN_H / 2) - aim_target_sy - GBA_TILE_HALF_H;
     gba_render_draw_frame(&grc, &gs);
-    save_gba_bmp_scaled("screenshot_gba_play.bmp", 3);
-    printf("[3/8] Saved screenshot_gba_play.bmp (720x480 GBA Bushwood with Full-Width Swing Meter)\n");
+    save_gba_bmp_scaled("screenshot_gba_aiming.bmp", 3);
+    printf("[3/9] Saved screenshot_gba_aiming.bmp (720x480 GBA Aiming Mode with Center Crosshair)\n");
 
-    /* 3. GBA Play Mode: La Playa Desert Theme with Cactus, Tumbleweeds, Rapids */
+    /* 3. GBA Aim Locked Mode: Pinned Target Flag & LOCKED Box */
+    grc.aim_locked = true;
+    grc.aim_target_gx = aim_target_gx;
+    grc.aim_target_gy = aim_target_gy;
+    golf_set_aim_target(&gs, TO_FIXED(aim_target_gx) + FIXED_HALF, TO_FIXED(aim_target_gy) + FIXED_HALF);
+    
+    /* Return camera to ball */
+    int b_elev = gs.grid[ball_gx][ball_gy].elevation;
+    int32_t b_sx = (ball_gx - ball_gy) * GBA_TILE_HALF_W;
+    int32_t b_sy = (ball_gx + ball_gy) * GBA_TILE_HALF_H - (b_elev * GBA_HEIGHT_STEP);
+    grc.cam_x = (GBA_SCREEN_W / 2) - b_sx - GBA_TILE_HALF_W;
+    grc.cam_y = (GBA_SCREEN_H / 2) - b_sy - GBA_TILE_HALF_H;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_locked.bmp", 3);
+    printf("[4/10] Saved screenshot_gba_locked.bmp (720x480 GBA Locked Pin & LOCKED Box at Ball)\n");
+
+    /* 3b. GBA Pinned Target Flag on Terrain */
+    int t_elev = gs.grid[aim_target_gx][aim_target_gy].elevation;
+    int32_t t_sx = (aim_target_gx - aim_target_gy) * GBA_TILE_HALF_W;
+    int32_t t_sy = (aim_target_gx + aim_target_gy) * GBA_TILE_HALF_H - (t_elev * GBA_HEIGHT_STEP);
+    grc.cam_x = (GBA_SCREEN_W / 2) - t_sx - GBA_TILE_HALF_W;
+    grc.cam_y = (GBA_SCREEN_H / 2) - t_sy - GBA_TILE_HALF_H;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_pinned_flag.bmp", 3);
+    printf("[5/10] Saved screenshot_gba_pinned_flag.bmp (720x480 GBA Pinned Target Flag on Course)\n");
+
+    /* 4. GBA Golfer Walking Animation */
+    grc.aim_locked = false;
+    grc.cam_x = (GBA_SCREEN_W / 2) - b_sx - GBA_TILE_HALF_W;
+    grc.cam_y = (GBA_SCREEN_H / 2) - b_sy - GBA_TILE_HALF_H;
+    gs.golfer.state = GOLFER_STATE_WALKING;
+    gs.golfer.walk_anim_frame = 2;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_walking.bmp", 3);
+    printf("[6/10] Saved screenshot_gba_walking.bmp (720x480 GBA Animated Walking Golfer)\n");
+    gs.golfer.state = GOLFER_STATE_READY;
+    gs.golfer.walk_anim_frame = 0;
+
+    /* 5. GBA Play Mode: La Playa Desert Theme with Cactus, Tumbleweeds, Rapids */
     gs.theme = THEME_LA_PLAYA;
     golf_randomize_hole(&gs, 0x1234567);
     gs.theme = THEME_LA_PLAYA;
+    grc.aim_locked = false;
     grc.tick_count = 0;
     grc.cam_x = 0;
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_la_playa.bmp", 3);
-    printf("[4/8] Saved screenshot_gba_la_playa.bmp (720x480 GBA La Playa Desert Theme)\n");
+    printf("[6/9] Saved screenshot_gba_la_playa.bmp (720x480 GBA La Playa Desert Theme)\n");
 
-    /* 4. GBA Play Mode: Nocturnal Green Gothic Theme with Autumn Trees & Tombstones */
+    /* 6. GBA Play Mode: Nocturnal Green Gothic Theme with Autumn Trees & Tombstones */
     gs.theme = THEME_NOCTURNAL_GREEN;
     golf_randomize_hole(&gs, 0x7654321);
     gs.theme = THEME_NOCTURNAL_GREEN;
@@ -114,9 +162,9 @@ int main(void) {
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_nocturnal_green.bmp", 3);
-    printf("[5/8] Saved screenshot_gba_nocturnal_green.bmp (720x480 GBA Nocturnal Green Theme)\n");
+    printf("[7/9] Saved screenshot_gba_nocturnal_green.bmp (720x480 GBA Nocturnal Green Theme)\n");
 
-    /* 5. GBA Sneak On Mode: Ranger Patrol Cart Active */
+    /* 7. GBA Sneak On Mode: Ranger Patrol Cart Active */
     gs.theme = THEME_BUSHWOOD;
     golf_start_sneak_on(&gs);
     gs.ranger.x = gs.ball.x + TO_FIXED(3);
@@ -127,37 +175,14 @@ int main(void) {
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_sneak_on_ranger.bmp", 3);
-    printf("[6/8] Saved screenshot_gba_sneak_on_ranger.bmp (720x480 GBA Sneak On with Ranger Cart)\n");
+    printf("[8/9] Saved screenshot_gba_sneak_on_ranger.bmp (720x480 GBA Sneak On with Ranger Cart)\n");
 
-    /* 6. GBA SELECT Button: Ultra-Fast Look / Course Scroll Mode */
+    /* 8. Backward Compatibility: Look Mode & Aim Set */
     grc.look_mode = true;
-    int32_t ball_gx = FROM_FIXED(gs.ball.x);
-    int32_t ball_gy = FROM_FIXED(gs.ball.y);
-    int32_t look_target_gx = ball_gx + 1;
-    int32_t look_target_gy = ball_gy - 12;
-    int32_t look_target_sx = (look_target_gx - look_target_gy) * GBA_TILE_HALF_W;
-    int32_t look_target_sy = (look_target_gx + look_target_gy) * GBA_TILE_HALF_H - (gs.grid[look_target_gx][look_target_gy].elevation * GBA_HEIGHT_STEP);
-    grc.look_cam_x = (GBA_SCREEN_W / 2) - look_target_sx;
-    grc.look_cam_y = (GBA_SCREEN_H / 2) - look_target_sy;
-    grc.cam_x = grc.look_cam_x;
-    grc.cam_y = grc.look_cam_y;
-    grc.tick_count = 10;
+    grc.aim_locked = false;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_look_mode.bmp", 3);
-    printf("[7/8] Saved screenshot_gba_look_mode.bmp (720x480 GBA Fast Look Mode Reticle)\n");
-
-    /* 7. GBA Return to Golfer with Aim Spot Locked (Ready to Swing) */
-    gs.aim_target_x = TO_FIXED(grc.look_center_gx) + FIXED_HALF;
-    gs.aim_target_y = TO_FIXED(grc.look_center_gy) + FIXED_HALF;
-    gs.has_custom_aim = true;
-    gs.aim_distance_yds = grc.look_dist_yds;
-    grc.look_mode = false;
-    grc.cam_x = 0;
-    grc.cam_y = 0;
-    grc.tick_count = 0;
-    gba_render_draw_frame(&grc, &gs);
-    save_gba_bmp_scaled("screenshot_gba_aim_set.bmp", 3);
-    printf("[8/8] Saved screenshot_gba_aim_set.bmp (720x480 GBA Golfer with Aim Set)\n");
+    printf("[9/9] Saved screenshot_gba_look_mode.bmp (720x480 GBA Look Mode Compatibility)\n");
 
     printf("=== ALL GBA VERIFICATION TESTS PASSED ===\n");
     return 0;

@@ -1,7 +1,7 @@
 # Duffer Pro ⛳
 
 > **High-Definition 2.5D Isometric Golf Simulation & Course Architect**  
-> *Version `0.76-noonan`* (SemVer: `v0.7.6`) — Pure ANSI C99 · Windows · macOS Sonoma · Game Boy Advance
+> *Version `0.77-noonan`* (SemVer: `v0.7.7`) — Pure ANSI C99 · Windows · macOS Sonoma · Game Boy Advance
 
 ![Duffer Pro Title Screen](docs/screenshots/screenshot_splash.png)
 
@@ -35,15 +35,27 @@
 
 ## 🎮 Key Features
 
-- **3-Click Swing Gauge:**
+- **3-Click Swing Gauge (PC/Mac):**
   - Click 1: Start backswing.
   - Click 2: Lock power (with auto-bounce at 100%).
   - Click 3: Lock accuracy in the sweet spot (or shape hooks and slices).
+- **Untimed Two-Click Aim & Shoot (GBA):**
+  - Fluid D-Pad camera & high-speed center crosshair with live yardage & surface indicator.
+  - Click 1 on `A`: Drop pin flag at aim location, display `LOCKED` badge, and return camera to ball.
+  - Click 2 on `A`: Shoot with full power and precision.
+  - Press D-Pad or `B` anytime to unlock and re-aim.
+- **Full 14-Club Professional Bag:**
+  - Driver (DR), 1W, 2W, 3W, 4I, 5I, 6I, 7I, 8I, 9I, Pitching Wedge (PW), Sand Wedge (SW), Lob Wedge (LW), and Putter (PT).
+  - Fully distributed power calibration from 260 yards down to 25 yards.
+  - Instant club cycling via `L` / `R` shoulder buttons (GBA) or `C` key (PC).
 - **Sub-Tile Mouse Aiming:**
   - Click or drag anywhere to place the reticle ring.
   - Continuous coordinate inversion matches mouse pointer with sub-pixel precision.
   - Automatic club selection calibrated to target distance.
   - Complete launch immunity when hitting out of tree, bush, or boulder tiles.
+- **Animated Characters & Strides:**
+  - Golfer walks with alternating leg strides, arm swings, bobbing torso, and carried club.
+  - Full address, backswing, contact, and follow-through animations.
 - **Sneak On Mode:**
   - Quick rounds with randomized obstacle density and themes.
   - Watch out for the patrol ranger in his golf cart!
@@ -62,15 +74,25 @@
 
 ## ⌨️ Controls
 
+### PC & Mac (Desktop)
 - **`Tab`:** Toggle between Play Mode and Course Architect (Design Mode)
 - **`Left Click`:** Set aiming reticle / click ball or screen to swing
 - **`Space`:** Universal 3-click swing trigger (Start $\to$ Power $\to$ Accuracy)
 - **`R`:** Replay current hole layout
-- **`C`:** Cycle clubs forward (Driver $\to$ 3W $\to$ 5I $\to$ 9I $\to$ PW $\to$ Putter)
+- **`C`:** Cycle clubs forward
 - **`Arrow Keys` / `Right-Click Drag`:** Smooth isometric camera panning
 - **`1`, `2`, `3`:** Design mode tool tabs (Terrain, Surfaces, Scenery)
 - **`B`:** Toggle brush size (1×1 tile vs. 3×3 broad)
 - **`Esc`:** Return to title screen / cancel tool
+
+### Game Boy Advance (GBA)
+- **`D-Pad`:** High-speed camera / crosshair navigation across course
+- **`B` (held) + `D-Pad`:** Turbo camera pan
+- **`A` (Click 1):** Drop target pin flag at crosshair, lock aim, and center camera on ball
+- **`A` (Click 2, when Locked):** Untimed shot execution
+- **`D-Pad` / `B` (when Locked):** Unlock aim to reposition crosshair
+- **`R` / `L`:** Cycle forward / backward through all 14 clubs (DR $\leftrightarrow$ LW / PT)
+- **`Start`:** Randomize course hole layout and cycle theme (Bushwood $\leftrightarrow$ La Playa $\leftrightarrow$ Nocturnal Green)
 
 ---
 

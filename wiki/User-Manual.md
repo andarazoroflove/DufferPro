@@ -1,5 +1,5 @@
 # Duffer Pro: Championship Edition – User Manual
-**Version:** `0.76-noonan` (SemVer `v0.7.6`)  
+**Version:** `0.77-noonan` (SemVer `v0.7.7`)  
 **Platforms:** Windows (x86/x64) · macOS Sonoma (Universal 2: Apple Silicon & Intel) · Game Boy Advance (Bare-Metal ROM)
 
 ---
@@ -74,16 +74,24 @@
 
 ## 🎒 The Bag (Clubs & Ranges)
 
-| Club | Type | Nominal Distance | Carry / Roll Profile | Ideal Surface |
-| :--- | :--- | :---: | :--- | :--- |
-| **1W** | Driver | **240 yds** | High speed, penetrating trajectory, carry ~215 yds | Tee Box |
-| **3W** | 3-Wood | **215 yds** | Sweeping flight, carry ~190 yds, rolls out on fairway | Fairway / Light Rough |
-| **5I** | 5-Iron | **175 yds** | Mid-trajectory, carry ~155 yds, responsive bite | Fairway / Approach |
-| **9I** | 9-Iron | **130 yds** | High loft, carry ~120 yds, steep landing angle | Fairway / Rough |
-| **PW** | Pitching Wedge | **90 yds** | Steep pop-up, carry ~85 yds, minimal roll | Rough / Bunkers |
-| **PT** | Putter | **25 yds** | Smooth ground roll, true speed calibrated to distance | Green / Fringe |
+| Club | Short | Nominal Distance | Carry / Roll Profile | Ideal Surface |
+| :--- | :---: | :---: | :--- | :--- |
+| **Driver** | **DR** | **260 yds** | Maximum distance, low piercing launch, ~220 yd carry | Tee Box |
+| **1-Wood** | **1W** | **240 yds** | Penetrating flight, long rollout | Tee Box / Good Fairway Lie |
+| **2-Wood** | **2W** | **225 yds** | Long fairway wood, stable wind penetration | Fairway |
+| **3-Wood** | **3W** | **210 yds** | High sweeping flight, fairway approach | Fairway / Light Rough |
+| **4-Iron** | **4I** | **195 yds** | Powerful long iron, medium rollout | Fairway |
+| **5-Iron** | **5I** | **180 yds** | Mid-distance approach, responsive bite | Fairway |
+| **6-Iron** | **6I** | **165 yds** | Controlled approach, standard trajectory | Fairway / Light Rough |
+| **7-Iron** | **7I** | **150 yds** | Workhorse scoring iron, fast stopping power | Fairway / Rough |
+| **8-Iron** | **8I** | **135 yds** | Steep descent, tight dispersion | Fairway / Rough |
+| **9-Iron** | **9I** | **120 yds** | High loft, drop-and-stop landing angle | Fairway / Rough |
+| **Pitching Wedge** | **PW** | **105 yds** | High trajectory, pin attack wedge | Fairway / Rough / Fringe |
+| **Sand Wedge** | **SW** | **85 yds** | High spin pop-up, bunker escape specialist | Bunkers / Sand / Heavy Rough |
+| **Lob Wedge** | **LW** | **65 yds** | Steep flop shot, zero rollout | Greenside Rough / Bunkers |
+| **Putter** | **PT** | **25 yds** | Smooth ground roll, true green speed tracking | Green / Fringe |
 
-*Note:* When aiming at a custom spot shorter than club maximum, swing power automatically calibrates so a sweet-spot stroke stops right at your reticle.
+*Note:* When aiming at a custom spot shorter than club maximum, swing power automatically calibrates so a sweet-spot stroke stops right at your reticle. Direct club cycling is available via `L` / `R` (GBA) or `C` (PC).
 
 ---
 
@@ -128,20 +136,19 @@
 ---
 
 ## 🎮 Game Boy Advance Controls
-
-| GBA Button | Play Mode | Look Mode (`SELECT`) |
+ 
+| GBA Button | Aiming State | Locked State (`LOCKED` Badge) |
 | :--- | :--- | :--- |
-| `A` Button | Universal Swing Trigger (3-Click) | Set Aim Target at screen center |
-| `B` Button | Cycle Clubs | Return to Golfer |
-| `D-Pad` | Adjust Aim Angle (Left / Right) | Pan Camera Window over Course |
-| `SELECT` | Toggle Look / Free Scroll Mode | Toggle Back to Golfer |
-| `START` | Generate New Random Hole | Generate New Random Hole |
-| `L` / `R` | Cycle Clubs Down / Up | N/A |
+| `D-Pad` | Move Camera & Center Crosshair across Course | Unlock Aim to re-aim Crosshair |
+| `B` Button (Hold) | Turbo Camera Scroll Speed | Unlock Aim to re-aim Crosshair |
+| `A` Button | **Click 1:** Drop Pin Flag at Crosshair, Lock Aim, return to Ball | **Click 2:** Execute Untimed Shot |
+| `L` / `R` | Cycle Clubs Backward / Forward (Full 14-Club Bag) | Cycle Clubs Backward / Forward |
+| `START` | Randomize Hole Layout & Cycle Environment Themes | Randomize Hole Layout & Cycle Themes |
 
 ---
 
 ## 📜 Credits & License
 - **Original Concept & Direction:** Adam & Pair Programming AI
 - **Engine:** Pure C99, custom software isometric rasterizer, fixed-point math library
-- **Release Version:** `v0.75-noonan`
+- **Current Version:** `v0.77-noonan` (SemVer `v0.7.7`)
 

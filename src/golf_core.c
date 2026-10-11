@@ -75,19 +75,45 @@ uint8_t fixed_atan2(fixed dy, fixed dx) {
     }
 }
 
-/* Club Definitions */
+/* Club Definitions (Descending order of power/distance) */
 static const ClubData s_clubs[CLUB_COUNT] = {
-    { "DRIVER 1W",  "1W", 240, 36000, 185000, 28000, 60293, false }, /* Carry ~195 yds, Roll ~45 yds */
-    { "3-WOOD 3W",  "3W", 215, 29800, 200000, 26000, 59637, false }, /* Carry ~175 yds, Roll ~40 yds */
-    { "5-IRON 5I",  "5I", 175, 22900, 215000, 22000, 58327, false }, /* Carry ~145 yds, Roll ~30 yds */
-    { "9-IRON 9I",  "9I", 130, 16384, 228000, 16000, 56360, false }, /* Carry ~110 yds, Roll ~20 yds */
-    { "WEDGE PW",   "PW",  90, 11400, 238000, 10000, 54394, false }, /* Carry ~80 yds,  Roll ~10 yds */
-    { "PUTTER PT",  "PT",  25, 18000,      0,     0, 62259, true  }  /* Ground roll up to 25 yds */
+    { "DRIVER DR",   "DR", 260, 39500, 180000, 28000, 60500, false }, /* Driver: ~260 yds */
+    { "1-WOOD 1W",   "1W", 240, 36000, 185000, 28000, 60293, false }, /* 1 Wood: ~240 yds */
+    { "2-WOOD 2W",   "2W", 225, 33000, 192000, 27000, 60000, false }, /* 2 Wood: ~225 yds */
+    { "3-WOOD 3W",   "3W", 210, 30000, 200000, 26000, 59637, false }, /* 3 Wood: ~210 yds */
+    { "4-IRON 4I",   "4I", 195, 26500, 208000, 24000, 59000, false }, /* 4 Iron: ~195 yds */
+    { "5-IRON 5I",   "5I", 180, 23500, 215000, 22000, 58327, false }, /* 5 Iron: ~180 yds */
+    { "6-IRON 6I",   "6I", 165, 21000, 220000, 20000, 57600, false }, /* 6 Iron: ~165 yds */
+    { "7-IRON 7I",   "7I", 150, 18500, 224000, 18000, 57000, false }, /* 7 Iron: ~150 yds */
+    { "8-IRON 8I",   "8I", 135, 16400, 228000, 16000, 56360, false }, /* 8 Iron: ~135 yds */
+    { "9-IRON 9I",   "9I", 120, 14300, 232000, 14000, 55400, false }, /* 9 Iron: ~120 yds */
+    { "P-WEDGE PW",  "PW", 105, 12200, 236000, 12000, 54400, false }, /* Pitching Wedge: ~105 yds */
+    { "S-WEDGE SW",  "SW",  85,  9800, 240000,  8000, 52000, false }, /* Sand Wedge: ~85 yds */
+    { "L-WEDGE LW",  "LW",  65,  7500, 244000,  5000, 50000, false }, /* Lob Wedge: ~65 yds */
+    { "PUTTER PT",   "PT",  25, 18000,      0,     0, 62259, true  }  /* Putter: up to 25 yds */
 };
 
 const ClubData* golf_get_club_data(ClubType club) {
-    if (club >= CLUB_COUNT) club = CLUB_1W;
+    if (club >= CLUB_COUNT) club = CLUB_DRV;
     return &s_clubs[club];
+}
+
+static ClubType recommend_club_for_distance(int32_t yds, SurfaceType surf) {
+    if (surf == SURF_GREEN || yds <= 20) return CLUB_PT;
+    if (surf == SURF_SAND && yds <= 90) return CLUB_SW;
+    if (yds >= 250) return CLUB_DRV;
+    if (yds >= 232) return CLUB_1W;
+    if (yds >= 217) return CLUB_2W;
+    if (yds >= 202) return CLUB_3W;
+    if (yds >= 187) return CLUB_4I;
+    if (yds >= 172) return CLUB_5I;
+    if (yds >= 157) return CLUB_6I;
+    if (yds >= 142) return CLUB_7I;
+    if (yds >= 127) return CLUB_8I;
+    if (yds >= 112) return CLUB_9I;
+    if (yds >= 95)  return CLUB_PW;
+    if (yds >= 75)  return CLUB_SW;
+    return CLUB_LW;
 }
 
 /* Fast PRNG */
@@ -930,7 +956,7 @@ void golf_init(GolfState *gs) {
     gs->wind.angle = 64; /* East-South-East */
     gs->wind.speed = 12; /* 12 mph gentle breeze */
     
-    gs->current_club = CLUB_1W;
+    gs->current_club = CLUB_DRV;
     gs->strokes = 0;
     gs->score_rel_par = 0;
     gs->hole_completed = false;
@@ -999,11 +1025,7 @@ void golf_reset_ball_to_tee(GolfState *gs) {
     
     /* Club recommendation */
     int32_t yds = golf_distance_to_pin_yards(gs);
-    if (yds > 215) gs->current_club = CLUB_1W;
-    else if (yds > 175) gs->current_club = CLUB_3W;
-    else if (yds > 130) gs->current_club = CLUB_5I;
-    else if (yds > 80) gs->current_club = CLUB_9I;
-    else gs->current_club = CLUB_PW;
+    gs->current_club = recommend_club_for_distance(yds, SURF_TEE);
     
     gs->swing.state = SWING_STATE_READY;
     gs->swing.cursor_pos = gs->swing.sweetspot_center;
@@ -1319,19 +1341,81 @@ void golf_set_aim_target(GolfState *gs, fixed target_fx, fixed target_fy) {
     if (gs->aim_distance_yds < 1) gs->aim_distance_yds = 1;
     
     /* Auto-select optimal club */
-    if (gs->ball.current_surf == SURF_GREEN || gs->aim_distance_yds <= 20) {
-        gs->current_club = CLUB_PT;
-    } else if (gs->aim_distance_yds > 215) {
-        gs->current_club = CLUB_1W;
-    } else if (gs->aim_distance_yds > 175) {
-        gs->current_club = CLUB_3W;
-    } else if (gs->aim_distance_yds > 130) {
-        gs->current_club = CLUB_5I;
-    } else if (gs->aim_distance_yds > 90) {
-        gs->current_club = CLUB_9I;
-    } else {
-        gs->current_club = CLUB_PW;
+    gs->current_club = recommend_club_for_distance(gs->aim_distance_yds, gs->ball.current_surf);
+}
+
+void golf_execute_shot(GolfState *gs) {
+    if (gs->mode != MODE_PLAY) return;
+    
+    if (gs->golfer.state == GOLFER_STATE_WALKING) {
+        golf_golfer_arrive_at_ball(gs);
+        return;
     }
+    
+    if (gs->ball.state != BALL_IDLE) return;
+    
+    const ClubData *club = golf_get_club_data(gs->current_club);
+    gs->strokes++;
+    gs->prev_ball_gx = FROM_FIXED(gs->ball.x);
+    gs->prev_ball_gy = FROM_FIXED(gs->ball.y);
+    gs->shot_origin_gx = gs->prev_ball_gx;
+    gs->shot_origin_gy = gs->prev_ball_gy;
+    
+    /* Club strike audio */
+    if (club->is_putter) {
+        gs->audio_event = AUDIO_EVT_SWING_PUTTER;
+    } else if (gs->current_club == CLUB_DRV || gs->current_club == CLUB_1W) {
+        gs->audio_event = AUDIO_EVT_SWING_DRIVER;
+    } else if (gs->current_club >= CLUB_PW && gs->current_club <= CLUB_LW) {
+        gs->audio_event = AUDIO_EVT_SWING_WEDGE;
+    } else {
+        gs->audio_event = AUDIO_EVT_SWING_IRON;
+    }
+    
+    gs->golfer.state = GOLFER_STATE_WATCHING;
+    gs->swing.state = SWING_STATE_RESOLVED;
+    
+    fixed pwr = FIXED_ONE;
+    if (gs->ball.current_surf == SURF_ROUGH) {
+        pwr = FMUL(pwr, 52428); /* 80% from rough */
+    } else if (gs->ball.current_surf == SURF_SAND) {
+        pwr = FMUL(pwr, 36044); /* 55% from sand */
+    }
+    
+    fixed dist_scale = FIXED_ONE;
+    fixed root_scale = FIXED_ONE;
+    if (club->nominal_yards > 0 && gs->aim_distance_yds > 0) {
+        if (gs->aim_distance_yds < club->nominal_yards) {
+            dist_scale = FDIV(TO_FIXED(gs->aim_distance_yds), TO_FIXED(club->nominal_yards));
+            if (dist_scale < TO_FIXED(1) / 5) dist_scale = TO_FIXED(1) / 5;
+            root_scale = fixed_sqrt(dist_scale);
+        }
+    }
+    
+    uint8_t final_angle = gs->aim_angle;
+    
+    if (club->is_putter) {
+        fixed target_yds = (gs->aim_distance_yds > 0) ? gs->aim_distance_yds : 10;
+        if (target_yds > 25) target_yds = 25;
+        fixed roll_speed = FMUL(target_yds * 385, pwr);
+        if (roll_speed < 1200) roll_speed = 1200;
+        gs->ball.vx = FMUL(roll_speed, fixed_cos(final_angle));
+        gs->ball.vy = FMUL(roll_speed, fixed_sin(final_angle));
+        gs->ball.vz = 0;
+        gs->ball.state = BALL_ROLLING;
+    } else {
+        fixed horiz_spd = FMUL(FMUL(club->launch_speed_h, pwr), root_scale);
+        fixed vert_spd  = FMUL(FMUL(club->launch_speed_v, pwr), root_scale);
+        
+        gs->ball.vx = FMUL(horiz_spd, fixed_cos(final_angle));
+        gs->ball.vy = FMUL(horiz_spd, fixed_sin(final_angle));
+        gs->ball.vz = vert_spd;
+        gs->ball.state = BALL_IN_FLIGHT;
+        gs->ball.air_ticks = 0;
+        gs->ball.bounce_count = 0;
+    }
+    
+    set_banner(gs, "BALL STRUCK! NICE SHOT!", 90);
 }
 
 void golf_swing_click(GolfState *gs) {
@@ -1896,19 +1980,7 @@ void golf_tick(GolfState *gs) {
             gs->swing.cursor_pos = gs->swing.sweetspot_center;
             
             int32_t yds = golf_distance_to_pin_yards(gs);
-            if (gs->ball.current_surf == SURF_GREEN || yds < 15) {
-                gs->current_club = CLUB_PT;
-            } else if (yds > 210) {
-                gs->current_club = CLUB_1W;
-            } else if (yds > 165) {
-                gs->current_club = CLUB_3W;
-            } else if (yds > 120) {
-                gs->current_club = CLUB_5I;
-            } else if (yds > 70) {
-                gs->current_club = CLUB_9I;
-            } else {
-                gs->current_club = CLUB_PW;
-            }
+            gs->current_club = recommend_club_for_distance(yds, gs->ball.current_surf);
         }
     } else if (gs->ball.state == BALL_WATER) {
         if (gs->prev_ball_gx < 0) gs->prev_ball_gx = 0;

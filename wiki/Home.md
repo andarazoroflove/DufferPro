@@ -1,5 +1,5 @@
 # Duffer Pro Wiki ⛳
-**Version:** `0.76-noonan` (SemVer `v0.7.6`)
+**Version:** `0.77-noonan` (SemVer `v0.7.7`)
 
 Welcome to the official **Duffer Pro** wiki!
 

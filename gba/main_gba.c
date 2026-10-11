@@ -177,9 +177,29 @@ int main(void) {
                 s_gba_game_state.golfer.state != GOLFER_STATE_JUMPING &&
                 s_gba_game_state.golfer.state != GOLFER_STATE_DRINKING &&
                 s_gba_game_state.bev_cart.state != BEV_STATE_BURPING) {
-                /* D-PAD: Camera / Crosshair Movement across course (~4x faster) */
-                int speed_x = gba_key_held(KEY_B) ? 192 : 112;
-                int speed_y = gba_key_held(KEY_B) ? 120 : 68;
+                /* D-PAD: Camera / Crosshair Movement across course (fast & turbo speeds with initial precision) */
+                static int s_dpad_held_frames = 0;
+                bool dpad_down = gba_key_held(KEY_UP) || gba_key_held(KEY_DOWN) || gba_key_held(KEY_LEFT) || gba_key_held(KEY_RIGHT);
+                if (dpad_down) {
+                    s_dpad_held_frames++;
+                } else {
+                    s_dpad_held_frames = 0;
+                }
+                
+                int speed_x, speed_y;
+                if (gba_key_held(KEY_B)) {
+                    /* Turbo traversal across course */
+                    speed_x = 320;
+                    speed_y = 192;
+                } else if (s_dpad_held_frames > 3) {
+                    /* Fast continuous glide */
+                    speed_x = 180;
+                    speed_y = 108;
+                } else {
+                    /* Initial precision tap */
+                    speed_x = 64;
+                    speed_y = 38;
+                }
                 
                 bool dpad_moved = false;
                 if (gba_key_held(KEY_UP))    { s_gba_render_ctx.cam_y += speed_y; dpad_moved = true; }
@@ -189,7 +209,7 @@ int main(void) {
                 
                 if (dpad_moved) {
                     static int s_aim_sound_throttle = 0;
-                    if (++s_aim_sound_throttle >= 4) {
+                    if (++s_aim_sound_throttle >= 3) {
                         gba_sfx_ui_tick();
                         s_aim_sound_throttle = 0;
                     }
@@ -230,17 +250,17 @@ int main(void) {
                 }
                 
                 /* A BUTTON: 2-Click Sequence
-                 * Click 1 (when !aim_locked): Drops pin at crosshair, lingers to see flag planted, then camera glides to ball
-                 * Click 2 (when aim_locked): Executes untimed shot */
+                 * Click 1: Drops pin at crosshair, plays crystal chime, lingers 10 frames, then pops back to player
+                 * Click 2: Once back at player, press A to take automatic shot! */
                 if (gba_key_pressed(KEY_A)) {
                     if (!s_gba_render_ctx.aim_locked) {
-                        /* Click 1: Lock aim pin & linger ~0.23s so player sees flag firmly planted! */
+                        /* Click 1: Lock aim pin & linger ~0.16s so player sees flag firmly planted */
                         ClubType chosen_club = s_gba_game_state.current_club;
                         s_gba_render_ctx.aim_target_gx = s_gba_render_ctx.cross_gx;
                         s_gba_render_ctx.aim_target_gy = s_gba_render_ctx.cross_gy;
                         s_gba_render_ctx.aim_locked = true;
                         s_club_manually_chosen = true;
-                        s_gba_render_ctx.flag_linger_timer = 14; /* Linger ~0.23s at target */
+                        s_gba_render_ctx.flag_linger_timer = 10; /* Linger ~0.16s at target */
                         
                         /* High column restriction: Level tops only targetable with Lob Wedge */
                         if (golf_is_high_column(&s_gba_game_state, s_gba_render_ctx.aim_target_gx, s_gba_render_ctx.aim_target_gy)) {
@@ -256,9 +276,9 @@ int main(void) {
                         s_gba_game_state.current_club = chosen_club;
                         
                         gba_sfx_pin_ding();
-                    } else {
-                        /* Click 2: Untimed Shot Execution with Full Club Power */
-                        s_gba_render_ctx.flag_linger_timer = 0;
+                        golf_set_banner(&s_gba_game_state, "FLAG PLANTED! RETURNING TO BALL...", 20);
+                    } else if (s_gba_render_ctx.flag_linger_timer == 0) {
+                        /* Click 2: Untimed Shot Execution - ONLY allowed after camera is back at the player! */
                         const ClubData *cd = golf_get_club_data(s_gba_game_state.current_club);
                         if (!cd->is_putter) {
                             s_gba_game_state.aim_distance_yds = cd->nominal_yards;
@@ -300,17 +320,18 @@ int main(void) {
                     s_gba_render_ctx.cam_y = (GBA_SCREEN_H / 2) - target_sy - GBA_TILE_HALF_H;
                     s_gba_render_ctx.target_cam_x = s_gba_render_ctx.cam_x;
                     s_gba_render_ctx.target_cam_y = s_gba_render_ctx.cam_y;
+                    golf_set_banner(&s_gba_game_state, "AIM LOCKED! PRESS [A] TO SWING!", 60);
                 }
             }
             
-            /* Multi-tick Game Physics & Entity Simulation (~4x faster) */
+            /* Multi-tick Game Physics & Entity Simulation (Doubled speed) */
             int num_ticks = 1;
             if (s_gba_game_state.ball.state == BALL_IN_FLIGHT) {
-                num_ticks = 20; /* 4x faster flight animation */
+                num_ticks = 40; /* 2x faster flight animation (doubled from 20 to 40) */
             } else if (s_gba_game_state.ball.state == BALL_BOUNCING || s_gba_game_state.ball.state == BALL_ROLLING) {
-                num_ticks = 14; /* 4x faster bounce & roll */
+                num_ticks = 28; /* 2x faster bounce & roll (doubled from 14 to 28) */
             } else if (s_gba_game_state.golfer.state == GOLFER_STATE_WALKING || s_gba_game_state.golfer.state == GOLFER_STATE_JUMPING) {
-                num_ticks = 12; /* 4x faster walking / jumping */
+                num_ticks = 24; /* 2x faster walking / jumping (doubled from 12 to 24) */
             }
             
             for (int t = 0; t < num_ticks; ++t) {

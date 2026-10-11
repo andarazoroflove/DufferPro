@@ -1620,7 +1620,7 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
                 if ((step & 1) == 0) {
                     int lx = b_sx + (step * (tx - b_sx)) / 20;
                     int ly = b_sy + (step * (ty - b_sy)) / 20;
-                    if (lx >= 0 && lx < GBA_SCREEN_W && ly >= 14 && ly < 135) {
+                    if (lx >= 0 && lx < GBA_SCREEN_W && ly >= 14 && ly < 146) {
                         fb[ly * GBA_SCREEN_W + lx] = GBA_GOLD;
                     }
                 }
@@ -1682,11 +1682,11 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         gba_draw_text(fb, 170, 3, "[A] LOCK", GBA_YELLOW, false);
     }
     
-    /* 7. Bottom Bar: Full-Width Modern Arcade Golf Swing Bar & HUD (240x26) */
-    gba_draw_rect(fb, 0, 134, GBA_SCREEN_W, 1, RGB15(16, 22, 30));
-    gba_draw_rect(fb, 0, 135, GBA_SCREEN_W, 25, RGB15(2, 4, 8));
+    /* 7. Bottom Bar: Sleek Modern Arcade Golf HUD (240x14, No Power Bar) */
+    gba_draw_rect(fb, 0, 146, GBA_SCREEN_W, 1, RGB15(16, 22, 30));
+    gba_draw_rect(fb, 0, 147, GBA_SCREEN_W, 13, RGB15(2, 4, 8));
     
-    /* Row 1 (y = 136): Club Switcher Badge & Status Prompt */
+    /* Club Switcher Badge (y = 149) */
     uint16_t club_col = GBA_WHITE;
     if (gs->current_club == CLUB_DRV || (gs->current_club >= CLUB_1W && gs->current_club <= CLUB_3W)) {
         club_col = GBA_GOLD;
@@ -1727,119 +1727,33 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     club_label[cl_idx++] = 'R';
     club_label[cl_idx++] = ']';
     club_label[cl_idx] = '\0';
-    gba_draw_text(fb, 2, 136, club_label, club_col, false);
+    gba_draw_text(fb, 2, 149, club_label, club_col, false);
     
-    /* Right: Action Prompt or Status (cleanly placed between x=126 and x=238) */
+    /* Right: Dynamic Action Prompt or Course Status (x = 126..238) */
     if (gs->banner_timer > 0 && gs->banner_text[0]) {
-        gba_draw_banner_fitted(fb, 126, 136, gs->banner_text);
+        gba_draw_banner_fitted(fb, 126, 149, gs->banner_text);
     } else if (gs->ball.state == BALL_IN_FLIGHT || gs->ball.state == BALL_BOUNCING) {
-        gba_draw_text(fb, 134, 136, "IN FLIGHT...", GBA_GOLD, false);
+        gba_draw_text(fb, 134, 149, "IN FLIGHT...", GBA_GOLD, false);
     } else if (gs->ball.state == BALL_ROLLING) {
-        gba_draw_text(fb, 142, 136, "ROLLING...", GBA_WHITE, false);
+        gba_draw_text(fb, 142, 149, "ROLLING...", GBA_WHITE, false);
     } else if (gs->golfer.state == GOLFER_STATE_DRINKING || gs->bev_cart.state == BEV_STATE_BURPING) {
-        gba_draw_text(fb, 138, 136, "DRINKING...", GBA_YELLOW, true);
+        gba_draw_text(fb, 138, 149, "DRINKING...", GBA_YELLOW, true);
     } else if (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
         bool blink = (grc->tick_count & 8) != 0;
-        gba_draw_text(fb, 134, 136, blink ? "[A] SKIP" : "WALKING...", GBA_YELLOW, false);
+        gba_draw_text(fb, 134, 149, blink ? "[A] SKIP" : "WALKING...", GBA_YELLOW, false);
     } else if (grc->aim_locked) {
         if (grc->flag_linger_timer > 0) {
-            gba_draw_text(fb, 136, 136, "* PLANTED *", GBA_GOLD, true);
+            gba_draw_text(fb, 140, 149, "* PLANTED *", GBA_GOLD, true);
         } else {
             bool blink = (grc->tick_count & 8) != 0;
-            gba_draw_text(fb, 134, 136, blink ? "[A] SHOOT" : "[B] RE-AIM", GBA_YELLOW, true);
+            gba_draw_text(fb, 144, 149, blink ? "[A] SWING" : "[B] RE-AIM", GBA_YELLOW, true);
         }
     } else if (grc->pin_magnet_locked) {
-        gba_draw_text(fb, 130, 136, "[A] PIN LOCK", GBA_GOLD, true);
+        gba_draw_text(fb, 136, 149, "[A] LOCK PIN", GBA_GOLD, true);
     } else if (golf_is_high_column(gs, grc->cross_gx, grc->cross_gy) && gs->current_club != CLUB_LW) {
-        gba_draw_text(fb, 134, 136, "LW REQUIRED", GBA_RED, true);
+        gba_draw_text(fb, 136, 149, "LW REQUIRED", GBA_RED, true);
     } else {
-        gba_draw_text(fb, 136, 136, "[A] LOCK PIN", GBA_WHITE, false);
-    }
-    
-    /* Row 2: FULL-WIDTH ARCADE SWING BAR / POWER METER TRACK (y = 146..157) */
-    uint16_t track_border = grc->aim_locked ? ((grc->tick_count & 8) ? GBA_GOLD : RGB15(26, 22, 10)) : RGB15(10, 16, 24);
-    gba_draw_rect(fb, 4, 146, 232, 12, track_border);
-    gba_draw_rect(fb, 5, 147, 230, 10, RGB15(1, 2, 4));
-    
-    /* Target power calculation */
-    int target_dist = grc->aim_locked ? gs->aim_distance_yds : grc->cross_dist_yds;
-    if (target_dist < 1) target_dist = 1;
-    int club_nom = cd->nominal_yards > 0 ? cd->nominal_yards : 100;
-    int pwr_pct = (target_dist * 100) / club_nom;
-    
-    int fill_w = (pwr_pct * 230) / 100;
-    if (fill_w > 230) fill_w = 230;
-    if (fill_w < 3) fill_w = 3;
-    
-    /* Gradient Power Fill */
-    for (int fx = 0; fx < fill_w; ++fx) {
-        int px = 5 + fx;
-        int pct_at_px = (fx * 100) / 230;
-        uint16_t col_top, col_bot;
-        if (pct_at_px <= 75) {
-            col_top = RGB15(12, 28, 14);
-            col_bot = RGB15(6, 18, 8);
-        } else if (pct_at_px <= 100) {
-            col_top = RGB15(31, 28, 10);
-            col_bot = RGB15(24, 18, 4);
-        } else {
-            col_top = RGB15(31, 14, 6);
-            col_bot = RGB15(22, 6, 2);
-        }
-        for (int fy = 0; fy < 10; ++fy) {
-            int py = 147 + fy;
-            fb[py * GBA_SCREEN_W + px] = (fy < 4) ? col_top : col_bot;
-        }
-    }
-    
-    /* Scale Hash Marks at 25%, 50%, 75% */
-    for (int fy = 147; fy < 157; ++fy) {
-        fb[fy * GBA_SCREEN_W + (5 + 57)]  = RGB15(6, 10, 16);
-        fb[fy * GBA_SCREEN_W + (5 + 115)] = RGB15(6, 10, 16);
-        fb[fy * GBA_SCREEN_W + (5 + 172)] = RGB15(6, 10, 16);
-    }
-    
-    /* Sweetspot / Target Needle */
-    int needle_x = 5 + fill_w - 1;
-    if (needle_x < 5) needle_x = 5;
-    if (needle_x > 233) needle_x = 233;
-    
-    for (int fy = 146; fy <= 157; ++fy) {
-        fb[fy * GBA_SCREEN_W + (needle_x - 1)] = GBA_BLACK;
-        fb[fy * GBA_SCREEN_W + needle_x]       = GBA_WHITE;
-        if (needle_x + 1 <= 234) fb[fy * GBA_SCREEN_W + (needle_x + 1)] = GBA_BLACK;
-    }
-    if (grc->aim_locked) {
-        fb[145 * GBA_SCREEN_W + needle_x] = GBA_GOLD;
-        fb[158 * GBA_SCREEN_W + needle_x] = GBA_GOLD;
-    }
-    
-    /* Text Readouts on Meter with needle overlap avoidance */
-    char pwr_str[16];
-    int ps_idx = 0;
-    if (pwr_pct >= 100) {
-        pwr_str[ps_idx++] = '0' + (pwr_pct / 100) % 10;
-        pwr_str[ps_idx++] = '0' + (pwr_pct / 10) % 10;
-        pwr_str[ps_idx++] = '0' + (pwr_pct % 10);
-    } else if (pwr_pct >= 10) {
-        pwr_str[ps_idx++] = '0' + (pwr_pct / 10) % 10;
-        pwr_str[ps_idx++] = '0' + (pwr_pct % 10);
-    } else {
-        pwr_str[ps_idx++] = '0' + (pwr_pct % 10);
-    }
-    pwr_str[ps_idx++] = '%';
-    pwr_str[ps_idx] = '\0';
-    
-    if (needle_x > 32) {
-        gba_draw_text(fb, 8, 148, "0%", GBA_WHITE, true);
-    }
-    if (needle_x >= 88 && needle_x <= 152) {
-        gba_draw_text(fb, 52, 148, pwr_str, GBA_YELLOW, true);
-    } else {
-        gba_draw_text(fb, 106, 148, pwr_str, GBA_YELLOW, true);
-    }
-    if (needle_x < 190) {
-        gba_draw_text(fb, 196, 148, "100%", GBA_WHITE, true);
+        gba_draw_text(fb, 144, 149, "[A] SET PIN", GBA_WHITE, false);
     }
 }
 

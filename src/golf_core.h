@@ -212,7 +212,9 @@ typedef enum {
     GOLFER_STATE_READY = 0, /* Standing beside ball ready to address & swing */
     GOLFER_STATE_SWINGING,  /* In swing motion */
     GOLFER_STATE_WATCHING,  /* Watching shot flight / roll */
-    GOLFER_STATE_WALKING    /* Walking to the ball */
+    GOLFER_STATE_WALKING,   /* Walking to the ball */
+    GOLFER_STATE_JUMPING,   /* Leaping up onto vertical column */
+    GOLFER_STATE_DRINKING   /* Taking a refreshing drink from cart girl */
 } GolferState;
 
 typedef struct {
@@ -224,6 +226,10 @@ typedef struct {
     int32_t walk_anim_frame;/* 0..3 */
     int32_t walk_ticks;
     int32_t step_timer;
+    int32_t jump_timer;     /* Ticks into jump arc */
+    int32_t jump_duration;  /* Total ticks for jump */
+    fixed jump_start_z;     /* Elevation at jump launch */
+    int32_t drink_timer;    /* Ticks drinking beverage */
 } GolferEntity;
 
 /* Caddy Character Entity */
@@ -269,7 +275,10 @@ typedef struct {
 typedef enum {
     BEV_STATE_DRIVING = 0,
     BEV_STATE_SERVICING,
-    BEV_STATE_PAUSED
+    BEV_STATE_PAUSED,
+    BEV_STATE_APPROACHING_PLAYER, /* Cart drives over to the player */
+    BEV_STATE_DRINKING,           /* Player drinks cold beverage */
+    BEV_STATE_BURPING             /* Player burps */
 } BeverageCartState;
 
 typedef struct {
@@ -282,6 +291,8 @@ typedef struct {
     int32_t whistle_timer;  /* Ticks until next cheerful whistle */
     int32_t speech_timer;   /* Speech bubble "COLD DRINKS!" */
     int32_t wait_timer;
+    int32_t interaction_timer;
+    int32_t interaction_cooldown; /* Cooldown until next drink service */
     bool active;
 } BeverageCartEntity;
 
@@ -375,7 +386,9 @@ typedef enum {
     AUDIO_EVT_SHOTGUN = 26,
     AUDIO_EVT_CHAINSAW = 27,
     AUDIO_EVT_ZOMBIE = 28,
-    AUDIO_EVT_SEAMONSTER = 29
+    AUDIO_EVT_SEAMONSTER = 29,
+    AUDIO_EVT_BURP = 30,
+    AUDIO_EVT_GOLFER_JUMP = 31
 } GolfAudioEvent;
 
 /* Tumbleweeds for La Playa Desert Theme */
@@ -430,6 +443,8 @@ typedef struct {
 /* Full Game Simulation State */
 typedef struct {
     GolfTile grid[GRID_W][GRID_H];
+    uint8_t locked_elevation[GRID_W][GRID_H]; /* Locked terrain elevation map */
+    bool elevation_locked;
     
     /* Routing coordinates */
     int32_t tee_gx, tee_gy;
@@ -559,5 +574,6 @@ const ClubData* golf_get_club_data(ClubType club);
 int golf_get_water_proximity(const GolfState *gs, fixed view_x, fixed view_y);
 int golf_get_clubhouse_proximity(const GolfState *gs, fixed view_x, fixed view_y);
 void golf_golfer_arrive_at_ball(GolfState *gs);
+bool golf_is_high_column(const GolfState *gs, int32_t gx, int32_t gy);
 
 #endif /* GOLF_CORE_H */

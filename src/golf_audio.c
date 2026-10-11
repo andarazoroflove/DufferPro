@@ -545,6 +545,28 @@ static float synthesize_sfx_sample(SfxVoice *v) {
             break;
         }
 
+        case SFX_BURP: {
+            /* Comical Guttural Burp: low vocal fry pulse with resonant frequency wobble & throat flutter */
+            float b_freq = 92.0f + sinf(t * 32.0f) * 18.0f - progress * 24.0f;
+            float b_phase = 2.0f * (float)M_PI * b_freq * t;
+            float b_pulse = (sinf(b_phase) > 0.15f) ? 0.8f : -0.6f;
+            float formant = sinf(b_phase * 2.8f) * 0.45f + sinf(b_phase * 5.2f) * 0.3f;
+            float flutter = audio_noise() * 0.35f * (0.6f + 0.4f * sinf(t * 44.0f));
+            float env = (progress < 0.15f) ? (progress / 0.15f) : ((progress > 0.8f) ? (1.0f - progress) / 0.2f : 1.0f);
+            out = (b_pulse * 0.55f + formant * 0.5f + flutter * 0.4f) * env * v->volume * 1.45f;
+            break;
+        }
+
+        case SFX_GOLFER_JUMP: {
+            /* Springy athletic leap: upward frequency sweep with resonant bounce */
+            float j_freq = 190.0f + 240.0f * (1.0f - expf(-t * 12.0f));
+            float j_phase = 2.0f * (float)M_PI * j_freq * t;
+            float j_sine = sinf(j_phase);
+            float j_env = expf(-t * 9.0f);
+            out = j_sine * j_env * v->volume * 1.1f;
+            break;
+        }
+
         default:
             break;
     }
@@ -846,6 +868,8 @@ void golf_audio_play_sfx(GolfSfxType sfx) {
             case SFX_CHAINSAW:         v->total_samples = AUDIO_SAMPLE_RATE * 100 / 100; v->volume = 1.30f; break;
             case SFX_ZOMBIE:           v->total_samples = AUDIO_SAMPLE_RATE * 120 / 100; v->volume = 1.35f; break;
             case SFX_SEAMONSTER:       v->total_samples = AUDIO_SAMPLE_RATE * 150 / 100; v->volume = 1.45f; break;
+            case SFX_BURP:             v->total_samples = AUDIO_SAMPLE_RATE * 55 / 100; v->volume = 1.55f; break;
+            case SFX_GOLFER_JUMP:      v->total_samples = AUDIO_SAMPLE_RATE * 24 / 100; v->volume = 1.15f; break;
             default: v->total_samples = AUDIO_SAMPLE_RATE / 4; break;
         }
     }

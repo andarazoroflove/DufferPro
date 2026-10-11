@@ -140,6 +140,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+    SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
+    
     SDL_Window *window = SDL_CreateWindow(
         "Duffer Pro v" DUFFER_VERSION,
         SDL_WINDOWPOS_CENTERED,
@@ -523,10 +526,10 @@ int main(int argc, char *argv[]) {
                                 }
                             } else {
                                 /* Play Mode */
-                                if (s_game_state.golfer.state == GOLFER_STATE_WALKING) {
-                                    /* Click anywhere during walk fast-forwards arrival */
+                                if (s_game_state.golfer.state == GOLFER_STATE_WALKING || s_game_state.golfer.state == GOLFER_STATE_JUMPING) {
+                                    /* Click anywhere during walk or jump fast-forwards arrival */
                                     s_free_cam = false;
-                                    golf_swing_click(&s_game_state);
+                                    golf_golfer_arrive_at_ball(&s_game_state);
                                     dispatch_audio_events();
                                 } else if (s_game_state.swing.state == SWING_STATE_READY) {
                                     /* Check if clicking golfer or ball to swing */
@@ -622,6 +625,7 @@ int main(int argc, char *argv[]) {
             bool in_action = (s_game_state.ball.state == BALL_IN_FLIGHT || 
                               s_game_state.ball.state == BALL_ROLLING || 
                               s_game_state.golfer.state == GOLFER_STATE_WALKING || 
+                              s_game_state.golfer.state == GOLFER_STATE_JUMPING || 
                               s_game_state.swing.state != SWING_STATE_READY);
             if (in_action) {
                 s_free_cam = false;
@@ -629,7 +633,7 @@ int main(int argc, char *argv[]) {
             
             if (!s_free_cam) {
                 fixed focus_x, focus_y, focus_gz;
-                if (s_game_state.golfer.state == GOLFER_STATE_WALKING) {
+                if (s_game_state.golfer.state == GOLFER_STATE_WALKING || s_game_state.golfer.state == GOLFER_STATE_JUMPING) {
                     focus_x = s_game_state.golfer.x;
                     focus_y = s_game_state.golfer.y;
                     focus_gz = (s_game_state.golfer.current_z > 0) ? s_game_state.golfer.current_z : golf_get_ground_z_fixed(&s_game_state, focus_x, focus_y);
@@ -661,8 +665,22 @@ int main(int argc, char *argv[]) {
         /* Render Frame */
         render_frame(&s_render_ctx, &s_game_state);
         
-        /* Blit Framebuffer to SDL Texture */
-        SDL_UpdateTexture(texture, NULL, s_framebuffer, SCREEN_W * sizeof(uint32_t));
+        /* Blit Framebuffer to SDL Texture via streaming lock/unlock (avoids Metal/GL buffer race & leaks) */
+        void *pixels = NULL;
+        int pitch = 0;
+        if (SDL_LockTexture(texture, NULL, &pixels, &pitch) == 0) {
+            if (pitch == SCREEN_W * (int)sizeof(uint32_t)) {
+                memcpy(pixels, s_framebuffer, sizeof(s_framebuffer));
+            } else {
+                uint8_t *dst = (uint8_t *)pixels;
+                const uint8_t *src = (const uint8_t *)s_framebuffer;
+                int row_bytes = SCREEN_W * (int)sizeof(uint32_t);
+                for (int y = 0; y < SCREEN_H; ++y) {
+                    memcpy(dst + y * pitch, src + y * row_bytes, row_bytes);
+                }
+            }
+            SDL_UnlockTexture(texture);
+        }
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);

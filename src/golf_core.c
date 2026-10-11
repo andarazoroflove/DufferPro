@@ -146,6 +146,30 @@ fixed golf_get_ground_z_fixed(const GolfState *gs, fixed fx, fixed fy) {
     return TO_FIXED(gs->grid[gx][gy].elevation * HEIGHT_STEP_PX);
 }
 
+bool golf_is_high_column(const GolfState *gs, int32_t gx, int32_t gy) {
+    if (!gs || gx < 0 || gx >= GRID_W || gy < 0 || gy >= GRID_H) return false;
+    uint8_t elev = gs->grid[gx][gy].elevation;
+    if (elev >= ELEV_RIDGE) return true; /* Ridge or Plateau (tier 3 or 4) */
+    
+    /* Also check if it's a raised column / plateau relative to surrounding tiles */
+    int32_t neighbors_lower = 0;
+    const int dxs[4] = {-1, 1, 0, 0};
+    const int dys[4] = {0, 0, -1, 1};
+    for (int i = 0; i < 4; ++i) {
+        int nx = gx + dxs[i];
+        int ny = gy + dys[i];
+        if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
+            if (elev > gs->grid[nx][ny].elevation) {
+                neighbors_lower++;
+            }
+        }
+    }
+    if (elev >= ELEV_VALLEY && neighbors_lower >= 2) {
+        return true;
+    }
+    return false;
+}
+
 SurfaceType golf_get_surface_at(const GolfState *gs, fixed fx, fixed fy) {
     int32_t gx = FROM_FIXED(fx);
     int32_t gy = FROM_FIXED(fy);
@@ -635,6 +659,14 @@ void golf_place_default_routing(GolfState *gs) {
     gs->initial_ch_gx = gs->clubhouse_gx;
     gs->initial_ch_gy = gs->clubhouse_gy;
     gs->initial_has_ch = gs->has_clubhouse;
+
+    /* Snapshot and lock terrain elevations so they never glitch or pop up mid-hole */
+    for (int y = 0; y < GRID_H; ++y) {
+        for (int x = 0; x < GRID_W; ++x) {
+            gs->locked_elevation[x][y] = gs->grid[x][y].elevation;
+        }
+    }
+    gs->elevation_locked = true;
 }
 
 bool golf_place_clubhouse(GolfState *gs, int32_t gx, int32_t gy) {
@@ -899,6 +931,15 @@ void golf_replay_hole(GolfState *gs) {
     
     golf_reset_ball_to_tee(gs);
     golf_golfer_arrive_at_ball(gs);
+    
+    /* Lock elevations upon replaying hole */
+    for (int y = 0; y < GRID_H; ++y) {
+        for (int x = 0; x < GRID_W; ++x) {
+            gs->locked_elevation[x][y] = gs->grid[x][y].elevation;
+        }
+    }
+    gs->elevation_locked = true;
+    
     set_banner(gs, "REPLAYING HOLE", 120);
 }
 
@@ -968,6 +1009,14 @@ void golf_init(GolfState *gs) {
     gs->caddy.state = CADDY_STATE_READY;
     gs->caddy.facing_angle = gs->golfer.facing_angle;
     
+    /* Lock elevations at start of game */
+    for (int y = 0; y < GRID_H; ++y) {
+        for (int x = 0; x < GRID_W; ++x) {
+            gs->locked_elevation[x][y] = gs->grid[x][y].elevation;
+        }
+    }
+    gs->elevation_locked = true;
+
     golf_recalc_course_rating(gs);
     set_banner(gs, "WELCOME TO DUFFER PRO!", 180);
 }
@@ -1094,6 +1143,15 @@ bool golf_raise_terrain(GolfState *gs, int32_t gx, int32_t gy, int32_t brush_siz
     }
     
     if (changed) {
+        for (int dy = -rad; dy <= rad; ++dy) {
+            for (int dx = -rad; dx <= rad; ++dx) {
+                int tx = gx + dx;
+                int ty = gy + dy;
+                if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                    gs->locked_elevation[tx][ty] = gs->grid[tx][ty].elevation;
+                }
+            }
+        }
         gs->audio_event = AUDIO_EVT_TERRAIN_SCULPT;
         gs->club_funds -= 50;
         golf_update_autotile_masks(gs);
@@ -1125,6 +1183,15 @@ bool golf_lower_terrain(GolfState *gs, int32_t gx, int32_t gy, int32_t brush_siz
     }
     
     if (changed) {
+        for (int dy = -rad; dy <= rad; ++dy) {
+            for (int dx = -rad; dx <= rad; ++dx) {
+                int tx = gx + dx;
+                int ty = gy + dy;
+                if (tx >= 0 && tx < GRID_W && ty >= 0 && ty < GRID_H) {
+                    gs->locked_elevation[tx][ty] = gs->grid[tx][ty].elevation;
+                }
+            }
+        }
         gs->audio_event = AUDIO_EVT_TERRAIN_SCULPT;
         gs->club_funds -= 50;
         golf_update_autotile_masks(gs);
@@ -1288,6 +1355,11 @@ bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy) {
     }
     
     if (modified) {
+        for (int y = 0; y < GRID_H; ++y) {
+            for (int x = 0; x < GRID_W; ++x) {
+                gs->locked_elevation[x][y] = gs->grid[x][y].elevation;
+            }
+        }
         golf_update_autotile_masks(gs);
         golf_recalc_course_rating(gs);
     }
@@ -1296,6 +1368,15 @@ bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy) {
 
 void golf_select_club(GolfState *gs, ClubType club) {
     if (club < CLUB_COUNT) {
+        if (gs->has_custom_aim) {
+            int32_t tgx = FROM_FIXED(gs->aim_target_x);
+            int32_t tgy = FROM_FIXED(gs->aim_target_y);
+            if (golf_is_high_column(gs, tgx, tgy)) {
+                gs->current_club = CLUB_LW;
+                set_banner(gs, "HIGH COLUMN TARGET: ONLY LOB WEDGE ALLOWED!", 60);
+                return;
+            }
+        }
         gs->current_club = club;
         if (!gs->has_custom_aim) {
             const ClubData *cd = golf_get_club_data(gs->current_club);
@@ -1340,15 +1421,25 @@ void golf_set_aim_target(GolfState *gs, fixed target_fx, fixed target_fy) {
     gs->aim_distance_yds = FROM_FIXED(FMUL(dist_tiles, TO_FIXED(YARDS_PER_TILE)));
     if (gs->aim_distance_yds < 1) gs->aim_distance_yds = 1;
     
-    /* Auto-select optimal club */
-    gs->current_club = recommend_club_for_distance(gs->aim_distance_yds, gs->ball.current_surf);
+    int32_t tgx = FROM_FIXED(target_fx);
+    int32_t tgy = FROM_FIXED(target_fy);
+    if (golf_is_high_column(gs, tgx, tgy)) {
+        gs->current_club = CLUB_LW;
+        set_banner(gs, "LOB WEDGE SELECTED - HIGH COLUMN TARGET!", 90);
+    } else {
+        /* Auto-select optimal club */
+        gs->current_club = recommend_club_for_distance(gs->aim_distance_yds, gs->ball.current_surf);
+    }
 }
 
 void golf_execute_shot(GolfState *gs) {
     if (gs->mode != MODE_PLAY) return;
     
-    if (gs->golfer.state == GOLFER_STATE_WALKING) {
+    if (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
         golf_golfer_arrive_at_ball(gs);
+        return;
+    }
+    if (gs->golfer.state == GOLFER_STATE_DRINKING) {
         return;
     }
     
@@ -1647,8 +1738,20 @@ void golf_tick(GolfState *gs) {
         gs->banner_timer--;
     }
     
+    /* Enforce locked terrain elevations during Play Mode so elevations never glitch or pop up mid-hole */
+    if (gs->mode == MODE_PLAY && gs->elevation_locked) {
+        for (int y = 0; y < GRID_H; ++y) {
+            for (int x = 0; x < GRID_W; ++x) {
+                gs->grid[x][y].elevation = gs->locked_elevation[x][y];
+            }
+        }
+    }
+    
     /* 1. Update Swing Gauge */
-    if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE && gs->golfer.state != GOLFER_STATE_WALKING) {
+    if (gs->mode == MODE_PLAY && gs->ball.state == BALL_IDLE &&
+        gs->golfer.state != GOLFER_STATE_WALKING &&
+        gs->golfer.state != GOLFER_STATE_JUMPING &&
+        gs->golfer.state != GOLFER_STATE_DRINKING) {
         if (gs->swing.state == SWING_STATE_POWER) {
             gs->swing.cursor_pos += gs->swing.cursor_speed;
             if (gs->swing.cursor_pos >= FIXED_ONE) {
@@ -1808,6 +1911,14 @@ void golf_tick(GolfState *gs) {
                 rest = 28000; fric = 62000;
             }
             
+            int32_t land_gx = FROM_FIXED(gs->ball.x);
+            int32_t land_gy = FROM_FIXED(gs->ball.y);
+            if (golf_is_high_column(gs, land_gx, land_gy)) {
+                /* High vertical column level top soft landing: stick landing without bouncing away */
+                rest = 1200;  /* Very low bounce restitution (~0.018) */
+                fric = 22000; /* High friction bite (~0.33) to stick the landing */
+            }
+            
             gs->ball.vz = -FMUL(gs->ball.vz, rest);
             gs->ball.vx = FMUL(gs->ball.vx, fric);
             gs->ball.vy = FMUL(gs->ball.vy, fric);
@@ -1838,12 +1949,16 @@ void golf_tick(GolfState *gs) {
         else if (surf == SURF_SAND) fric = 32000;
         else if (surf == SURF_BRIDGE || surf == SURF_CARTPATH) fric = 62000;
         
+        int32_t bgx = FROM_FIXED(gs->ball.x);
+        int32_t bgy = FROM_FIXED(gs->ball.y);
+        if (golf_is_high_column(gs, bgx, bgy)) {
+            fric = 28000; /* High friction bite so ball stays on column top without rolling off */
+        }
+        
         gs->ball.vx = FMUL(gs->ball.vx, fric);
         gs->ball.vy = FMUL(gs->ball.vy, fric);
         
         /* Slope vector acceleration */
-        int32_t bgx = FROM_FIXED(gs->ball.x);
-        int32_t bgy = FROM_FIXED(gs->ball.y);
         if (bgx > 0 && bgx < GRID_W - 1 && bgy > 0 && bgy < GRID_H - 1) {
             int32_t de_x = gs->grid[bgx + 1][bgy].elevation - gs->grid[bgx - 1][bgy].elevation;
             int32_t de_y = gs->grid[bgx][bgy + 1].elevation - gs->grid[bgx][bgy - 1].elevation;
@@ -2001,14 +2116,27 @@ void golf_tick(GolfState *gs) {
         gs->swing.cursor_pos = gs->swing.sweetspot_center;
     }
     
-    /* 3. Golfer Walking & Footsteps */
+    /* 3. Golfer Walking, Jumping & Footsteps */
     if (gs->mode == MODE_PLAY && gs->golfer.state == GOLFER_STATE_WALKING) {
         fixed gdx = gs->golfer.target_x - gs->golfer.x;
         fixed gdy = gs->golfer.target_y - gs->golfer.y;
         fixed gdist = fixed_sqrt(FMUL(gdx, gdx) + FMUL(gdy, gdy));
         fixed walk_spd = 5200;
         
-        if (gdist <= walk_spd || gdist < TO_FIXED(1) / 3) {
+        int32_t bgx = FROM_FIXED(gs->golfer.target_x);
+        int32_t bgy = FROM_FIXED(gs->golfer.target_y);
+        fixed ball_gz = gs->ball.ground_z;
+        bool ball_on_column = golf_is_high_column(gs, bgx, bgy) || (ball_gz > gs->golfer.current_z + TO_FIXED(HEIGHT_STEP_PX * 2));
+        
+        if (ball_on_column && gdist <= TO_FIXED(2) && ball_gz > gs->golfer.current_z + TO_FIXED(8)) {
+            /* Animate golfer jumping up to the top of the column to take his shot! */
+            gs->golfer.state = GOLFER_STATE_JUMPING;
+            gs->golfer.jump_timer = 0;
+            gs->golfer.jump_duration = 34; /* ~0.57s arc */
+            gs->golfer.jump_start_z = gs->golfer.current_z;
+            gs->audio_event = AUDIO_EVT_GOLFER_JUMP;
+            set_banner(gs, "SUPER LEAP TO COLUMN TOP!", 60);
+        } else if (gdist <= walk_spd || gdist < TO_FIXED(1) / 3) {
             golf_golfer_arrive_at_ball(gs);
         } else {
             gs->golfer.facing_angle = fixed_atan2(gdy, gdx);
@@ -2035,6 +2163,21 @@ void golf_tick(GolfState *gs) {
                 else gs->audio_event = AUDIO_EVT_FOOTSTEP_GRASS;
             }
         }
+    } else if (gs->mode == MODE_PLAY && gs->golfer.state == GOLFER_STATE_JUMPING) {
+        gs->golfer.jump_timer++;
+        int32_t t_rem = gs->golfer.jump_duration - gs->golfer.jump_timer;
+        if (t_rem <= 0) {
+            golf_golfer_arrive_at_ball(gs);
+        } else {
+            gs->golfer.x += (gs->golfer.target_x - gs->golfer.x) / (t_rem + 1);
+            gs->golfer.y += (gs->golfer.target_y - gs->golfer.y) / (t_rem + 1);
+            
+            fixed t_fixed = (gs->golfer.jump_timer * FIXED_ONE) / gs->golfer.jump_duration;
+            int sin_idx = (gs->golfer.jump_timer * 128) / gs->golfer.jump_duration;
+            if (sin_idx > 128) sin_idx = 128;
+            fixed leap_arc = FMUL(TO_FIXED(22), g_sin_lut[sin_idx]);
+            gs->golfer.current_z = gs->golfer.jump_start_z + FMUL(gs->ball.ground_z - gs->golfer.jump_start_z, t_fixed) + leap_arc;
+        }
     }
     
     /* 4. Caddy Companion Simulation */
@@ -2052,7 +2195,7 @@ void golf_tick(GolfState *gs) {
                 gs->caddy.x += FMUL(c_spd, fixed_cos(gs->caddy.facing_angle));
                 gs->caddy.y += FMUL(c_spd, fixed_sin(gs->caddy.facing_angle));
                 gs->caddy.walk_anim_frame = (gs->golfer.walk_ticks / 7) % 6;
-            } else if (gs->golfer.state != GOLFER_STATE_WALKING) {
+            } else if (gs->golfer.state != GOLFER_STATE_WALKING && gs->golfer.state != GOLFER_STATE_JUMPING) {
                 gs->caddy.state = CADDY_STATE_READY;
                 gs->caddy.facing_angle = gs->golfer.facing_angle;
             }
@@ -2091,6 +2234,10 @@ void golf_tick(GolfState *gs) {
             gs->bev_cart.speech_timer--;
         }
         
+        if (gs->bev_cart.interaction_cooldown > 0) {
+            gs->bev_cart.interaction_cooldown--;
+        }
+        
         if (gs->bev_cart.whistle_timer > 0) {
             gs->bev_cart.whistle_timer--;
             if (gs->bev_cart.whistle_timer == 0) {
@@ -2100,7 +2247,76 @@ void golf_tick(GolfState *gs) {
             }
         }
         
-        if (gs->bev_cart.state == BEV_STATE_DRIVING) {
+        /* Proximity trigger with golfer (2-square radius): Cart girl brings cold drinks! */
+        if (gs->mode == MODE_PLAY && gs->bev_cart.interaction_cooldown == 0 &&
+            gs->bev_cart.state != BEV_STATE_APPROACHING_PLAYER &&
+            gs->bev_cart.state != BEV_STATE_DRINKING &&
+            gs->bev_cart.state != BEV_STATE_BURPING &&
+            gs->golfer.state != GOLFER_STATE_JUMPING) {
+            fixed cdx = gs->bev_cart.x - gs->golfer.x;
+            fixed cdy = gs->bev_cart.y - gs->golfer.y;
+            fixed pdist = fixed_sqrt(FMUL(cdx, cdx) + FMUL(cdy, cdy));
+            if (pdist <= TO_FIXED(2)) {
+                gs->bev_cart.state = BEV_STATE_APPROACHING_PLAYER;
+                gs->bev_cart.speed = 3400;
+                gs->bev_cart.target_x = gs->golfer.x + FMUL(TO_FIXED(3) / 4, fixed_cos(gs->golfer.facing_angle + 64));
+                gs->bev_cart.target_y = gs->golfer.y + FMUL(TO_FIXED(3) / 4, fixed_sin(gs->golfer.facing_angle + 64));
+                set_banner(gs, "BEVERAGE CART GIRL: 'ICE COLD DRINK, HONEY?'", 120);
+            }
+        }
+        
+        if (gs->bev_cart.state == BEV_STATE_APPROACHING_PLAYER) {
+            fixed dx = gs->bev_cart.target_x - gs->bev_cart.x;
+            fixed dy = gs->bev_cart.target_y - gs->bev_cart.y;
+            fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
+            
+            if (dist < TO_FIXED(1) / 2) {
+                /* Arrived right by the player! Player takes a refreshing drink */
+                gs->bev_cart.state = BEV_STATE_DRINKING;
+                gs->bev_cart.interaction_timer = 90;
+                gs->golfer.state = GOLFER_STATE_DRINKING;
+                gs->golfer.drink_timer = 90;
+                set_banner(gs, "GLUG... GLUG... GLUG... REFRESHING!", 90);
+            } else {
+                gs->bev_cart.facing_angle = fixed_atan2(dy, dx);
+                gs->bev_cart.x += FMUL(gs->bev_cart.speed, fixed_cos(gs->bev_cart.facing_angle));
+                gs->bev_cart.y += FMUL(gs->bev_cart.speed, fixed_sin(gs->bev_cart.facing_angle));
+                
+                fixed target_gz = golf_get_ground_z_fixed(gs, gs->bev_cart.x, gs->bev_cart.y);
+                fixed z_diff = target_gz - gs->bev_cart.current_z;
+                fixed z_step = TO_FIXED(3);
+                if (z_diff > z_step) gs->bev_cart.current_z += z_step;
+                else if (z_diff < -z_step) gs->bev_cart.current_z -= z_step;
+                else gs->bev_cart.current_z = target_gz;
+            }
+        } else if (gs->bev_cart.state == BEV_STATE_DRINKING) {
+            if (gs->bev_cart.interaction_timer > 0) {
+                gs->bev_cart.interaction_timer--;
+                gs->golfer.drink_timer = gs->bev_cart.interaction_timer;
+            } else {
+                /* Finished drink -> epic burp! */
+                gs->bev_cart.state = BEV_STATE_BURPING;
+                gs->bev_cart.interaction_timer = 60;
+                gs->audio_event = AUDIO_EVT_BURP;
+                set_banner(gs, "*BUUURRRRRP!* 'EXCUSE ME!'", 90);
+            }
+        } else if (gs->bev_cart.state == BEV_STATE_BURPING) {
+            if (gs->bev_cart.interaction_timer > 0) {
+                gs->bev_cart.interaction_timer--;
+            } else {
+                /* Burp finished! Player resumes address so shot continues */
+                gs->golfer.state = GOLFER_STATE_READY;
+                gs->bev_cart.state = BEV_STATE_DRIVING;
+                gs->bev_cart.speed = 2200;
+                gs->bev_cart.interaction_cooldown = 1800; /* 30-second cooldown */
+                /* Cart drives away toward clubhouse or tee */
+                int dest_gx = (gs->has_clubhouse) ? gs->clubhouse_gx : gs->tee_gx;
+                int dest_gy = (gs->has_clubhouse) ? gs->clubhouse_gy : gs->tee_gy;
+                gs->bev_cart.target_x = TO_FIXED(dest_gx) + FIXED_HALF;
+                gs->bev_cart.target_y = TO_FIXED(dest_gy) + FIXED_HALF;
+                set_banner(gs, "BEVERAGE CART DRIVES AWAY! PLAY ON!", 90);
+            }
+        } else if (gs->bev_cart.state == BEV_STATE_DRIVING) {
             fixed dx = gs->bev_cart.target_x - gs->bev_cart.x;
             fixed dy = gs->bev_cart.target_y - gs->bev_cart.y;
             fixed dist = fixed_sqrt(FMUL(dx, dx) + FMUL(dy, dy));
@@ -2467,7 +2683,6 @@ void golf_tick(GolfState *gs) {
                         gs->audio_event = AUDIO_EVT_CARL_EXPLOSION;
                         int tgx = gs->carl.target_gx;
                         int tgy = gs->carl.target_gy;
-                        if (gs->grid[tgx][tgy].elevation > 0) gs->grid[tgx][tgy].elevation--;
                         for (int dy = -1; dy <= 1; ++dy) {
                             for (int dx = -1; dx <= 1; ++dx) {
                                 int cx = tgx + dx, cy = tgy + dy;

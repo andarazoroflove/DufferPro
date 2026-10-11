@@ -78,6 +78,8 @@ static uint32_t s_sprite_flag[4][SPRITE_FLAG_W * SPRITE_FLAG_H];
 #define SPRITE_GOLFER_H 38
 static uint32_t s_sprite_golfer[SPRITE_GOLFER_W * SPRITE_GOLFER_H];
 static uint32_t s_sprite_golfer_walk[6][SPRITE_GOLFER_W * SPRITE_GOLFER_H];
+static uint32_t s_sprite_golfer_jump[SPRITE_GOLFER_W * SPRITE_GOLFER_H];
+static uint32_t s_sprite_golfer_drink[SPRITE_GOLFER_W * SPRITE_GOLFER_H];
 
 #define SPRITE_CADDY_W 28
 #define SPRITE_CADDY_H 38
@@ -868,6 +870,65 @@ static void generate_procedural_graphics(void) {
         }
     }
     
+    /* Jumping Golfer Sprite (Tucked knees, arms poised for athletic leap) */
+    memcpy(s_sprite_golfer_jump, s_sprite_golfer, sizeof(s_sprite_golfer));
+    for (int y = 20; y < SPRITE_GOLFER_H; ++y) {
+        for (int x = 0; x < SPRITE_GOLFER_W; ++x) {
+            s_sprite_golfer_jump[y * SPRITE_GOLFER_W + x] = 0;
+        }
+    }
+    {
+        int cx = 13;
+        /* Athletic jumping legs: bent knees tucked up */
+        for (int y = 19; y <= 24; ++y) {
+            for (int x = cx - 5; x <= cx + 5; ++x) {
+                int pleat = (x == cx - 2 || x == cx + 2) ? -16 : 8;
+                s_sprite_golfer_jump[y * SPRITE_GOLFER_W + x] = COLOR_RGB(196 + pleat, 170 + pleat, 132 + pleat);
+            }
+        }
+        /* Tucked athletic calves */
+        for (int y = 24; y <= 28; ++y) {
+            if (cx - 4 >= 0) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx - 4)] = COLOR_RGB(238, 192, 155);
+            if (cx - 3 >= 0) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx - 3)] = COLOR_RGB(238, 192, 155);
+            if (cx + 3 < SPRITE_GOLFER_W) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx + 3)] = COLOR_RGB(238, 192, 155);
+            if (cx + 4 < SPRITE_GOLFER_W) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx + 4)] = COLOR_RGB(238, 192, 155);
+        }
+        /* Tucked saddle shoes */
+        for (int y = 28; y <= 31; ++y) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (cx - 3 + dx >= 0) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx - 3 + dx)] = COLOR_RGB(242, 244, 248);
+                if (cx + 3 + dx < SPRITE_GOLFER_W) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx + 3 + dx)] = COLOR_RGB(242, 244, 248);
+            }
+        }
+        /* Dynamic leaping arms raised up high for balance */
+        for (int y = 9; y <= 15; ++y) {
+            if (cx - 6 >= 0) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx - 6)] = COLOR_RGB(238, 192, 155);
+            if (cx - 7 >= 0) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx - 7)] = COLOR_RGB(238, 192, 155);
+            if (cx + 6 < SPRITE_GOLFER_W) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx + 6)] = COLOR_RGB(245, 245, 245);
+            if (cx + 7 < SPRITE_GOLFER_W) s_sprite_golfer_jump[y * SPRITE_GOLFER_W + (cx + 7)] = COLOR_RGB(245, 245, 245);
+        }
+    }
+
+    /* Drinking Golfer Sprite (Tipping head back, raising frosty cold drink can to mouth) */
+    memcpy(s_sprite_golfer_drink, s_sprite_golfer, sizeof(s_sprite_golfer));
+    {
+        int cx = 13;
+        /* Frosty cold drink can in right hand up by mouth (x = cx + 4..cx + 7, y = 6..12) */
+        for (int y = 6; y <= 12; ++y) {
+            for (int x = cx + 4; x <= cx + 7; ++x) {
+                if (x < SPRITE_GOLFER_W) {
+                    uint32_t can_col = (x == cx + 5) ? COLOR_RGB(220, 240, 255) : COLOR_RGB(40, 110, 220);
+                    if (y == 6 || y == 12) can_col = COLOR_RGB(200, 210, 225);
+                    s_sprite_golfer_drink[y * SPRITE_GOLFER_W + x] = can_col;
+                }
+            }
+        }
+        /* Right hand gripping can */
+        for (int y = 9; y <= 11; ++y) {
+            if (cx + 3 < SPRITE_GOLFER_W) s_sprite_golfer_drink[y * SPRITE_GOLFER_W + (cx + 3)] = COLOR_RGB(245, 245, 245);
+        }
+    }
+    
     /* 21. Caddy Character (28x38, Tour Bib with Gold #1, Tour Bag with Pom-Poms) */
     memset(s_sprite_caddy, 0, sizeof(s_sprite_caddy));
     for (int y = 0; y < SPRITE_CADDY_H; ++y) {
@@ -1544,8 +1605,10 @@ void draw_text(RenderContext *rc, int32_t x, int32_t y, const char *str, uint32_
                         int px = cur_x + gx;
                         int py = y + gy;
                         if (shadow) {
-                            if (px + 1 < SCREEN_W && py + 1 < SCREEN_H) {
-                                rc->framebuffer[(py + 1) * SCREEN_W + px + 1] = COLOR_RGB(10, 15, 20);
+                            int spx = px + 1;
+                            int spy = py + 1;
+                            if (spx >= 0 && spx < SCREEN_W && spy >= 0 && spy < SCREEN_H) {
+                                rc->framebuffer[spy * SCREEN_W + spx] = COLOR_RGB(10, 15, 20);
                             }
                         }
                         if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
@@ -1575,8 +1638,10 @@ static void draw_text_2x(RenderContext *rc, int32_t x, int32_t y, const char *st
                                 int px = cur_x + gx * 2 + dx;
                                 int py = y + gy * 2 + dy;
                                 if (shadow) {
-                                    if (px + 2 < SCREEN_W && py + 2 < SCREEN_H) {
-                                        rc->framebuffer[(py + 2) * SCREEN_W + px + 2] = COLOR_RGB(10, 15, 20);
+                                    int spx = px + 2;
+                                    int spy = py + 2;
+                                    if (spx >= 0 && spx < SCREEN_W && spy >= 0 && spy < SCREEN_H) {
+                                        rc->framebuffer[spy * SCREEN_W + spx] = COLOR_RGB(10, 15, 20);
                                     }
                                 }
                                 if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H) {
@@ -2488,10 +2553,11 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             int32_t tile_base_depth = (x + y) * 32;
             
             /* Cliff Skirt Walls */
+            int32_t t_elev = (tile->elevation > MAX_ELEVATION_TIER) ? MAX_ELEVATION_TIER : tile->elevation;
             /* SW Edge: neighbor is in +Y direction (x, y + 1) */
-            int32_t sw_elev = (y < GRID_H - 1) ? gs->grid[x][y + 1].elevation : 0;
-            if (tile->elevation > sw_elev) {
-                int drop_h = (tile->elevation - sw_elev) * HEIGHT_STEP_PX;
+            int32_t sw_elev = (y < GRID_H - 1) ? ((gs->grid[x][y + 1].elevation > MAX_ELEVATION_TIER) ? MAX_ELEVATION_TIER : gs->grid[x][y + 1].elevation) : 0;
+            if (t_elev > sw_elev) {
+                int drop_h = (t_elev - sw_elev) * HEIGHT_STEP_PX;
                 int32_t cliff_depth = tile_base_depth + 16;
                 for (int dy = 0; dy < drop_h; ++dy) {
                     for (int dx = 0; dx < TILE_HALF_W; ++dx) {
@@ -2508,9 +2574,9 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             }
             
             /* SE Edge: neighbor is in +X direction (x + 1, y) */
-            int32_t se_elev = (x < GRID_W - 1) ? gs->grid[x + 1][y].elevation : 0;
-            if (tile->elevation > se_elev) {
-                int drop_h = (tile->elevation - se_elev) * HEIGHT_STEP_PX;
+            int32_t se_elev = (x < GRID_W - 1) ? ((gs->grid[x + 1][y].elevation > MAX_ELEVATION_TIER) ? MAX_ELEVATION_TIER : gs->grid[x + 1][y].elevation) : 0;
+            if (t_elev > se_elev) {
+                int drop_h = (t_elev - se_elev) * HEIGHT_STEP_PX;
                 int32_t cliff_depth = tile_base_depth + 16;
                 for (int dy = 0; dy < drop_h; ++dy) {
                     for (int dx = 0; dx < TILE_HALF_W; ++dx) {
@@ -2528,11 +2594,11 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             
             /* Surface Tile Blit */
             const uint32_t *tile_pixels = s_tile_rough[tile->variant % 4];
-            if (tile->surface == SURF_FAIRWAY) tile_pixels = s_tile_fairway[tile->autotile_mask];
-            else if (tile->surface == SURF_GREEN) tile_pixels = s_tile_green[tile->autotile_mask];
-            else if (tile->surface == SURF_SAND) tile_pixels = s_tile_sand[tile->autotile_mask];
+            if (tile->surface == SURF_FAIRWAY) tile_pixels = s_tile_fairway[tile->autotile_mask & 15];
+            else if (tile->surface == SURF_GREEN) tile_pixels = s_tile_green[tile->autotile_mask & 15];
+            else if (tile->surface == SURF_SAND) tile_pixels = s_tile_sand[tile->autotile_mask & 15];
             else if (tile->surface == SURF_WATER) tile_pixels = s_tile_water[(rc->tick_count / 8) % 4];
-            else if (tile->surface == SURF_CARTPATH) tile_pixels = s_tile_cartpath[tile->autotile_mask];
+            else if (tile->surface == SURF_CARTPATH) tile_pixels = s_tile_cartpath[tile->autotile_mask & 15];
             else if (tile->surface == SURF_BRIDGE) tile_pixels = s_tile_bridge[tile->variant % 4];
             else if (tile->surface == SURF_TEE) tile_pixels = s_tile_tee;
             
@@ -2943,10 +3009,22 @@ void render_frame(RenderContext *rc, const GolfState *gs) {
             case DRAWABLE_GOLFER: {
                 int fx = item->foot_sx;
                 int fy = item->foot_sy;
-                const uint32_t *g_spr = (gs->golfer.state == GOLFER_STATE_WALKING) ?
-                                         s_sprite_golfer_walk[gs->golfer.walk_anim_frame % 6] : s_sprite_golfer;
+                const uint32_t *g_spr = s_sprite_golfer;
+                if (gs->golfer.state == GOLFER_STATE_WALKING) {
+                    g_spr = s_sprite_golfer_walk[gs->golfer.walk_anim_frame % 6];
+                } else if (gs->golfer.state == GOLFER_STATE_JUMPING) {
+                    g_spr = s_sprite_golfer_jump;
+                } else if (gs->golfer.state == GOLFER_STATE_DRINKING) {
+                    g_spr = s_sprite_golfer_drink;
+                }
                 
-                draw_drop_shadow(rc, fx, fy, 9, 4, 130);
+                /* For jumping golfer, drop shadow stays grounded on terrain below */
+                int shadow_sx = fx, shadow_sy = fy;
+                if (gs->golfer.state == GOLFER_STATE_JUMPING) {
+                    fixed ground_z = golf_get_ground_z_fixed(gs, gs->golfer.x, gs->golfer.y);
+                    world_to_screen_fixed(gs->golfer.x, gs->golfer.y, ground_z, rc->camera_x, rc->camera_y, &shadow_sx, &shadow_sy);
+                }
+                draw_drop_shadow(rc, shadow_sx, shadow_sy, 9, 4, 130);
                 blit_sprite_depth(rc, fx - SPRITE_GOLFER_W / 2, fy - SPRITE_GOLFER_H + 4,
                                   SPRITE_GOLFER_W, SPRITE_GOLFER_H, g_spr, item->sort_key);
                 break;
@@ -3813,11 +3891,15 @@ void render_setup_screen(RenderContext *rc, const GolfState *gs, uint32_t tick_c
             for (int dy = -10; dy <= 10; ++dy) {
                 for (int dx = -10; dx <= 10; ++dx) {
                     int d2 = dx * dx + dy * dy;
-                    if (d2 <= 100 && d2 >= 64) {
-                        rc->framebuffer[(cy + dy) * SCREEN_W + (cx + dx)] = active ? COLOR_RGB(255, 220, 75) : COLOR_RGB(100, 120, 145);
-                    }
-                    if (active && d2 <= 36) {
-                        rc->framebuffer[(cy + dy) * SCREEN_W + (cx + dx)] = COLOR_RGB(255, 215, 60);
+                    int spx = cx + dx;
+                    int spy = cy + dy;
+                    if (spx >= 0 && spx < SCREEN_W && spy >= 0 && spy < SCREEN_H) {
+                        if (d2 <= 100 && d2 >= 64) {
+                            rc->framebuffer[spy * SCREEN_W + spx] = active ? COLOR_RGB(255, 220, 75) : COLOR_RGB(100, 120, 145);
+                        }
+                        if (active && d2 <= 36) {
+                            rc->framebuffer[spy * SCREEN_W + spx] = COLOR_RGB(255, 215, 60);
+                        }
                     }
                 }
             }

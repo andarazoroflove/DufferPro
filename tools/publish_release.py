@@ -33,25 +33,30 @@ def main():
         'Accept': 'application/vnd.github.v3+json'
     }
 
-    body_md = """## Duffer Pro: Championship Edition – Release v0.75-noonan ⛳
+    body_md = """## Duffer Pro: Championship Edition – Release v0.710-noonan (v0.7.10) ⛳
 
 ### 🌟 Highlights
 - **Single Unified Release Bundle:** Ready-to-run builds for **Windows PC**, **macOS Sonoma** (Universal 2: Apple Silicon + Intel), and bare-metal **Game Boy Advance** (`.gba` + `.sav`).
+- **GBA Refinements & Enhancements:**
+  - **Magnetic Cup Snapping:** Aiming crosshair magnetically snaps to the cup/flagstick when within 1 tile, highlighting with a pulsing `* PIN LOCK *` reticle and prompt.
+  - **Flag Planting Linger:** Placing the aim pin with [A] lingers on the pinned target flag with an audio ding before smoothly gliding the broadcast camera back to the golfer.
+  - **2x Accelerated Ball Flight:** Doubled physics tick rate during ball flight, bounce, and roll for snappy, arcade-style golf pace.
+  - **Audio Soundscape:** Dual-channel driver contact cracks, heavy ground thud on landing, pin placement ding, and tranquil background chirp ambience.
+  - **Splash Screen Caddyshack Melody:** 60 FPS playback at 128 BPM with Jump On and Play Hole randomizers.
 - **Three Environmental Themes:**
   - **Bushwood:** Classic country club, caddyshack crew, and Carl Spackler vs. the Gopher.
   - **La Playa:** Desert plateau, giant cacti, rolling tumbleweeds, rapids, Burning Man effigy, and dancing raver vs. police cart.
   - **Nocturnal Green:** Gothic Transylvanian castle, autumn foliage, coffin rock piles, dark lagoons, sea monster, zombies, and Ash with his boomstick.
-- **Enhanced Physics & Aiming:**
-  - Continuous sub-pixel coordinate inversion for laser-accurate mouse aiming.
-  - Complete obstacle launch immunity (punch cleanly out of trees, bushes, or boulder tiles without getting trapped).
-  - 3-click precision swing gauge with power auto-bounce.
-- **Customization & Quick Play:**
-  - **Sneak On Mode:** Randomized rounds with patrol cart ranger encounters.
-  - **Play a Hole Mode:** 1–5 density sliders for Trees, Bushes, Rocks, and Water with strict 70% natural limit safety clamp.
-  - **Replay Hole:** Instant one-click restart for current hole layout.
+- **Desktop (Windows / Mac) Enhancements:**
+  - Elevation consistency locking per hole.
+  - Lob wedge targeting for elevated columns with player jump animation.
+  - Beverage cart girl delivery encounter with beverage drink and burp.
+  - Vocal formant boomstick sound effect and procedural audio soundscape with random water gurgle and light breeze.
 
 ### 📦 Included in Release:
-- `Duffer_Pro_v0.75-noonan.zip` — All-in-one unified release archive.
+- `Duffer_Pro_v0.710-noonan.zip` — All-in-one unified release archive.
+- `duffer_pro.gba` — Standalone Game Boy Advance ROM.
+- `duffer_pro.exe` — Windows standalone executable.
 
 ### 📖 User Manual & Documentation
 Full gameplay instructions, club tables, and course architect guides are in the [Official User Manual](https://github.com/andarazoroflove/DufferPro/blob/main/wiki/User-Manual.md).
@@ -65,7 +70,7 @@ Full gameplay instructions, club tables, and course architect guides are in the 
         with urllib.request.urlopen(req_list) as resp:
             releases = json.loads(resp.read().decode('utf-8'))
             for r in releases:
-                if r.get('tag_name') in ['v0.75-noonan', 'v0.7.5']:
+                if r.get('tag_name') in ['v0.710-noonan', 'v0.7.10']:
                     existing_id = r['id']
                     upload_url_template = r['upload_url']
                     print(f"Found existing release ID: {existing_id}")
@@ -75,9 +80,9 @@ Full gameplay instructions, club tables, and course architect guides are in the 
 
     if not existing_id:
         rel_payload = {
-            'tag_name': 'v0.75-noonan',
-            'target_commitish': 'main',
-            'name': 'Duffer Pro v0.75-noonan (SemVer v0.7.5)',
+            'tag_name': 'v0.710-noonan',
+            'target_commitish': 'master',
+            'name': 'Duffer Pro v0.710-noonan (SemVer v0.7.10)',
             'body': body_md,
             'draft': False,
             'prerelease': False
@@ -97,9 +102,10 @@ Full gameplay instructions, club tables, and course architect guides are in the 
     upload_url = upload_url_template.split('{')[0]
 
     files_to_upload = [
-        'release/Duffer_Pro_v0.75-noonan.zip',
+        'release/Duffer_Pro_v0.710-noonan.zip',
         'release/macos/Duffer_Pro_macOS_Sonoma.zip',
-        'release/gba/duffer_pro.gba'
+        'release/gba/duffer_pro.gba',
+        'release/windows/duffer_pro.exe'
     ]
 
     for fpath in files_to_upload:

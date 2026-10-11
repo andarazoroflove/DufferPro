@@ -22,6 +22,8 @@ typedef struct {
     int32_t cross_gx;         /* Tile under center crosshair during aiming */
     int32_t cross_gy;
     int32_t cross_dist_yds;   /* Distance from ball to crosshair in yards */
+    bool pin_magnet_locked;   /* True when crosshair is magnetically snapped to cup pin */
+    int32_t flag_linger_timer;/* Frames to linger at target flag before camera returns to ball */
     
     /* Look mode compatibility */
     bool look_mode;

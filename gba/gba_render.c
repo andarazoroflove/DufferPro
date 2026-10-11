@@ -58,6 +58,8 @@ void gba_render_init(GbaRenderContext *grc) {
     grc->cross_gx = 0;
     grc->cross_gy = 0;
     grc->cross_dist_yds = 0;
+    grc->pin_magnet_locked = false;
+    grc->flag_linger_timer = 0;
     grc->look_mode = false;
     grc->look_cam_x = 0;
     grc->look_cam_y = 0;
@@ -940,7 +942,16 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     if (ball_gy < 0) ball_gy = 0; if (ball_gy >= GRID_H) ball_gy = GRID_H - 1;
     int32_t b_elev = gs->grid[ball_gx][ball_gy].elevation;
     
-    if (grc->aim_locked || gs->ball.state != BALL_IDLE || gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
+    if (grc->flag_linger_timer > 0) {
+        /* Linger camera directly on pinned target flag so player sees flag firmly planted! */
+        int32_t t_elev = gs->grid[grc->aim_target_gx][grc->aim_target_gy].elevation;
+        int32_t target_sx = (grc->aim_target_gx - grc->aim_target_gy) * GBA_TILE_HALF_W;
+        int32_t target_sy = (grc->aim_target_gx + grc->aim_target_gy) * GBA_TILE_HALF_H - (t_elev * GBA_HEIGHT_STEP);
+        grc->target_cam_x = (GBA_SCREEN_W / 2) - target_sx - GBA_TILE_HALF_W;
+        grc->target_cam_y = (GBA_SCREEN_H / 2) - target_sy - GBA_TILE_HALF_H;
+        grc->cam_x = grc->target_cam_x;
+        grc->cam_y = grc->target_cam_y;
+    } else if (grc->aim_locked || gs->ball.state != BALL_IDLE || gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
         /* Camera glides smoothly to follow active entity: ball in flight/roll, or walking golfer, or ball when locked */
         int32_t track_gx = (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) ? FROM_FIXED(gs->golfer.x) : ball_gx;
         int32_t track_gy = (gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) ? FROM_FIXED(gs->golfer.y) : ball_gy;
@@ -986,6 +997,19 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     int32_t cgy = (v_elev / 8 - u / 16) / 2;
     if (cgx < 0) cgx = 0; if (cgx >= GRID_W) cgx = GRID_W - 1;
     if (cgy < 0) cgy = 0; if (cgy >= GRID_H) cgy = GRID_H - 1;
+    
+    /* Magnetic Pin Lock: Snap crosshair to the flagstick when within 1 square */
+    grc->pin_magnet_locked = false;
+    if (gs->has_pin && !grc->aim_locked) {
+        int pdx = cgx - gs->pin_gx;
+        int pdy = cgy - gs->pin_gy;
+        if (pdx >= -1 && pdx <= 1 && pdy >= -1 && pdy <= 1) {
+            cgx = gs->pin_gx;
+            cgy = gs->pin_gy;
+            grc->pin_magnet_locked = true;
+        }
+    }
+    
     grc->cross_gx = cgx;
     grc->cross_gy = cgy;
     grc->look_center_gx = cgx;
@@ -1218,10 +1242,16 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     /* 5.5 Render Aim Reticle & Dotted Trajectory */
     int cx = GBA_SCREEN_W / 2;
     int cy = GBA_SCREEN_H / 2;
+    if (grc->pin_magnet_locked && gs->has_pin) {
+        /* Magnet snap: crosshair jumps directly to pin screen coordinates */
+        int p_elev = gs->grid[gs->pin_gx][gs->pin_gy].elevation;
+        cx = (gs->pin_gx - gs->pin_gy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
+        cy = (gs->pin_gx + gs->pin_gy) * GBA_TILE_HALF_H - (p_elev * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+    }
     
     if (!grc->aim_locked && gs->ball.state == BALL_IDLE && gs->golfer.state != GOLFER_STATE_WALKING) {
-        /* Aiming Mode: Screen center is crosshair target */
-        /* Dotted flight line from ball to screen center */
+        /* Aiming Mode: Screen center or snapped pin is crosshair target */
+        /* Dotted flight line from ball to crosshair */
         for (int step = 0; step <= 16; ++step) {
             if ((step & 1) == 0) {
                 int lx = b_sx + (step * (cx - b_sx)) / 16;
@@ -1233,7 +1263,13 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         }
         
         /* High-Visibility Center Crosshair Circle (Double Ring + Dark Borders) */
-        uint16_t reticle_col = (grc->tick_count & 8) ? GBA_YELLOW : GBA_WHITE;
+        uint16_t reticle_col;
+        if (grc->pin_magnet_locked) {
+            reticle_col = (grc->tick_count & 4) ? GBA_GOLD : RGB15(31, 31, 10);
+            gba_draw_text(fb, cx - 24, cy - 20, "* PIN LOCK *", GBA_GOLD, true);
+        } else {
+            reticle_col = (grc->tick_count & 8) ? GBA_YELLOW : GBA_WHITE;
+        }
         for (int dy = -8; dy <= 8; ++dy) {
             int py = cy + dy;
             if (py < 14 || py >= 135) continue;
@@ -1448,8 +1484,14 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         bool blink = (grc->tick_count & 8) != 0;
         gba_draw_text(fb, 130, 136, blink ? "[A] SKIP WALK" : "WALKING...", GBA_YELLOW, false);
     } else if (grc->aim_locked) {
-        bool blink = (grc->tick_count & 8) != 0;
-        gba_draw_text(fb, 136, 136, blink ? "[A] SHOOT NOW" : "[B] TO RE-AIM", GBA_YELLOW, true);
+        if (grc->flag_linger_timer > 0) {
+            gba_draw_text(fb, 136, 136, "* PIN PLANTED *", GBA_GOLD, true);
+        } else {
+            bool blink = (grc->tick_count & 8) != 0;
+            gba_draw_text(fb, 136, 136, blink ? "[A] SHOOT NOW" : "[B] TO RE-AIM", GBA_YELLOW, true);
+        }
+    } else if (grc->pin_magnet_locked) {
+        gba_draw_text(fb, 132, 136, "[A] LOCK TO PIN", GBA_GOLD, true);
     } else {
         gba_draw_text(fb, 138, 136, "[A] LOCK PIN", GBA_WHITE, false);
     }

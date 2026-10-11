@@ -86,23 +86,23 @@
 - **`Esc`:** Return to title screen / cancel tool
 
 ### Game Boy Advance (GBA)
-- **`D-Pad`:** High-speed camera / crosshair navigation across course
+- **`D-Pad`:** High-speed camera / crosshair navigation across course (auto-snaps magnetically when near pin)
 - **`B` (held) + `D-Pad`:** Turbo camera pan
-- **`A` (Click 1):** Drop target pin flag at crosshair, lock aim, and center camera on ball
-- **`A` (Click 2, when Locked):** Untimed shot execution
+- **`A` (Click 1):** Drop target pin flag at crosshair (or snap to cup), linger on planted pin, lock aim, and center camera on ball
+- **`A` (Click 2, when Locked):** Untimed shot execution with fast-paced ball trajectory
 - **`D-Pad` / `B` (when Locked):** Unlock aim to reposition crosshair
 - **`R` / `L`:** Cycle forward / backward through all 14 clubs (DR $\leftrightarrow$ LW / PT)
 - **`Start`:** Randomize course hole layout and cycle theme (Bushwood $\leftrightarrow$ La Playa $\leftrightarrow$ Nocturnal Green)
 
 ---
 
-## 📦 Downloads & Releases (`v0.75-noonan`)
+## 📦 Downloads & Releases (`v0.710-noonan` / `v0.7.10`)
 
 | Package | Format | Direct Download | Details |
 | :--- | :---: | :---: | :--- |
-| **All-in-One Release Bundle** | `.zip` (4.7 MB) | [Download ZIP](https://github.com/andarazoroflove/DufferPro/releases/download/v0.75-noonan/Duffer_Pro_v0.75-noonan.zip) | Windows, macOS Sonoma Universal 2, and GBA builds |
-| **macOS Sonoma App** | `.zip` (1.9 MB) | [Download App](https://github.com/andarazoroflove/DufferPro/releases/download/v0.75-noonan/Duffer_Pro_macOS_Sonoma.zip) | Universal 2 `Duffer Pro.app` (Apple Silicon & Intel) |
-| **Game Boy Advance ROM** | `.gba` (512 KB) | [Download ROM](https://github.com/andarazoroflove/DufferPro/releases/download/v0.75-noonan/duffer_pro.gba) | Real hardware & SuperCard / EverDrive ready |
+| **All-in-One Release Bundle** | `.zip` (4.7 MB) | [Download ZIP](https://github.com/andarazoroflove/DufferPro/releases/download/v0.710-noonan/Duffer_Pro_v0.710-noonan.zip) | Windows, macOS Sonoma Universal 2, and GBA builds |
+| **macOS Sonoma App** | `.zip` (1.9 MB) | [Download App](https://github.com/andarazoroflove/DufferPro/releases/download/v0.710-noonan/Duffer_Pro_macOS_Sonoma.zip) | Universal 2 `Duffer Pro.app` (Apple Silicon & Intel) |
+| **Game Boy Advance ROM** | `.gba` (512 KB) | [Download ROM](https://github.com/andarazoroflove/DufferPro/releases/download/v0.710-noonan/duffer_pro.gba) | Real hardware & SuperCard / EverDrive ready |
 | **Windows Standalone** | Executable | [View Folder](release/windows/) | `duffer_pro.exe` + `SDL2.dll` (no installer needed) |
 
 ---

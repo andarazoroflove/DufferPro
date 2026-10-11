@@ -519,6 +519,7 @@ void golf_set_theme(GolfState *gs, CourseTheme theme);
 void golf_update_autotile_masks(GolfState *gs);
 void golf_recalc_hole_stats(GolfState *gs);
 void golf_recalc_course_rating(GolfState *gs);
+void golf_set_banner(GolfState *gs, const char *msg, int32_t ticks);
 
 /* Build Mode Operations */
 bool golf_build_apply_tool(GolfState *gs, int32_t gx, int32_t gy);

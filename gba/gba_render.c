@@ -64,48 +64,135 @@ void gba_render_init(GbaRenderContext *grc) {
 /* GBA 16-BIT ISOMETRIC TILE RENDERING                                       */
 /* ========================================================================= */
 
-static void draw_gba_diamond(uint16_t *fb, int sx, int sy, SurfaceType surf, int gx, int gy, int anim_t) {
+static void draw_gba_diamond(uint16_t *fb, int sx, int sy, SurfaceType surf, int gx, int gy, int anim_t, CourseTheme theme) {
     uint16_t base_col, alt_col;
     
-    switch (surf) {
-        case SURF_WATER: {
-            int wave = ((anim_t / 12) + gx + gy) & 3;
-            base_col = (wave == 0) ? RGB15(6, 16, 28) : RGB15(4, 13, 25);
-            alt_col  = RGB15(12, 22, 31); /* Specular ripple */
-            break;
+    if (theme == THEME_LA_PLAYA) {
+        /* LA PLAYA: Desert Sand Rough, Golden Tan Fairway, Oasis Green, Foaming Rapids */
+        switch (surf) {
+            case SURF_WATER: {
+                int wave = ((anim_t / 10) + gx + gy) & 3;
+                base_col = (wave == 0) ? RGB15(7, 22, 25) : RGB15(5, 18, 22);
+                alt_col  = RGB15(31, 31, 31); /* Foaming rapids whitewater */
+                break;
+            }
+            case SURF_ROUGH:
+                base_col = ((gx + gy) & 1) ? RGB15(27, 23, 17) : RGB15(28, 24, 18);
+                alt_col  = RGB15(25, 21, 15);
+                break;
+            case SURF_FAIRWAY:
+                base_col = ((gx + gy) & 2) ? RGB15(23, 19, 13) : RGB15(21, 17, 11);
+                alt_col  = RGB15(22, 18, 12);
+                break;
+            case SURF_GREEN:
+                base_col = RGB15(9, 27, 11);
+                alt_col  = RGB15(11, 29, 13);
+                break;
+            case SURF_SAND:
+                base_col = RGB15(31, 30, 27); /* Chalk white playa dunes */
+                alt_col  = RGB15(29, 28, 25);
+                break;
+            case SURF_TEE:
+                base_col = RGB15(24, 20, 14);
+                alt_col  = RGB15(31, 31, 31);
+                break;
+            case SURF_CARTPATH:
+                base_col = RGB15(24, 18, 13);
+                alt_col  = RGB15(20, 15, 10);
+                break;
+            case SURF_BRIDGE:
+                base_col = RGB15(22, 18, 12);
+                alt_col  = RGB15(17, 14, 9);
+                break;
+            default:
+                base_col = RGB15(27, 23, 17);
+                alt_col  = RGB15(25, 21, 15);
+                break;
         }
-        case SURF_ROUGH:
-            base_col = ((gx + gy) & 1) ? RGB15(3, 14, 4) : RGB15(4, 16, 5);
-            alt_col  = RGB15(2, 11, 3);
-            break;
-        case SURF_FAIRWAY:
-            base_col = ((gx + gy) & 2) ? RGB15(6, 25, 7) : RGB15(8, 27, 9);
-            alt_col  = RGB15(7, 26, 8);
-            break;
-        case SURF_GREEN:
-            base_col = RGB15(9, 29, 11);
-            alt_col  = RGB15(11, 30, 13);
-            break;
-        case SURF_SAND:
-            base_col = RGB15(29, 26, 16);
-            alt_col  = RGB15(26, 22, 13);
-            break;
-        case SURF_TEE:
-            base_col = RGB15(10, 28, 10);
-            alt_col  = RGB15(31, 31, 31); /* Tee markers */
-            break;
-        case SURF_CARTPATH:
-            base_col = RGB15(22, 20, 18);
-            alt_col  = RGB15(18, 17, 15);
-            break;
-        case SURF_BRIDGE:
-            base_col = RGB15(18, 12, 7);
-            alt_col  = RGB15(13, 8, 4);
-            break;
-        default:
-            base_col = RGB15(4, 16, 5);
-            alt_col  = RGB15(3, 13, 4);
-            break;
+    } else if (theme == THEME_NOCTURNAL_GREEN) {
+        /* NOCTURNAL GREEN: Gothic Purples, Twilight Grass, Toxic Green, Volcanic Ash */
+        switch (surf) {
+            case SURF_WATER: {
+                int wave = ((anim_t / 14) + gx + gy) & 3;
+                base_col = (wave == 0) ? RGB15(3, 3, 7) : RGB15(2, 2, 5);
+                alt_col  = RGB15(8, 8, 18); /* Deep indigo ripple */
+                break;
+            }
+            case SURF_ROUGH:
+                base_col = ((gx + gy) & 1) ? RGB15(6, 5, 8) : RGB15(7, 6, 9);
+                alt_col  = RGB15(5, 4, 7);
+                break;
+            case SURF_FAIRWAY:
+                base_col = ((gx + gy) & 2) ? RGB15(11, 8, 15) : RGB15(9, 6, 13);
+                alt_col  = RGB15(10, 7, 14);
+                break;
+            case SURF_GREEN:
+                base_col = RGB15(5, 22, 10); /* Glowing toxic green */
+                alt_col  = RGB15(7, 25, 12);
+                break;
+            case SURF_SAND:
+                base_col = RGB15(12, 11, 14); /* Volcanic dark ash */
+                alt_col  = RGB15(10, 9, 12);
+                break;
+            case SURF_TEE:
+                base_col = RGB15(8, 7, 11);
+                alt_col  = RGB15(31, 31, 31);
+                break;
+            case SURF_CARTPATH:
+                base_col = RGB15(9, 9, 10);
+                alt_col  = RGB15(7, 7, 8);
+                break;
+            case SURF_BRIDGE:
+                base_col = RGB15(10, 8, 7);
+                alt_col  = RGB15(7, 5, 4);
+                break;
+            default:
+                base_col = RGB15(6, 5, 8);
+                alt_col  = RGB15(5, 4, 7);
+                break;
+        }
+    } else {
+        /* BUSHWOOD: Classic Country Club Emerald Greens & Golden Sand */
+        switch (surf) {
+            case SURF_WATER: {
+                int wave = ((anim_t / 12) + gx + gy) & 3;
+                base_col = (wave == 0) ? RGB15(6, 16, 28) : RGB15(4, 13, 25);
+                alt_col  = RGB15(12, 22, 31); /* Specular ripple */
+                break;
+            }
+            case SURF_ROUGH:
+                base_col = ((gx + gy) & 1) ? RGB15(3, 14, 4) : RGB15(4, 16, 5);
+                alt_col  = RGB15(2, 11, 3);
+                break;
+            case SURF_FAIRWAY:
+                base_col = ((gx + gy) & 2) ? RGB15(6, 25, 7) : RGB15(8, 27, 9);
+                alt_col  = RGB15(7, 26, 8);
+                break;
+            case SURF_GREEN:
+                base_col = RGB15(9, 29, 11);
+                alt_col  = RGB15(11, 30, 13);
+                break;
+            case SURF_SAND:
+                base_col = RGB15(29, 26, 16);
+                alt_col  = RGB15(26, 22, 13);
+                break;
+            case SURF_TEE:
+                base_col = RGB15(10, 28, 10);
+                alt_col  = RGB15(31, 31, 31); /* Tee markers */
+                break;
+            case SURF_CARTPATH:
+                base_col = RGB15(22, 20, 18);
+                alt_col  = RGB15(18, 17, 15);
+                break;
+            case SURF_BRIDGE:
+                base_col = RGB15(18, 12, 7);
+                alt_col  = RGB15(13, 8, 4);
+                break;
+            default:
+                base_col = RGB15(4, 16, 5);
+                alt_col  = RGB15(3, 13, 4);
+                break;
+        }
     }
 
     /* Plot 32x16 isometric diamond scanlines */
@@ -122,8 +209,14 @@ static void draw_gba_diamond(uint16_t *fb, int sx, int sy, SurfaceType surf, int
             if (px < 0 || px >= GBA_SCREEN_W) continue;
             
             uint16_t c = base_col;
-            if (surf == SURF_WATER && (dx == span / 2 && ((dy + (anim_t / 8)) & 3) == 0)) {
-                c = alt_col; /* Water shimmer */
+            if (surf == SURF_WATER) {
+                if (theme == THEME_LA_PLAYA) {
+                    if (dx >= span / 2 - 2 && dx <= span / 2 + 2 && ((dy + (anim_t / 6)) & 2) == 0) {
+                        c = alt_col; /* Whitewater rapids froth */
+                    }
+                } else if (dx == span / 2 && ((dy + (anim_t / 8)) & 3) == 0) {
+                    c = alt_col; /* Water shimmer */
+                }
             } else if (surf == SURF_SAND && ((dx ^ dy) & 3) == 0) {
                 c = alt_col; /* Grain texture */
             }
@@ -133,7 +226,7 @@ static void draw_gba_diamond(uint16_t *fb, int sx, int sy, SurfaceType surf, int
 }
 
 /* Vertical Cliff Facade for 3D Elevation Steps */
-static void draw_gba_cliff(uint16_t *fb, int sx, int sy, int elev_drop) {
+static void draw_gba_cliff(uint16_t *fb, int sx, int sy, int elev_drop, CourseTheme theme) {
     if (elev_drop <= 0) return;
     int h = elev_drop * GBA_HEIGHT_STEP;
     if (h > 40) h = 40;
@@ -146,7 +239,14 @@ static void draw_gba_cliff(uint16_t *fb, int sx, int sy, int elev_drop) {
             int px = sx + dx;
             if (px < 0 || px >= GBA_SCREEN_W) continue;
             
-            uint16_t cliff_col = ((dx + dy) & 2) ? RGB15(11, 11, 12) : RGB15(8, 8, 9);
+            uint16_t cliff_col;
+            if (theme == THEME_LA_PLAYA) {
+                cliff_col = ((dx + dy) & 2) ? RGB15(21, 11, 7) : RGB15(17, 8, 5); /* Red sandstone */
+            } else if (theme == THEME_NOCTURNAL_GREEN) {
+                cliff_col = ((dx + dy) & 2) ? RGB15(6, 6, 8) : RGB15(4, 4, 6);   /* Basalt obsidian */
+            } else {
+                cliff_col = ((dx + dy) & 2) ? RGB15(11, 11, 12) : RGB15(8, 8, 9); /* Granite */
+            }
             fb[py * GBA_SCREEN_W + px] = cliff_col;
         }
     }
@@ -159,10 +259,13 @@ static void draw_gba_cliff(uint16_t *fb, int sx, int sy, int elev_drop) {
 typedef enum {
     GBA_ENT_FLAG = 0,
     GBA_ENT_TREE,
+    GBA_ENT_BUSH,
+    GBA_ENT_ROCK,
     GBA_ENT_GOLFER,
     GBA_ENT_CADDY,
     GBA_ENT_BALL,
     GBA_ENT_BEV_CART,
+    GBA_ENT_RANGER,
     GBA_ENT_GOPHER,
     GBA_ENT_CARL,
     GBA_ENT_TNT_BOX,
@@ -229,37 +332,286 @@ static void draw_gba_flag(uint16_t *fb, int sx, int sy) {
     }
 }
 
-/* 2. Pine / Scenery Tree */
-static void draw_gba_tree(uint16_t *fb, int sx, int sy, int tree_type) {
-    /* Trunk */
-    for (int y = -8; y <= 0; ++y) {
-        int py = sy + y;
-        if (py >= 0 && py < GBA_SCREEN_H) {
-            for (int x = -1; x <= 1; ++x) {
-                int px = sx + x;
-                if (px >= 0 && px < GBA_SCREEN_W) fb[py * GBA_SCREEN_W + px] = GBA_BROWN;
+/* 2. Pine / Palm / Saguaro / Autumn Scenery Tree */
+static void draw_gba_tree(uint16_t *fb, int sx, int sy, int tree_type, CourseTheme theme) {
+    if (theme == THEME_LA_PLAYA) {
+        /* Saguaro Cactus with branching arms */
+        /* Trunk Shadow */
+        for (int dx = -3; dx <= 3; ++dx) {
+            int px = sx + dx;
+            if (px >= 0 && px < GBA_SCREEN_W && sy >= 0 && sy < GBA_SCREEN_H) {
+                fb[sy * GBA_SCREEN_W + px] = RGB15(16, 13, 9);
             }
         }
-    }
-    /* Foliage Canopy */
-    uint16_t leaf_col = (tree_type == 4) ? RGB15(31, 20, 24) : /* Cherry blossom */
-                        ((tree_type == 1) ? RGB15(2, 14, 4) : RGB15(4, 20, 5));
-    
-    for (int layer = 0; layer < 3; ++layer) {
-        int ly = sy - 8 - layer * 7;
-        int rad = 9 - layer * 2;
-        for (int dy = -rad; dy <= 2; ++dy) {
-            int py = ly + dy;
+        /* Main Columnar Stem (4px wide, height 18) */
+        for (int y = -18; y <= 0; ++y) {
+            int py = sy + y;
             if (py < 0 || py >= GBA_SCREEN_H) continue;
-            for (int dx = -rad; dx <= rad; ++dx) {
-                if (dx * dx + dy * dy <= rad * rad) {
-                    int px = sx + dx;
+            for (int x = -2; x <= 1; ++x) {
+                int px = sx + x;
+                if (px >= 0 && px < GBA_SCREEN_W) {
+                    uint16_t col = (x == -1) ? RGB15(8, 22, 9) : RGB15(5, 17, 6);
+                    fb[py * GBA_SCREEN_W + px] = col;
+                }
+            }
+        }
+        /* Left Branching Arm: horizontal branch at y = -10, then vertical up to y = -16 */
+        for (int x = -6; x <= -2; ++x) {
+            int py = sy - 10;
+            int px = sx + x;
+            if (px >= 0 && px < GBA_SCREEN_W && py >= 0 && py < GBA_SCREEN_H) {
+                fb[py * GBA_SCREEN_W + px] = RGB15(6, 18, 7);
+            }
+        }
+        for (int y = -16; y <= -10; ++y) {
+            int py = sy + y;
+            if (py >= 0 && py < GBA_SCREEN_H) {
+                for (int x = -7; x <= -5; ++x) {
+                    int px = sx + x;
                     if (px >= 0 && px < GBA_SCREEN_W) {
-                        fb[py * GBA_SCREEN_W + px] = (dx > 0) ? leaf_col : (leaf_col + RGB15(2, 4, 1));
+                        fb[py * GBA_SCREEN_W + px] = (x == -6) ? RGB15(8, 22, 9) : RGB15(5, 17, 6);
                     }
                 }
             }
         }
+        /* Right Branching Arm: horizontal branch at y = -7, then vertical up to y = -13 */
+        for (int x = 1; x <= 5; ++x) {
+            int py = sy - 7;
+            int px = sx + x;
+            if (px >= 0 && px < GBA_SCREEN_W && py >= 0 && py < GBA_SCREEN_H) {
+                fb[py * GBA_SCREEN_W + px] = RGB15(6, 18, 7);
+            }
+        }
+        for (int y = -13; y <= -7; ++y) {
+            int py = sy + y;
+            if (py >= 0 && py < GBA_SCREEN_H) {
+                for (int x = 4; x <= 6; ++x) {
+                    int px = sx + x;
+                    if (px >= 0 && px < GBA_SCREEN_W) {
+                        fb[py * GBA_SCREEN_W + px] = (x == 5) ? RGB15(8, 22, 9) : RGB15(5, 17, 6);
+                    }
+                }
+            }
+        }
+    } else if (theme == THEME_NOCTURNAL_GREEN) {
+        /* Spooky Autumn Foliage / Twisted Leafless Tree */
+        for (int y = -10; y <= 0; ++y) {
+            int py = sy + y;
+            if (py >= 0 && py < GBA_SCREEN_H) {
+                for (int x = -1; x <= 1; ++x) {
+                    int px = sx + x + (y < -5 ? -1 : 0);
+                    if (px >= 0 && px < GBA_SCREEN_W) fb[py * GBA_SCREEN_W + px] = RGB15(6, 4, 4);
+                }
+            }
+        }
+        if ((tree_type & 1) == 0) {
+            /* Crimson / Burnt Orange Canopy */
+            uint16_t leaf_col = (tree_type == 2) ? RGB15(28, 6, 2) : RGB15(26, 12, 3);
+            for (int layer = 0; layer < 3; ++layer) {
+                int ly = sy - 10 - layer * 6;
+                int rad = 8 - layer * 2;
+                for (int dy = -rad; dy <= 2; ++dy) {
+                    int py = ly + dy;
+                    if (py < 0 || py >= GBA_SCREEN_H) continue;
+                    for (int dx = -rad; dx <= rad; ++dx) {
+                        if (dx * dx + dy * dy <= rad * rad) {
+                            int px = sx + dx;
+                            if (px >= 0 && px < GBA_SCREEN_W) {
+                                fb[py * GBA_SCREEN_W + px] = (dx > 0) ? leaf_col : (leaf_col - RGB15(4, 2, 0));
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            /* Bare Leafless Spooky Branches */
+            for (int b = -16; b <= -8; ++b) {
+                int py = sy + b;
+                if (py < 0 || py >= GBA_SCREEN_H) continue;
+                int bx1 = sx + (b + 11);
+                int bx2 = sx - (b + 11);
+                if (bx1 >= 0 && bx1 < GBA_SCREEN_W) fb[py * GBA_SCREEN_W + bx1] = RGB15(5, 4, 4);
+                if (bx2 >= 0 && bx2 < GBA_SCREEN_W) fb[py * GBA_SCREEN_W + bx2] = RGB15(5, 4, 4);
+            }
+        }
+    } else {
+        /* Classic Bushwood Pines & Oaks */
+        /* Trunk */
+        for (int y = -8; y <= 0; ++y) {
+            int py = sy + y;
+            if (py >= 0 && py < GBA_SCREEN_H) {
+                for (int x = -1; x <= 1; ++x) {
+                    int px = sx + x;
+                    if (px >= 0 && px < GBA_SCREEN_W) fb[py * GBA_SCREEN_W + px] = GBA_BROWN;
+                }
+            }
+        }
+        /* Foliage Canopy */
+        uint16_t leaf_col = (tree_type == 4) ? RGB15(31, 20, 24) : /* Cherry blossom */
+                            ((tree_type == 1) ? RGB15(2, 14, 4) : RGB15(4, 20, 5));
+        
+        for (int layer = 0; layer < 3; ++layer) {
+            int ly = sy - 8 - layer * 7;
+            int rad = 9 - layer * 2;
+            for (int dy = -rad; dy <= 2; ++dy) {
+                int py = ly + dy;
+                if (py < 0 || py >= GBA_SCREEN_H) continue;
+                for (int dx = -rad; dx <= rad; ++dx) {
+                    if (dx * dx + dy * dy <= rad * rad) {
+                        int px = sx + dx;
+                        if (px >= 0 && px < GBA_SCREEN_W) {
+                            fb[py * GBA_SCREEN_W + px] = (dx > 0) ? leaf_col : (leaf_col + RGB15(2, 4, 1));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* 2.5 Bushes, Tumbleweeds, & Coffin Piles */
+static void draw_gba_bush(uint16_t *fb, int sx, int sy, CourseTheme theme) {
+    if (theme == THEME_LA_PLAYA) {
+        /* Tumbleweed (spherical dried brush) */
+        for (int dy = -5; dy <= 1; ++dy) {
+            int py = sy + dy - 2;
+            if (py < 0 || py >= GBA_SCREEN_H) continue;
+            for (int dx = -5; dx <= 5; ++dx) {
+                if (dx * dx + dy * dy <= 25) {
+                    int px = sx + dx;
+                    if (px >= 0 && px < GBA_SCREEN_W) {
+                        uint16_t tw_col = ((dx ^ dy) & 1) ? RGB15(20, 16, 9) : RGB15(15, 11, 6);
+                        fb[py * GBA_SCREEN_W + px] = tw_col;
+                    }
+                }
+            }
+        }
+    } else if (theme == THEME_NOCTURNAL_GREEN) {
+        /* Weathered Coffin Mound / Briar patch */
+        for (int dy = -4; dy <= 0; ++dy) {
+            int py = sy + dy;
+            if (py < 0 || py >= GBA_SCREEN_H) continue;
+            for (int dx = -7; dx <= 7; ++dx) {
+                int px = sx + dx;
+                if (px >= 0 && px < GBA_SCREEN_W) {
+                    uint16_t c = (dy == -4 || dy == 0 || dx == -7 || dx == 7) ? RGB15(8, 5, 3) : RGB15(13, 9, 5);
+                    fb[py * GBA_SCREEN_W + px] = c;
+                }
+            }
+        }
+    } else {
+        /* Bushwood Flowering Shrub */
+        for (int dy = -5; dy <= 1; ++dy) {
+            int py = sy + dy - 2;
+            if (py < 0 || py >= GBA_SCREEN_H) continue;
+            for (int dx = -6; dx <= 6; ++dx) {
+                if (dx * dx * 2 + dy * dy * 3 <= 72) {
+                    int px = sx + dx;
+                    if (px >= 0 && px < GBA_SCREEN_W) {
+                        uint16_t bc = ((dx ^ dy) & 3) == 0 ? RGB15(6, 24, 7) : RGB15(3, 17, 4);
+                        if (dx == 0 && dy == -2) bc = RGB15(31, 31, 31); /* Flower dot */
+                        fb[py * GBA_SCREEN_W + px] = bc;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* 2.6 Boulders, Mesa Rocks, & Cemetery Tombstones */
+static void draw_gba_rock(uint16_t *fb, int sx, int sy, CourseTheme theme) {
+    if (theme == THEME_LA_PLAYA) {
+        /* Desert Red Sandstone Mesa Boulder */
+        for (int dy = -7; dy <= 0; ++dy) {
+            int py = sy + dy;
+            if (py < 0 || py >= GBA_SCREEN_H) continue;
+            int rw = 7 - (dy * dy) / 10;
+            for (int dx = -rw; dx <= rw; ++dx) {
+                int px = sx + dx;
+                if (px >= 0 && px < GBA_SCREEN_W) {
+                    uint16_t rc = (dy < -4) ? RGB15(24, 14, 8) : ((dx > 0) ? RGB15(19, 10, 6) : RGB15(14, 7, 4));
+                    fb[py * GBA_SCREEN_W + px] = rc;
+                }
+            }
+        }
+    } else if (theme == THEME_NOCTURNAL_GREEN) {
+        /* Cemetery Tombstone with Etched Cross */
+        for (int dy = -10; dy <= 0; ++dy) {
+            int py = sy + dy;
+            if (py < 0 || py >= GBA_SCREEN_H) continue;
+            for (int dx = -4; dx <= 4; ++dx) {
+                int px = sx + dx;
+                if (px >= 0 && px < GBA_SCREEN_W) {
+                    uint16_t tc = RGB15(14, 13, 16);
+                    if (dy >= -8 && dy <= -4 && dx == 0) tc = RGB15(6, 5, 8); /* Vertical cross beam */
+                    if (dy == -6 && dx >= -2 && dx <= 2) tc = RGB15(6, 5, 8); /* Horizontal cross beam */
+                    fb[py * GBA_SCREEN_W + px] = tc;
+                }
+            }
+        }
+    } else {
+        /* Bushwood Granite Boulder */
+        for (int dy = -6; dy <= 0; ++dy) {
+            int py = sy + dy;
+            if (py < 0 || py >= GBA_SCREEN_H) continue;
+            int rw = 6 - (dy * dy) / 8;
+            for (int dx = -rw; dx <= rw; ++dx) {
+                int px = sx + dx;
+                if (px >= 0 && px < GBA_SCREEN_W) {
+                    uint16_t gc = (dy < -3) ? RGB15(16, 17, 18) : ((dx > 0) ? RGB15(12, 12, 13) : RGB15(8, 8, 9));
+                    fb[py * GBA_SCREEN_W + px] = gc;
+                }
+            }
+        }
+    }
+}
+
+/* 2.7 Course Ranger / Marshall Patrol Cart */
+static void draw_gba_ranger_cart(uint16_t *fb, int sx, int sy, int state, int anim_t) {
+    /* Ground Shadow */
+    for (int dx = -10; dx <= 10; ++dx) {
+        int px = sx + dx;
+        if (px >= 0 && px < GBA_SCREEN_W && sy >= 0 && sy < GBA_SCREEN_H) {
+            fb[sy * GBA_SCREEN_W + px] = GBA_BLACK;
+        }
+    }
+    /* 4 Black Rubber Wheels with Hubcaps */
+    gba_draw_rect(fb, sx - 9, sy - 3, 4, 4, GBA_BLACK);
+    gba_draw_rect(fb, sx + 5, sy - 3, 4, 4, GBA_BLACK);
+    gba_draw_rect(fb, sx - 8, sy - 2, 2, 2, GBA_GRAY);
+    gba_draw_rect(fb, sx + 6, sy - 2, 2, 2, GBA_GRAY);
+
+    /* Cart Chassis (White body with patrol stripe) */
+    gba_draw_rect(fb, sx - 10, sy - 8, 20, 6, RGB15(28, 28, 29));
+    gba_draw_rect(fb, sx - 10, sy - 5, 20, 1, RGB15(22, 4, 4));
+
+    /* Canopy Roof Support Posts */
+    gba_draw_rect(fb, sx - 8, sy - 18, 1, 10, RGB15(16, 16, 18));
+    gba_draw_rect(fb, sx + 7, sy - 18, 1, 10, RGB15(16, 16, 18));
+
+    /* Canopy Roof */
+    gba_draw_rect(fb, sx - 10, sy - 19, 20, 2, RGB15(26, 26, 28));
+
+    /* Ranger Figure */
+    /* Tan Campaign Hat (Smokey Bear brim & crown) */
+    gba_draw_rect(fb, sx - 3, sy - 17, 7, 2, RGB15(18, 14, 8));
+    gba_draw_rect(fb, sx - 2, sy - 19, 5, 2, RGB15(22, 17, 10));
+    /* Face */
+    gba_draw_rect(fb, sx - 2, sy - 15, 4, 3, RGB15(28, 21, 16));
+    /* Khaki Uniform Shirt */
+    gba_draw_rect(fb, sx - 3, sy - 12, 6, 5, RGB15(20, 17, 11));
+    /* Gold Badge */
+    gba_draw_rect(fb, sx - 1, sy - 11, 2, 2, GBA_GOLD);
+
+    /* Flashing Emergency Beacon Light on Roof */
+    bool flash = ((anim_t / 8) & 1) != 0;
+    uint16_t beacon_col = flash ? GBA_YELLOW : RGB15(31, 14, 0);
+    gba_draw_rect(fb, sx - 1, sy - 22, 3, 3, beacon_col);
+
+    /* Scolding / Alert Indicator if Chasing/Scolding */
+    if (state == RANGER_STATE_SCOLDING || state == RANGER_STATE_CHASING) {
+        gba_draw_rect(fb, sx - 1, sy - 29, 3, 5, GBA_RED);
+        gba_draw_rect(fb, sx - 1, sy - 23, 3, 2, GBA_RED);
     }
 }
 
@@ -464,9 +816,16 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         if (grc->look_dist_yds < 1) grc->look_dist_yds = 1;
     }
     
-    /* Clear Screen with Fairway Green / Sky Gradient */
+    /* Clear Screen with Theme Backdrop */
+    uint16_t bg_col;
+    if (gs->theme == THEME_LA_PLAYA) {
+        bg_col = RGB15(25, 21, 15); /* Desert beige */
+    } else if (gs->theme == THEME_NOCTURNAL_GREEN) {
+        bg_col = RGB15(4, 3, 6);   /* Gothic purple */
+    } else {
+        bg_col = RGB15(2, 8, 3);    /* Emerald green */
+    }
     for (int y = 0; y < GBA_SCREEN_H; ++y) {
-        uint16_t bg_col = (y < 20) ? RGB15(2, 6, 12) : RGB15(3, 10, 4);
         for (int x = 0; x < GBA_SCREEN_W; ++x) {
             fb[y * GBA_SCREEN_W + x] = bg_col;
         }
@@ -487,13 +846,13 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
             }
             
             SurfaceType surf = gs->grid[gx][gy].surface;
-            draw_gba_diamond(fb, sx, sy, surf, gx, gy, grc->tick_count);
+            draw_gba_diamond(fb, sx, sy, surf, gx, gy, grc->tick_count, gs->theme);
             
             /* Elevation cliff face */
             if (gx + 1 < GRID_W && gy + 1 < GRID_H) {
                 int adj_elev = gs->grid[gx + 1][gy + 1].elevation;
                 if (elev > adj_elev) {
-                    draw_gba_cliff(fb, sx, sy + GBA_TILE_H, elev - adj_elev);
+                    draw_gba_cliff(fb, sx, sy + GBA_TILE_H, elev - adj_elev, gs->theme);
                 }
             }
             
@@ -507,15 +866,19 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
                 add_drawable(GBA_ENT_FLAG, center_x, center_y, depth_key + 12, 0);
             }
             
-            /* Trees / Scenery */
+            /* Trees & Scenery Features */
             FeatureType feat = gs->grid[gx][gy].feature;
-            if (feat != FEAT_NONE && feat != FEAT_CLUBHOUSE) {
+            if (feat == FEAT_PINE || feat == FEAT_OAK || feat == FEAT_PALM || feat == FEAT_FLOWERING) {
                 add_drawable(GBA_ENT_TREE, center_x, center_y, depth_key + 14, (int)feat);
+            } else if (feat == FEAT_BUSH || feat == FEAT_FLOWERS) {
+                add_drawable(GBA_ENT_BUSH, center_x, center_y, depth_key + 14, (int)feat);
+            } else if (feat == FEAT_ROCK) {
+                add_drawable(GBA_ENT_ROCK, center_x, center_y, depth_key + 14, (int)feat);
             }
         }
     }
     
-    /* 3. Add Dynamic Entities (Golfer, Caddy, Ball, Gopher, Carl) */
+    /* 3. Add Dynamic Entities (Golfer, Caddy, Ball, Gopher, Carl, Ranger) */
     int golfer_gx = FROM_FIXED(gs->golfer.x);
     int golfer_gy = FROM_FIXED(gs->golfer.y);
     if (golfer_gx < 0) golfer_gx = 0; if (golfer_gx >= GRID_W) golfer_gx = GRID_W - 1;
@@ -568,6 +931,17 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         }
     }
     
+    /* Course Ranger Patrol Cart for Sneak On Mode */
+    if (gs->is_sneak_on && gs->ranger.active) {
+        int rgx = FROM_FIXED(gs->ranger.x);
+        int rgy = FROM_FIXED(gs->ranger.y);
+        if (rgx < 0) rgx = 0; if (rgx >= GRID_W) rgx = GRID_W - 1;
+        if (rgy < 0) rgy = 0; if (rgy >= GRID_H) rgy = GRID_H - 1;
+        int r_sx = (rgx - rgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
+        int r_sy = (rgx + rgy) * GBA_TILE_HALF_H - (gs->grid[rgx][rgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
+        add_drawable(GBA_ENT_RANGER, r_sx, r_sy, (rgx + rgy) * 32 + 16, gs->ranger.state);
+    }
+    
     /* 4. Depth-Sort & Render Drawables */
     sort_drawables();
     for (int i = 0; i < s_drawable_count; ++i) {
@@ -577,7 +951,16 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
                 draw_gba_flag(fb, d->sx, d->sy);
                 break;
             case GBA_ENT_TREE:
-                draw_gba_tree(fb, d->sx, d->sy, d->data);
+                draw_gba_tree(fb, d->sx, d->sy, d->data, gs->theme);
+                break;
+            case GBA_ENT_BUSH:
+                draw_gba_bush(fb, d->sx, d->sy, gs->theme);
+                break;
+            case GBA_ENT_ROCK:
+                draw_gba_rock(fb, d->sx, d->sy, gs->theme);
+                break;
+            case GBA_ENT_RANGER:
+                draw_gba_ranger_cart(fb, d->sx, d->sy, d->data, grc->tick_count);
                 break;
             case GBA_ENT_GOLFER:
                 draw_gba_golfer(fb, d->sx, d->sy, d->data, gs->swing.cursor_pos);
@@ -731,44 +1114,57 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         gba_draw_text(fb, 160, 3, "WIND 12M", GBA_SKY_BLUE, false);
     }
     
-    /* 7. Bottom Swing Meter / Look HUD (240x22) */
-    gba_draw_rect(fb, 0, 138, GBA_SCREEN_W, 22, RGB15(2, 4, 10));
+    /* 7. Bottom Swing Meter / Look HUD (240x24) */
+    gba_draw_rect(fb, 0, 136, GBA_SCREEN_W, 24, RGB15(2, 4, 8));
+    gba_draw_rect(fb, 0, 136, GBA_SCREEN_W, 1, RGB15(12, 16, 22));
     
     if (grc->look_mode) {
-        gba_draw_text(fb, 10, 141, "[A] SET AIM   [D-PAD] MOVE", GBA_GOLD, false);
-        gba_draw_text(fb, 10, 151, "[SELECT] RETURN TO GOLFER", GBA_WHITE, false);
+        gba_draw_text(fb, 6, 139, "[A] SET AIM   [B] TURBO SPEED", GBA_GOLD, false);
+        gba_draw_text(fb, 6, 149, "[D-PAD] MOVE CAMERA   [SEL] RETURN", GBA_WHITE, false);
     } else if (gs->banner_timer > 0 && gs->banner_text[0]) {
-        /* Comic Event Banner (e.g. "CINDERELLA STORY!") */
-        gba_draw_text(fb, 8, 145, gs->banner_text, GBA_YELLOW, true);
+        /* Comic Event Banner */
+        gba_draw_text(fb, 6, 144, gs->banner_text, GBA_YELLOW, true);
     } else {
-        /* Classic 3-Click Swing Gauge */
-        int meter_x = 24;
-        int meter_y = 143;
-        int meter_w = 192;
-        int meter_h = 8;
+        /* Full-Width 3-Click Swing Gauge spanning bottom bar */
+        int meter_x = 4;
+        int meter_y = 139;
+        int meter_w = 232;
+        int meter_h = 10;
         
-        /* Gauge Border & Track */
-        gba_draw_rect(fb, meter_x - 1, meter_y - 1, meter_w + 2, meter_h + 2, RGB15(16, 18, 22));
-        gba_draw_rect(fb, meter_x, meter_y, meter_w, meter_h, RGB15(4, 6, 8));
+        /* Gauge Outer Frame & Track */
+        gba_draw_rect(fb, meter_x - 1, meter_y - 1, meter_w + 2, meter_h + 2, RGB15(18, 22, 28));
+        gba_draw_rect(fb, meter_x, meter_y, meter_w, meter_h, RGB15(4, 6, 10));
         
-        /* Sweetspot Tick */
+        /* Sweetspot Zone */
         int sweet_x = meter_x + (gs->swing.sweetspot_center * meter_w) / 65536;
-        gba_draw_rect(fb, sweet_x - 2, meter_y, 4, meter_h, GBA_GOLD);
+        int sweet_half = (gs->swing.sweetspot_width * meter_w) / 65536;
+        if (sweet_half < 5) sweet_half = 5;
+        gba_draw_rect(fb, sweet_x - sweet_half, meter_y, sweet_half * 2, meter_h, RGB15(4, 22, 10));
+        gba_draw_rect(fb, sweet_x - 1, meter_y, 3, meter_h, GBA_GOLD);
         
-        /* Cursor Position */
+        /* Cursor Position & Power Fill */
         int cur_x = meter_x + (gs->swing.cursor_pos * meter_w) / 65536;
         if (cur_x < meter_x) cur_x = meter_x;
-        if (cur_x > meter_x + meter_w - 2) cur_x = meter_x + meter_w - 2;
+        if (cur_x > meter_x + meter_w - 1) cur_x = meter_x + meter_w - 1;
         
-        /* Power Fill */
         if (gs->swing.state >= SWING_STATE_POWER) {
             int fill_w = cur_x - meter_x;
-            if (fill_w > 0) gba_draw_rect(fb, meter_x, meter_y + 1, fill_w, meter_h - 2, RGB15(28, 12, 4));
+            if (fill_w > 0) {
+                for (int fx = 0; fx < fill_w; ++fx) {
+                    int t = (fx * 31) / meter_w;
+                    uint16_t grad_col = RGB15(16 + t / 2, 4 + t / 2, 4);
+                    for (int my = meter_y; my < meter_y + meter_h; ++my) {
+                        fb[my * GBA_SCREEN_W + (meter_x + fx)] = grad_col;
+                    }
+                }
+            }
         }
+        /* Needle Cursor (3px wide with dark outline) */
+        gba_draw_rect(fb, cur_x - 2, meter_y - 2, 5, meter_h + 4, GBA_BLACK);
         gba_draw_rect(fb, cur_x - 1, meter_y - 2, 3, meter_h + 4, GBA_WHITE);
         
         /* Key Prompts */
-        gba_draw_text(fb, 12, 152, "[A]SWING  [SEL]LOOK  [L/R]CLUB", GBA_GRAY, false);
+        gba_draw_text(fb, 4, 151, "[A]SWING [B/U/D]CLUB [SEL]LOOK", GBA_WHITE, false);
     }
 }
 
@@ -981,7 +1377,7 @@ static void draw_gba_giant_gopher(uint16_t *fb, int gx, int gy, int anim_f) {
 }
 
 
-void gba_render_splash(GbaRenderContext *grc, int anim_tick) {
+void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice) {
     uint16_t *fb = gba_get_backbuffer();
     grc->tick_count = anim_tick;
     
@@ -1074,13 +1470,40 @@ void gba_render_splash(GbaRenderContext *grc, int anim_tick) {
     gba_draw_text(fb, 42, 6, "DUFFER PRO GBA", GBA_GOLD, true);
     gba_draw_text(fb, 36, 18, "CHAMPIONSHIP SIMGOLF", RGB15(29, 29, 31), true);
 
-    /* 9. Pulsing "PRESS START OR A" */
-    if ((anim_tick / 16) & 1) {
-        gba_draw_text(fb, 34, 135, ">> PRESS START OR A <<", GBA_WHITE, true);
+    /* 9. Interactive Splash Buttons: "JUMP ON" vs "PLAY HOLE" */
+    int b0_x = 16, b0_y = 114, b0_w = 98, b0_h = 18;
+    int b1_x = 126, b1_y = 114, b1_w = 98, b1_h = 18;
+
+    /* Button 0: JUMP ON */
+    if (menu_choice == 0) {
+        gba_draw_rect(fb, b0_x - 1, b0_y - 1, b0_w + 2, b0_h + 2, GBA_GOLD);
+        gba_draw_rect(fb, b0_x, b0_y, b0_w, b0_h, RGB15(3, 14, 5));
+        gba_draw_text(fb, b0_x + 9, b0_y + 5, "> JUMP ON <", GBA_GOLD, true);
+    } else {
+        gba_draw_rect(fb, b0_x - 1, b0_y - 1, b0_w + 2, b0_h + 2, RGB15(8, 10, 12));
+        gba_draw_rect(fb, b0_x, b0_y, b0_w, b0_h, RGB15(2, 3, 5));
+        gba_draw_text(fb, b0_x + 9, b0_y + 5, "  JUMP ON  ", RGB15(15, 17, 19), false);
     }
 
-    /* 10. Version Stamp */
-    gba_draw_text(fb, 132, 147, "v0.7.6-noonan", RGB15(20, 24, 20), true);
+    /* Button 1: PLAY HOLE */
+    if (menu_choice == 1) {
+        gba_draw_rect(fb, b1_x - 1, b1_y - 1, b1_w + 2, b1_h + 2, GBA_GOLD);
+        gba_draw_rect(fb, b1_x, b1_y, b1_w, b1_h, RGB15(3, 14, 5));
+        gba_draw_text(fb, b1_x + 5, b1_y + 5, "> PLAY HOLE <", GBA_GOLD, true);
+    } else {
+        gba_draw_rect(fb, b1_x - 1, b1_y - 1, b1_w + 2, b1_h + 2, RGB15(8, 10, 12));
+        gba_draw_rect(fb, b1_x, b1_y, b1_w, b1_h, RGB15(2, 3, 5));
+        gba_draw_text(fb, b1_x + 5, b1_y + 5, "  PLAY HOLE  ", RGB15(15, 17, 19), false);
+    }
+
+    /* 10. Navigation Hints & Mode Info */
+    gba_draw_text(fb, 8, 136, "[D-PAD]SELECT  [A/START]PLAY", GBA_WHITE, true);
+
+    if (menu_choice == 0) {
+        gba_draw_text(fb, 12, 148, "* JUMP ON: AVOID RANGER! *", GBA_YELLOW, true);
+    } else {
+        gba_draw_text(fb, 20, 148, "* PLAY HOLE: NO RANGER *", GBA_LIGHT_GREEN, true);
+    }
 }
 
 

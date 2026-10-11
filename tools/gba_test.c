@@ -72,13 +72,19 @@ int main(void) {
     golf_init(&gs);
     gba_render_init(&grc);
 
-    /* 1. GBA Splash Screen (tick 25 shows blinking START prompt) */
-    gba_render_splash(&grc, 25);
+    /* 1. GBA Splash Screen (Jump On selected) */
+    gba_render_splash(&grc, 25, 0);
     save_gba_bmp_scaled("screenshot_gba_splash.bmp", 3);
-    printf("[1/4] Saved screenshot_gba_splash.bmp (720x480 3x scaled GBA Title)\n");
+    printf("[1/8] Saved screenshot_gba_splash.bmp (720x480 GBA Title with JUMP ON)\n");
 
-    /* 2. GBA Play Mode: Tee view with Golfer, Caddy, 3-Click Meter */
+    /* 1b. GBA Splash Screen (Play Hole selected) */
+    gba_render_splash(&grc, 25, 1);
+    save_gba_bmp_scaled("screenshot_gba_splash_play_hole.bmp", 3);
+    printf("[2/8] Saved screenshot_gba_splash_play_hole.bmp (720x480 GBA Title with PLAY HOLE)\n");
+
+    /* 2. GBA Play Mode: Bushwood Theme with Full-Width Swing Meter */
     golf_set_mode(&gs, MODE_PLAY);
+    gs.theme = THEME_BUSHWOOD;
     gs.banner_timer = 0;
     gs.banner_text[0] = '\0';
     grc.tick_count = 0;
@@ -86,52 +92,44 @@ int main(void) {
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_play.bmp", 3);
-    printf("[2/4] Saved screenshot_gba_play.bmp (720x480 GBA Play Mode with Swing Meter)\n");
+    printf("[3/8] Saved screenshot_gba_play.bmp (720x480 GBA Bushwood with Full-Width Swing Meter)\n");
 
-    /* 3. GBA Carl Spackler Dynamite Attack near Tee */
-    int h_gx = gs.tee_gx + 2;
-    int h_gy = gs.tee_gy - 2;
-    gs.gopher.visible = true;
-    gs.gopher.gx = h_gx;
-    gs.gopher.gy = h_gy;
-    gs.carl.active = true;
-    gs.carl.target_gx = h_gx;
-    gs.carl.target_gy = h_gy;
-    gs.carl.attack_type = CARL_ATTACK_DYNAMITE;
-    gs.carl.plunger_x = TO_FIXED(h_gx + 2) + FIXED_HALF;
-    gs.carl.plunger_y = TO_FIXED(h_gy + 1) + FIXED_HALF;
-    gs.carl.x = gs.carl.plunger_x + TO_FIXED(0.2);
-    gs.carl.y = gs.carl.plunger_y + TO_FIXED(0.2);
-    gs.carl.current_z = golf_get_ground_z_fixed(&gs, gs.carl.x, gs.carl.y);
-    gs.carl.state = CARL_STATE_DYNAMITE_PLUNGE;
-    gs.carl.timer = 24;
+    /* 3. GBA Play Mode: La Playa Desert Theme with Cactus, Tumbleweeds, Rapids */
+    gs.theme = THEME_LA_PLAYA;
+    golf_randomize_hole(&gs, 0x1234567);
+    gs.theme = THEME_LA_PLAYA;
     grc.tick_count = 0;
     grc.cam_x = 0;
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
-    save_gba_bmp_scaled("screenshot_gba_carl_dynamite.bmp", 3);
-    printf("[3/4] Saved screenshot_gba_carl_dynamite.bmp (720x480 GBA Carl Dynamite Detonation)\n");
+    save_gba_bmp_scaled("screenshot_gba_la_playa.bmp", 3);
+    printf("[4/8] Saved screenshot_gba_la_playa.bmp (720x480 GBA La Playa Desert Theme)\n");
 
-    /* 4. GBA Carl Spackler Water Hose Flooding */
-    gs.carl.active = true;
-    gs.carl.target_gx = h_gx;
-    gs.carl.target_gy = h_gy;
-    gs.carl.attack_type = CARL_ATTACK_HOSE;
-    gs.carl.x = TO_FIXED(h_gx + 2) + FIXED_HALF;
-    gs.carl.y = TO_FIXED(h_gy) + FIXED_HALF;
-    gs.carl.current_z = golf_get_ground_z_fixed(&gs, gs.carl.x, gs.carl.y);
-    gs.carl.state = CARL_STATE_HOSE_SPRAY;
-    gs.carl.timer = 50;
+    /* 4. GBA Play Mode: Nocturnal Green Gothic Theme with Autumn Trees & Tombstones */
+    gs.theme = THEME_NOCTURNAL_GREEN;
+    golf_randomize_hole(&gs, 0x7654321);
+    gs.theme = THEME_NOCTURNAL_GREEN;
     grc.tick_count = 0;
     grc.cam_x = 0;
     grc.cam_y = 0;
     gba_render_draw_frame(&grc, &gs);
-    save_gba_bmp_scaled("screenshot_gba_carl_hose.bmp", 3);
-    printf("[4/6] Saved screenshot_gba_carl_hose.bmp (720x480 GBA Carl Water Hose Flooding)\n");
+    save_gba_bmp_scaled("screenshot_gba_nocturnal_green.bmp", 3);
+    printf("[5/8] Saved screenshot_gba_nocturnal_green.bmp (720x480 GBA Nocturnal Green Theme)\n");
 
-    /* 5. GBA SELECT Button: Look / Course Scroll Mode */
-    gs.carl.active = false;
-    gs.gopher.visible = false;
+    /* 5. GBA Sneak On Mode: Ranger Patrol Cart Active */
+    gs.theme = THEME_BUSHWOOD;
+    golf_start_sneak_on(&gs);
+    gs.ranger.x = gs.ball.x + TO_FIXED(3);
+    gs.ranger.y = gs.ball.y + TO_FIXED(1);
+    gs.ranger.state = RANGER_STATE_PATROLLING;
+    grc.tick_count = 0;
+    grc.cam_x = 0;
+    grc.cam_y = 0;
+    gba_render_draw_frame(&grc, &gs);
+    save_gba_bmp_scaled("screenshot_gba_sneak_on_ranger.bmp", 3);
+    printf("[6/8] Saved screenshot_gba_sneak_on_ranger.bmp (720x480 GBA Sneak On with Ranger Cart)\n");
+
+    /* 6. GBA SELECT Button: Ultra-Fast Look / Course Scroll Mode */
     grc.look_mode = true;
     int32_t ball_gx = FROM_FIXED(gs.ball.x);
     int32_t ball_gy = FROM_FIXED(gs.ball.y);
@@ -146,9 +144,9 @@ int main(void) {
     grc.tick_count = 10;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_look_mode.bmp", 3);
-    printf("[5/6] Saved screenshot_gba_look_mode.bmp (720x480 GBA SELECT Course Look Mode with Reticle)\n");
+    printf("[7/8] Saved screenshot_gba_look_mode.bmp (720x480 GBA Fast Look Mode Reticle)\n");
 
-    /* 6. GBA Return to Golfer with Aim Spot Locked (Ready to Swing) */
+    /* 7. GBA Return to Golfer with Aim Spot Locked (Ready to Swing) */
     gs.aim_target_x = TO_FIXED(grc.look_center_gx) + FIXED_HALF;
     gs.aim_target_y = TO_FIXED(grc.look_center_gy) + FIXED_HALF;
     gs.has_custom_aim = true;
@@ -159,7 +157,7 @@ int main(void) {
     grc.tick_count = 0;
     gba_render_draw_frame(&grc, &gs);
     save_gba_bmp_scaled("screenshot_gba_aim_set.bmp", 3);
-    printf("[6/6] Saved screenshot_gba_aim_set.bmp (720x480 GBA Golfer with Locked Aim Spot Ready to Swing)\n");
+    printf("[8/8] Saved screenshot_gba_aim_set.bmp (720x480 GBA Golfer with Aim Set)\n");
 
     printf("=== ALL GBA VERIFICATION TESTS PASSED ===\n");
     return 0;

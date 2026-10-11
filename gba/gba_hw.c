@@ -19,7 +19,7 @@ void gba_hw_init(void) {
 
     /* 3. Initialize Sound Hardware (Master Enable + 100% Volume on all PSG channels) */
     *REG_SOUNDCNT_X = 0x0080;
-    *REG_SOUNDCNT_L = 0x7777;
+    *REG_SOUNDCNT_L = 0xFF77;
     *REG_SOUNDCNT_H = 0x0002;
 
     /* 4. Clear VRAM and Backbuffer safely with native 16-bit stores */
@@ -153,8 +153,11 @@ void gba_sfx_whistle(void) {
 /* ========================================================================= */
 /* CADDYSHACK THEME MUSIC SEQUENCER ("I'm Alright" by Kenny Loggins)         */
 /* ========================================================================= */
+/* CADDYSHACK THEME MUSIC SEQUENCER ("I'm Alright" Chorus by Kenny Loggins)  */
+/* ========================================================================= */
 
 #define GBA_NOTE_REST  0
+#define GBA_NOTE_C3    1113
 #define GBA_NOTE_E3    1254
 #define GBA_NOTE_G3    1379
 #define GBA_NOTE_A3    1452
@@ -167,76 +170,86 @@ void gba_sfx_whistle(void) {
 #define GBA_NOTE_D5    1825
 #define GBA_NOTE_E5    1849
 
+/* Iconic "I'm Alright (Theme from Caddyshack)" Chorus Hook (64 steps) */
 static const uint16_t s_melody_lead[64] = {
-    GBA_NOTE_E4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_G4,
-    GBA_NOTE_A4, GBA_NOTE_REST, GBA_NOTE_B4, GBA_NOTE_REST,
-    GBA_NOTE_A4, GBA_NOTE_REST, GBA_NOTE_G4, GBA_NOTE_REST,
-    GBA_NOTE_E4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-
-    GBA_NOTE_E4, GBA_NOTE_REST, GBA_NOTE_G4, GBA_NOTE_REST,
-    GBA_NOTE_A4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_D5, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_B4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-
-    GBA_NOTE_B4, GBA_NOTE_REST, GBA_NOTE_A4, GBA_NOTE_REST,
-    GBA_NOTE_G4, GBA_NOTE_REST, GBA_NOTE_E4, GBA_NOTE_REST,
-    GBA_NOTE_D4, GBA_NOTE_REST, GBA_NOTE_E4, GBA_NOTE_REST,
+    /* Bar 1: "I'm alright... nobody worry 'bout me" */
+    GBA_NOTE_B4,   GBA_NOTE_B4,   GBA_NOTE_B4,   GBA_NOTE_REST,
+    GBA_NOTE_B4,   GBA_NOTE_REST, GBA_NOTE_A4,   GBA_NOTE_REST,
+    GBA_NOTE_G4,   GBA_NOTE_REST, GBA_NOTE_E4,   GBA_NOTE_REST,
     GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
 
-    GBA_NOTE_E4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_G4, GBA_NOTE_REST, GBA_NOTE_A4, GBA_NOTE_REST,
-    GBA_NOTE_B4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_E5, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST
+    /* Bar 2: "Nobody worry 'bout me..." */
+    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_E4,   GBA_NOTE_REST,
+    GBA_NOTE_G4,   GBA_NOTE_REST, GBA_NOTE_A4,   GBA_NOTE_REST,
+    GBA_NOTE_G4,   GBA_NOTE_REST, GBA_NOTE_E4,   GBA_NOTE_REST,
+    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+
+    /* Bar 3: "Why you got to give me a fight..." */
+    GBA_NOTE_B4,   GBA_NOTE_B4,   GBA_NOTE_B4,   GBA_NOTE_REST,
+    GBA_NOTE_B4,   GBA_NOTE_REST, GBA_NOTE_A4,   GBA_NOTE_REST,
+    GBA_NOTE_G4,   GBA_NOTE_REST, GBA_NOTE_E4,   GBA_NOTE_REST,
+    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+
+    /* Bar 4: "Can't you just let it be..." */
+    GBA_NOTE_E4,   GBA_NOTE_REST, GBA_NOTE_G4,   GBA_NOTE_REST,
+    GBA_NOTE_A4,   GBA_NOTE_REST, GBA_NOTE_B4,   GBA_NOTE_REST,
+    GBA_NOTE_D5,   GBA_NOTE_REST, GBA_NOTE_B4,   GBA_NOTE_REST,
+    GBA_NOTE_A4,   GBA_NOTE_G4,   GBA_NOTE_E4,   GBA_NOTE_REST
 };
 
+/* Funk slap bassline supporting chorus progression */
 static const uint16_t s_melody_bass[64] = {
-    GBA_NOTE_E3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_E3, GBA_NOTE_REST, GBA_NOTE_G3, GBA_NOTE_REST,
-    GBA_NOTE_E3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_D4, GBA_NOTE_REST, GBA_NOTE_E3, GBA_NOTE_REST,
+    /* Bar 1: Em slap groove */
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_E3,   GBA_NOTE_REST,
+    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_G3,   GBA_NOTE_REST,
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+    GBA_NOTE_D4,   GBA_NOTE_REST, GBA_NOTE_E3,   GBA_NOTE_REST,
 
-    GBA_NOTE_E3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_A3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_D4, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_B3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+    /* Bar 2: Am groove */
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_E3,   GBA_NOTE_REST,
+    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_A3,   GBA_NOTE_REST,
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+    GBA_NOTE_B3,   GBA_NOTE_REST, GBA_NOTE_E3,   GBA_NOTE_REST,
 
-    GBA_NOTE_B3, GBA_NOTE_REST, GBA_NOTE_A3, GBA_NOTE_REST,
-    GBA_NOTE_G3, GBA_NOTE_REST, GBA_NOTE_E3, GBA_NOTE_REST,
-    GBA_NOTE_D4, GBA_NOTE_REST, GBA_NOTE_E3, GBA_NOTE_REST,
-    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+    /* Bar 3: Em slap groove */
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_E3,   GBA_NOTE_REST,
+    GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_G3,   GBA_NOTE_REST,
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
+    GBA_NOTE_D4,   GBA_NOTE_REST, GBA_NOTE_E3,   GBA_NOTE_REST,
 
-    GBA_NOTE_E3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_G3, GBA_NOTE_REST, GBA_NOTE_A3, GBA_NOTE_REST,
-    GBA_NOTE_B3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST,
-    GBA_NOTE_E3, GBA_NOTE_REST, GBA_NOTE_REST, GBA_NOTE_REST
+    /* Bar 4: Turnaround */
+    GBA_NOTE_C3,   GBA_NOTE_REST, GBA_NOTE_C3,   GBA_NOTE_REST,
+    GBA_NOTE_D4,   GBA_NOTE_REST, GBA_NOTE_D4,   GBA_NOTE_REST,
+    GBA_NOTE_E3,   GBA_NOTE_REST, GBA_NOTE_G3,   GBA_NOTE_REST,
+    GBA_NOTE_A3,   GBA_NOTE_REST, GBA_NOTE_B3,   GBA_NOTE_REST
 };
 
 void gba_audio_tick_splash(int tick) {
-    /* 16th note triggers every 7 frames (~128 BPM) */
-    if (tick % 7 != 0) return;
-    int step = (tick / 7) % 64;
+    /* 16th note triggers every 8 frames (~115 BPM) */
+    if (tick % 8 != 0) return;
+    int step = (tick / 8) % 64;
 
-    /* Lead Melody on Channel 2 */
+    /* Lead Synth on Channel 2 (50% duty, full volume 15, crisp decay) */
     uint16_t lead_freq = s_melody_lead[step];
     if (lead_freq > 0) {
-        *REG_SOUND2CNT_L = 0xB200; /* 50% duty, volume 11, decay */
+        *REG_SOUND2CNT_L = 0xF280; /* 50% duty, vol 15, decay */
         *REG_SOUND2CNT_H = 0x8000 | lead_freq;
     }
 
-    /* Slap Bassline on Channel 1 */
+    /* Slap Bass on Channel 1 */
     uint16_t bass_freq = s_melody_bass[step];
     if (bass_freq > 0) {
         *REG_SOUND1CNT_L = 0x0000;
-        *REG_SOUND1CNT_H = 0x9300; /* Volume 9 */
+        *REG_SOUND1CNT_H = 0xE280; /* 50% duty, vol 14, decay */
         *REG_SOUND1CNT_X = 0x8000 | bass_freq;
     }
 
     /* Percussion Beat on Channel 4 */
-    if (step % 8 == 4) {
-        *REG_SOUND4CNT_L = 0x6100; /* Crisp snare */
+    if ((step & 3) == 2) {
+        *REG_SOUND4CNT_L = 0xE100; /* Snare drum */
         *REG_SOUND4CNT_H = 0x8021;
-    } else if (step % 8 == 0) {
-        *REG_SOUND4CNT_L = 0x3100; /* Soft hi-hat */
+    } else if ((step & 3) == 0) {
+        *REG_SOUND4CNT_L = 0xA100; /* Kick / Hi-hat */
         *REG_SOUND4CNT_H = 0x8011;
     }
 }

@@ -28,9 +28,10 @@ int main(void) {
     gba_hw_init();
     gba_render_init(&s_gba_render_ctx);
     s_gba_game_state.mode = MODE_SPLASH;
+    int splash_menu_choice = 0; /* 0 = Jump On, 1 = Play Hole */
     
     /* Draw and display title screen immediately so screen is vibrant on boot */
-    gba_render_splash(&s_gba_render_ctx, 0);
+    gba_render_splash(&s_gba_render_ctx, 0, splash_menu_choice);
     gba_flip();
     
     /* Pre-generate initial course hole in RAM */
@@ -46,22 +47,47 @@ int main(void) {
             splash_timer++;
             gba_audio_tick_splash(splash_timer);
             
-            /* Press START, A, B or hold to Tee Off immediately */
-            if (gba_key_pressed(KEY_START) || gba_key_pressed(KEY_A) || gba_key_pressed(KEY_B) ||
-                (splash_timer > 25 && (gba_key_held(KEY_START) || gba_key_held(KEY_A)))) {
-                gba_audio_stop_music();
-                golf_set_mode(&s_gba_game_state, MODE_PLAY);
-                gba_sfx_whistle();
+            /* D-PAD: Switch Between "JUMP ON" and "PLAY HOLE" */
+            if (gba_key_pressed(KEY_LEFT) || gba_key_pressed(KEY_RIGHT) ||
+                gba_key_pressed(KEY_UP) || gba_key_pressed(KEY_DOWN)) {
+                splash_menu_choice = 1 - splash_menu_choice;
+                gba_sfx_bounce();
             }
             
-            gba_render_splash(&s_gba_render_ctx, splash_timer);
+            /* START or A Button: Confirm Mode Selection */
+            if (gba_key_pressed(KEY_START) || gba_key_pressed(KEY_A)) {
+                gba_audio_stop_music();
+                if (splash_menu_choice == 0) {
+                    /* JUMP ON / SNEAK ON: Random theme, random obstacles 1..5, WITH Marshall Ranger */
+                    golf_start_sneak_on(&s_gba_game_state);
+                    golf_set_banner(&s_gba_game_state, "JUMP ON ACTIVE! AVOID THE RANGER!", 180);
+                    gba_sfx_whistle();
+                } else {
+                    /* PLAY HOLE: Random theme, random obstacles 1..5, WITHOUT Marshall Ranger */
+                    uint32_t seed = (uint32_t)splash_timer * 1103515245 + 12345;
+                    s_gba_game_state.is_sneak_on = false;
+                    s_gba_game_state.tree_scale = 1 + (seed % 5);
+                    s_gba_game_state.bush_scale = 1 + ((seed >> 3) % 5);
+                    s_gba_game_state.rock_scale = 1 + ((seed >> 6) % 5);
+                    s_gba_game_state.water_scale = 1 + ((seed >> 9) % 5);
+                    s_gba_game_state.theme = (CourseTheme)((seed >> 12) % THEME_COUNT);
+                    golf_randomize_hole(&s_gba_game_state, seed);
+                    s_gba_game_state.ranger.active = false;
+                    s_gba_game_state.ranger.state = RANGER_STATE_INACTIVE;
+                    s_gba_game_state.mode = MODE_PLAY;
+                    golf_set_banner(&s_gba_game_state, "PLAY HOLE ACTIVE! HIT THE GREEN!", 180);
+                    gba_sfx_swing_hit(0);
+                }
+            }
+            
+            gba_render_splash(&s_gba_render_ctx, splash_timer, splash_menu_choice);
             gba_flip();
         } else {
             /* PLAY MODE */
             
             /* Key Controls */
             if (s_gba_game_state.ball.state == BALL_IDLE) {
-                /* SELECT Button: Toggle Look / Course Scroll Mode */
+                /* SELECT Button: Toggle Look / Fast Course Scroll Mode */
                 if (gba_key_pressed(KEY_SELECT)) {
                     s_gba_render_ctx.look_mode = !s_gba_render_ctx.look_mode;
                     if (s_gba_render_ctx.look_mode) {
@@ -76,74 +102,60 @@ int main(void) {
                 }
                 
                 if (s_gba_render_ctx.look_mode) {
-                    /* LOOK / SCROLL MODE: D-PAD pans camera window around course */
-                    if (gba_key_held(KEY_UP)) {
-                        s_gba_render_ctx.look_cam_y += 3;
-                    }
-                    if (gba_key_held(KEY_DOWN)) {
-                        s_gba_render_ctx.look_cam_y -= 3;
-                    }
-                    if (gba_key_held(KEY_LEFT)) {
-                        s_gba_render_ctx.look_cam_x += 4;
-                    }
-                    if (gba_key_held(KEY_RIGHT)) {
-                        s_gba_render_ctx.look_cam_x -= 4;
-                    }
+                    /* ULTRA-FAST LOOK / SCROLL MODE:
+                     * Base speed: 14px H / 10px V per frame (~4x faster)
+                     * Turbo speed: 28px H / 20px V per frame with B held (~8x faster!) */
+                    int speed_x = gba_key_held(KEY_B) ? 28 : 14;
+                    int speed_y = gba_key_held(KEY_B) ? 20 : 10;
+                    
+                    if (gba_key_held(KEY_UP))    s_gba_render_ctx.look_cam_y += speed_y;
+                    if (gba_key_held(KEY_DOWN))  s_gba_render_ctx.look_cam_y -= speed_y;
+                    if (gba_key_held(KEY_LEFT))  s_gba_render_ctx.look_cam_x += speed_x;
+                    if (gba_key_held(KEY_RIGHT)) s_gba_render_ctx.look_cam_x -= speed_x;
                     
                     /* Press A to SET AIM SPOT at center of window */
                     if (gba_key_pressed(KEY_A)) {
                         int32_t cgx = s_gba_render_ctx.look_center_gx;
                         int32_t cgy = s_gba_render_ctx.look_center_gy;
-                        s_gba_game_state.aim_target_x = TO_FIXED(cgx) + FIXED_HALF;
-                        s_gba_game_state.aim_target_y = TO_FIXED(cgy) + FIXED_HALF;
-                        s_gba_game_state.has_custom_aim = true;
-                        
-                        fixed dx = s_gba_game_state.aim_target_x - s_gba_game_state.ball.x;
-                        fixed dy = s_gba_game_state.aim_target_y - s_gba_game_state.ball.y;
-                        s_gba_game_state.aim_angle = fixed_atan2(dy, dx);
+                        golf_set_aim_target(&s_gba_game_state, TO_FIXED(cgx) + FIXED_HALF, TO_FIXED(cgy) + FIXED_HALF);
                         s_gba_game_state.aim_distance_yds = s_gba_render_ctx.look_dist_yds;
                         
                         /* Auto-select optimal club for this distance */
-                        if (s_gba_game_state.aim_distance_yds > 210) s_gba_game_state.current_club = CLUB_1W;
-                        else if (s_gba_game_state.aim_distance_yds > 175) s_gba_game_state.current_club = CLUB_3W;
-                        else if (s_gba_game_state.aim_distance_yds > 140) s_gba_game_state.current_club = CLUB_5I;
-                        else if (s_gba_game_state.aim_distance_yds > 105) s_gba_game_state.current_club = CLUB_9I;
-                        else if (s_gba_game_state.aim_distance_yds > 35) s_gba_game_state.current_club = CLUB_PW;
-                        else s_gba_game_state.current_club = CLUB_PT;
+                        if (s_gba_game_state.aim_distance_yds > 210) golf_select_club(&s_gba_game_state, CLUB_1W);
+                        else if (s_gba_game_state.aim_distance_yds > 175) golf_select_club(&s_gba_game_state, CLUB_3W);
+                        else if (s_gba_game_state.aim_distance_yds > 140) golf_select_club(&s_gba_game_state, CLUB_5I);
+                        else if (s_gba_game_state.aim_distance_yds > 105) golf_select_club(&s_gba_game_state, CLUB_9I);
+                        else if (s_gba_game_state.aim_distance_yds > 35) golf_select_club(&s_gba_game_state, CLUB_PW);
+                        else golf_select_club(&s_gba_game_state, CLUB_PT);
                         
                         gba_sfx_cup_sink();
                     }
                 } else {
                     /* NORMAL PLAY MODE CONTROLS */
-                    /* D-PAD Aiming */
+                    /* D-PAD Left/Right: Aim Direction */
                     if (gba_key_held(KEY_LEFT)) {
-                        s_gba_game_state.aim_angle = (s_gba_game_state.aim_angle + 3) & 0xFF;
+                        golf_adjust_aim(&s_gba_game_state, 3);
                     }
                     if (gba_key_held(KEY_RIGHT)) {
-                        s_gba_game_state.aim_angle = (s_gba_game_state.aim_angle - 3) & 0xFF;
-                    }
-                    if (gba_key_pressed(KEY_UP)) {
-                        s_gba_game_state.aim_distance_yds += 5;
-                        if (s_gba_game_state.aim_distance_yds > 350) s_gba_game_state.aim_distance_yds = 350;
-                    }
-                    if (gba_key_pressed(KEY_DOWN)) {
-                        s_gba_game_state.aim_distance_yds -= 5;
-                        if (s_gba_game_state.aim_distance_yds < 5) s_gba_game_state.aim_distance_yds = 5;
+                        golf_adjust_aim(&s_gba_game_state, -3);
                     }
                     
-                    /* Shoulder Buttons: Change Club */
-                    if (gba_key_pressed(KEY_R)) {
-                        s_gba_game_state.current_club = (ClubType)((s_gba_game_state.current_club + 1) % CLUB_COUNT);
+                    /* Responsive Club Selection:
+                     * B button, D-Pad Up/Down, or Shoulder buttons (L/R)
+                     * Ensures player is never trapped on a single club! */
+                    if (gba_key_pressed(KEY_B) || gba_key_pressed(KEY_DOWN) || gba_key_pressed(KEY_R)) {
+                        golf_change_club(&s_gba_game_state, 1);
                         gba_sfx_bounce();
-                    }
-                    if (gba_key_pressed(KEY_L)) {
-                        s_gba_game_state.current_club = (ClubType)((s_gba_game_state.current_club + CLUB_COUNT - 1) % CLUB_COUNT);
+                    } else if (gba_key_pressed(KEY_UP) || gba_key_pressed(KEY_L)) {
+                        golf_change_club(&s_gba_game_state, -1);
                         gba_sfx_bounce();
                     }
                     
-                    /* START: Randomize Course Hole */
+                    /* START: Randomize Course Hole and cycle color scheme */
                     if (gba_key_pressed(KEY_START)) {
-                        golf_randomize_hole(&s_gba_game_state, (uint32_t)splash_timer * 1103515245 + 12345);
+                        uint32_t seed = (uint32_t)splash_timer * 1103515245 + 12345;
+                        s_gba_game_state.theme = (CourseTheme)((s_gba_game_state.theme + 1) % THEME_COUNT);
+                        golf_randomize_hole(&s_gba_game_state, seed);
                         gba_sfx_gopher_chuckle();
                     }
                     

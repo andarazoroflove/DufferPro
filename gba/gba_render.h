@@ -26,7 +26,7 @@ typedef struct {
 
 void gba_render_init(GbaRenderContext *grc);
 void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs);
-void gba_render_splash(GbaRenderContext *grc, int anim_tick);
+void gba_render_splash(GbaRenderContext *grc, int anim_tick, int menu_choice);
 
 /* UI Helpers */
 void gba_draw_text(uint16_t *fb, int x, int y, const char *str, uint16_t color, bool shadow);

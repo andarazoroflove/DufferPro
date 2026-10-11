@@ -259,11 +259,13 @@ void golf_recalc_course_rating(GolfState *gs) {
     gs->difficulty_rating = diff;
 }
 
-static void set_banner(GolfState *gs, const char *msg, int32_t ticks) {
+void golf_set_banner(GolfState *gs, const char *msg, int32_t ticks) {
+    if (!msg) return;
     strncpy(gs->banner_text, msg, sizeof(gs->banner_text) - 1);
     gs->banner_text[sizeof(gs->banner_text) - 1] = '\0';
     gs->banner_timer = ticks;
 }
+#define set_banner golf_set_banner
 
 void golf_generate_terrain_scaled(GolfState *gs, uint32_t seed, int trees, int bushes, int rocks, int water) {
     core_srand(seed);

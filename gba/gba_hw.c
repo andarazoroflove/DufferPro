@@ -77,48 +77,97 @@ bool gba_key_pressed(uint16_t key) {
 /* GBA HARDWARE SOUND EFFECTS (Direct PSG Synthesis via Audio Registers)      */
 /* ========================================================================= */
 
+static int s_swing_seq_timer = 0;
+static int s_swing_club_type = 0;
+static int s_cup_seq_timer = 0;
+
+void gba_sfx_tick(void) {
+    if (s_swing_seq_timer > 0) {
+        s_swing_seq_timer--;
+        if (s_swing_seq_timer == 1) {
+            /* Stage 2: Metallic ring resonance / turf divot follow-through */
+            if (s_swing_club_type == 0) {
+                /* Driver: High titanium face resonance ring (2,750 Hz) */
+                *REG_SOUND2CNT_L = 0xE280;
+                *REG_SOUND2CNT_H = 0x8758;
+            } else if (s_swing_club_type == 1) {
+                /* Iron: Forged carbon steel ping (2,150 Hz) */
+                *REG_SOUND2CNT_L = 0xD280;
+                *REG_SOUND2CNT_H = 0x86E8;
+            } else if (s_swing_club_type == 2) {
+                /* Wedge: High-spin groove zip (3,600 Hz) */
+                *REG_SOUND2CNT_L = 0xC180;
+                *REG_SOUND2CNT_H = 0x8798;
+            }
+        }
+    }
+    
+    if (s_cup_seq_timer > 0) {
+        s_cup_seq_timer--;
+        if (s_cup_seq_timer == 3) {
+            /* Stage 2 of Cup Sink: Cup bottom plastic rattle & settle */
+            *REG_SOUND2CNT_L = 0xC280;
+            *REG_SOUND2CNT_H = 0x8690; /* 1,650 Hz */
+            *REG_SOUND1CNT_L = 0x0019;
+            *REG_SOUND1CNT_H = 0x8180;
+            *REG_SOUND1CNT_X = 0x8400; /* Low hollow cup thump */
+        }
+    }
+}
+
 void gba_sfx_swing_hit(int club_type) {
+    s_swing_club_type = club_type;
+    s_swing_seq_timer = 3; /* Multi-frame acoustic progression */
+
     if (club_type == 0) {
-        /* Driver: Dual-channel crack + explosive sub-bass cavity punch */
-        *REG_SOUND4CNT_L = 0xF100; /* Noise Channel 4: Max volume titanium face crack */
-        *REG_SOUND4CNT_H = 0x8011;
-        *REG_SOUND1CNT_L = 0x003A; /* Sweep down, time 3, shift 2 */
-        *REG_SOUND1CNT_H = 0xF280; /* 50% duty, vol 15, punch decay */
-        *REG_SOUND1CNT_X = 0x8640; /* Low punch dropping down */
+        /* Driver: Explosive titanium face crack + deep acoustic cavity compression */
+        *REG_SOUND4CNT_L = 0xF100; /* Max volume white noise impact */
+        *REG_SOUND4CNT_H = 0x8000; /* Fastest 15-bit LFSR white noise transient */
+        *REG_SOUND1CNT_L = 0x0019; /* Fast downward sweep */
+        *REG_SOUND1CNT_H = 0xF180; /* Volume 15, instant punch decay */
+        *REG_SOUND1CNT_X = 0x8680; /* Drops from high compression down to sub-bass */
     } else if (club_type == 4) {
-        /* Putter: Soft click tap on noise + gentle chime on Channel 2 */
-        *REG_SOUND4CNT_L = 0x6100;
-        *REG_SOUND4CNT_H = 0x8045;
-        *REG_SOUND2CNT_L = 0xB180;
-        *REG_SOUND2CNT_H = 0x8540;
+        /* Putter: Solid urethane/wood contact "TOCK" */
+        *REG_SOUND4CNT_L = 0x5100;
+        *REG_SOUND4CNT_H = 0x8035;
+        *REG_SOUND1CNT_L = 0x0000;
+        *REG_SOUND1CNT_H = 0x9180;
+        *REG_SOUND1CNT_X = 0x8380; /* Warm low pop ~280 Hz */
+        *REG_SOUND2CNT_L = 0x7180;
+        *REG_SOUND2CNT_H = 0x8520;
     } else if (club_type == 2) {
-        /* Wedge: High face groove zip on Channel 2 + turf divot slice on Channel 4 */
-        *REG_SOUND4CNT_L = 0xC100;
-        *REG_SOUND4CNT_H = 0x8023;
-        *REG_SOUND2CNT_L = 0xD180;
-        *REG_SOUND2CNT_H = 0x8750;
-    } else {
-        /* Iron: Forged steel ping on Channel 2 + solid turf shear on Channel 4 */
+        /* Wedge: High-frequency groove spin zip + grass bite */
         *REG_SOUND4CNT_L = 0xD100;
-        *REG_SOUND4CNT_H = 0x8014;
-        *REG_SOUND2CNT_L = 0xE180;
-        *REG_SOUND2CNT_H = 0x8600;
+        *REG_SOUND4CNT_H = 0x8011;
+        *REG_SOUND1CNT_L = 0x002B;
+        *REG_SOUND1CNT_H = 0xB180;
+        *REG_SOUND1CNT_X = 0x8580;
+    } else {
+        /* Iron: Forged steel ping + solid turf divot shear */
+        *REG_SOUND4CNT_L = 0xE100;
+        *REG_SOUND4CNT_H = 0x8013;
+        *REG_SOUND1CNT_L = 0x002A;
+        *REG_SOUND1CNT_H = 0xE180;
+        *REG_SOUND1CNT_X = 0x8540;
     }
 }
 
 void gba_sfx_ball_landing(void) {
     /* Initial Ball Impact on Turf: Heavy downward acoustic thud + ground rustle */
     *REG_SOUND1CNT_L = 0x002A; /* Downward sweep (bit 3=1), time 2, shifts 2 */
-    *REG_SOUND1CNT_H = 0xE180; /* 50% duty, vol 14, quick punch decay */
-    *REG_SOUND1CNT_X = 0x8460; /* Low thump: ~250 Hz down to 80 Hz */
-    *REG_SOUND4CNT_L = 0x9100; /* Low-frequency turf contact rustle */
-    *REG_SOUND4CNT_H = 0x8052;
+    *REG_SOUND1CNT_H = 0xF180; /* Vol 15, heavy punch decay */
+    *REG_SOUND1CNT_X = 0x83E0; /* Low thump: drops to sub-bass ~80 Hz */
+    *REG_SOUND4CNT_L = 0xB100; /* Low-frequency turf contact rustle */
+    *REG_SOUND4CNT_H = 0x8042;
 }
 
 void gba_sfx_pin_ding(void) {
     /* Channel 2: High crystal bell ding on placing aim flag (C7 chime: ~2093 Hz) */
-    *REG_SOUND2CNT_L = 0xE280; /* 50% duty, vol 14, decay 2 */
+    *REG_SOUND2CNT_L = 0xF380; /* 50% duty, vol 15, crystal decay */
     *REG_SOUND2CNT_H = 0x8772; /* C7 crystal bell frequency */
+    *REG_SOUND1CNT_L = 0x0000;
+    *REG_SOUND1CNT_H = 0xB280;
+    *REG_SOUND1CNT_X = 0x87A8; /* Sympathetic harmonic */
 }
 
 void gba_sfx_bounce(void) {
@@ -129,15 +178,102 @@ void gba_sfx_bounce(void) {
 }
 
 void gba_sfx_cup_sink(void) {
-    /* Channel 2: Two resonant chime tones dropping into cup */
-    *REG_SOUND2CNT_L = 0xB200;
-    *REG_SOUND2CNT_H = 0x8680; /* High tone */
+    /* Stage 1: High metallic rim clink (2,400 Hz) */
+    *REG_SOUND2CNT_L = 0xF180;
+    *REG_SOUND2CNT_H = 0x8740;
+    s_cup_seq_timer = 6; /* Stage 2 cup bottom rattle triggers in 3 frames */
 }
 
 void gba_sfx_water_splash(void) {
-    /* Channel 4: White noise water splash */
-    *REG_SOUND4CNT_L = 0xE300; /* High volume, slower decay */
-    *REG_SOUND4CNT_H = 0x8052; /* Rumbling noise */
+    /* Channel 4: White noise water splash + Channel 1 bubble gurgle */
+    *REG_SOUND4CNT_L = 0xF300; /* High volume, turbulent splash */
+    *REG_SOUND4CNT_H = 0x8052;
+    *REG_SOUND1CNT_L = 0x0012; /* Upward bubble sweep */
+    *REG_SOUND1CNT_H = 0xC180;
+    *REG_SOUND1CNT_X = 0x8400;
+}
+
+void gba_sfx_ui_tick(void) {
+    /* Subtle 4 ms tactile mechanical click for D-pad aiming movement */
+    *REG_SOUND4CNT_L = 0x4100;
+    *REG_SOUND4CNT_H = 0x8001;
+}
+
+void gba_sfx_club_click(void) {
+    /* Crisp mechanical club ratchet click */
+    *REG_SOUND4CNT_L = 0x8100;
+    *REG_SOUND4CNT_H = 0x8012;
+    *REG_SOUND2CNT_L = 0x9180;
+    *REG_SOUND2CNT_H = 0x8620;
+}
+
+void gba_sfx_footstep(void) {
+    /* Soft natural turf step */
+    *REG_SOUND4CNT_L = 0x3100;
+    *REG_SOUND4CNT_H = 0x8043;
+}
+
+void gba_sfx_tree_hit(void) {
+    /* Solid wood trunk thwack */
+    *REG_SOUND4CNT_L = 0xE100;
+    *REG_SOUND4CNT_H = 0x8023;
+    *REG_SOUND1CNT_L = 0x003A;
+    *REG_SOUND1CNT_H = 0xD180;
+    *REG_SOUND1CNT_X = 0x8480;
+}
+
+void gba_sfx_rock_hit(void) {
+    /* High metallic boulder clang */
+    *REG_SOUND4CNT_L = 0xF100;
+    *REG_SOUND4CNT_H = 0x8009; /* 7-bit metallic chime noise */
+    *REG_SOUND2CNT_L = 0xF280;
+    *REG_SOUND2CNT_H = 0x8760; /* Loud metallic ring */
+}
+
+void gba_sfx_sweetspot(void) {
+    /* Sweetspot Strike: Titanium Driver crack + high C8 crystal ping */
+    *REG_SOUND4CNT_L = 0xF100;
+    *REG_SOUND4CNT_H = 0x8000;
+    *REG_SOUND2CNT_L = 0xF380;
+    *REG_SOUND2CNT_H = 0x87F0;
+    *REG_SOUND1CNT_L = 0x0019;
+    *REG_SOUND1CNT_H = 0xF180;
+    *REG_SOUND1CNT_X = 0x8680;
+}
+
+void gba_sfx_applause(void) {
+    /* Warm golf clap crowd applause on Channel 4 */
+    *REG_SOUND4CNT_L = 0x9300;
+    *REG_SOUND4CNT_H = 0x8052;
+}
+
+void gba_sfx_siren(void) {
+    /* Marshall Ranger Patrol Cart Siren */
+    *REG_SOUND1CNT_L = 0x0013;
+    *REG_SOUND1CNT_H = 0xE180;
+    *REG_SOUND1CNT_X = 0x8680;
+}
+
+void gba_sfx_chainsaw(void) {
+    /* Ash Chainsaw Engine Buzz on Channel 4 */
+    *REG_SOUND4CNT_L = 0xF200;
+    *REG_SOUND4CNT_H = 0x8039;
+}
+
+void gba_sfx_zombie(void) {
+    /* Low gutter zombie groan */
+    *REG_SOUND1CNT_L = 0x0055;
+    *REG_SOUND1CNT_H = 0xD300;
+    *REG_SOUND1CNT_X = 0x8180;
+}
+
+void gba_sfx_seamonster(void) {
+    /* Subterranean sea monster rumble */
+    *REG_SOUND4CNT_L = 0xF400;
+    *REG_SOUND4CNT_H = 0x8061;
+    *REG_SOUND1CNT_L = 0x0077;
+    *REG_SOUND1CNT_H = 0xF400;
+    *REG_SOUND1CNT_X = 0x8120;
 }
 
 void gba_sfx_gopher_chuckle(void) {
@@ -156,10 +292,8 @@ void gba_sfx_gopher_gulp(void) {
 
 void gba_sfx_carl_explosion(void) {
     /* Carl Spackler Massive TNT Explosion */
-    /* Channel 4: Detonation rumble */
     *REG_SOUND4CNT_L = 0xF500; /* Max volume, long rumble */
     *REG_SOUND4CNT_H = 0x8071; /* Heavy low-frequency noise */
-    /* Channel 1: Sub-bass boom drop */
     *REG_SOUND1CNT_L = 0x0077; /* Deep sweep */
     *REG_SOUND1CNT_H = 0xF400;
     *REG_SOUND1CNT_X = 0x8180;

@@ -1161,11 +1161,14 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
         }
         grc->target_cam_x = (GBA_SCREEN_W / 2) - target_sx - GBA_TILE_HALF_W;
         grc->target_cam_y = (GBA_SCREEN_H / 2) - target_sy - GBA_TILE_HALF_H;
-        if (grc->tick_count <= 1 || (grc->cam_x == 0 && grc->cam_y == 0)) {
+        if (grc->tick_count <= 1 || (grc->cam_x == 0 && grc->cam_y == 0) ||
+            (grc->aim_locked && gs->ball.state == BALL_IDLE) ||
+            gs->ball.state == BALL_IN_FLIGHT ||
+            gs->golfer.state == GOLFER_STATE_WALKING || gs->golfer.state == GOLFER_STATE_JUMPING) {
             grc->cam_x = grc->target_cam_x;
             grc->cam_y = grc->target_cam_y;
         } else {
-            int divisor = (gs->ball.state != BALL_IDLE) ? 2 : 3;
+            int divisor = 2;
             grc->cam_x += (grc->target_cam_x - grc->cam_x) / divisor;
             grc->cam_y += (grc->target_cam_y - grc->cam_y) / divisor;
         }

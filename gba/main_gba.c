@@ -4,6 +4,25 @@
 
 static GolfState s_gba_game_state;
 static GbaRenderContext s_gba_render_ctx;
+static bool s_club_manually_chosen = false;
+
+static ClubType gba_recommend_club(int32_t yds, SurfaceType surf) {
+    if (surf == SURF_GREEN || yds <= 20) return CLUB_PT;
+    if (surf == SURF_SAND && yds <= 90) return CLUB_SW;
+    if (yds >= 250) return CLUB_DRV;
+    if (yds >= 232) return CLUB_1W;
+    if (yds >= 217) return CLUB_2W;
+    if (yds >= 202) return CLUB_3W;
+    if (yds >= 187) return CLUB_4I;
+    if (yds >= 172) return CLUB_5I;
+    if (yds >= 157) return CLUB_6I;
+    if (yds >= 142) return CLUB_7I;
+    if (yds >= 127) return CLUB_8I;
+    if (yds >= 112) return CLUB_9I;
+    if (yds >= 95)  return CLUB_PW;
+    if (yds >= 75)  return CLUB_SW;
+    return CLUB_LW;
+}
 
 static void dispatch_gba_audio(GolfAudioEvent evt, int club) {
     switch (evt) {
@@ -104,11 +123,21 @@ int main(void) {
                 s_gba_render_ctx.aim_locked = false;
             }
             
-            /* Controls active when ball is idle and golfer is not walking */
-            if (s_gba_game_state.ball.state == BALL_IDLE && s_gba_game_state.golfer.state != GOLFER_STATE_WALKING) {
-                /* D-PAD: Camera / Crosshair Movement across course by default */
-                int speed_x = gba_key_held(KEY_B) ? 26 : 12;
-                int speed_y = gba_key_held(KEY_B) ? 18 : 8;
+            /* Responsive skip-walking controls: Click A, B, or START while walking/jumping to arrive immediately */
+            if (s_gba_game_state.golfer.state == GOLFER_STATE_WALKING || s_gba_game_state.golfer.state == GOLFER_STATE_JUMPING) {
+                if (gba_key_pressed(KEY_A) || gba_key_pressed(KEY_B) || gba_key_pressed(KEY_START)) {
+                    golf_golfer_arrive_at_ball(&s_gba_game_state);
+                    s_gba_render_ctx.aim_locked = false;
+                    s_club_manually_chosen = false;
+                    gba_sfx_bounce();
+                }
+            }
+            
+            /* Controls active when ball is idle and golfer is ready */
+            if (s_gba_game_state.ball.state == BALL_IDLE && s_gba_game_state.golfer.state != GOLFER_STATE_WALKING && s_gba_game_state.golfer.state != GOLFER_STATE_JUMPING) {
+                /* D-PAD: Camera / Crosshair Movement across course (fast & turbo speeds) */
+                int speed_x = gba_key_held(KEY_B) ? 56 : 32;
+                int speed_y = gba_key_held(KEY_B) ? 36 : 20;
                 
                 bool dpad_moved = false;
                 if (gba_key_held(KEY_UP))    { s_gba_render_ctx.cam_y += speed_y; dpad_moved = true; }
@@ -117,10 +146,10 @@ int main(void) {
                 if (gba_key_held(KEY_RIGHT)) { s_gba_render_ctx.cam_x -= speed_x; dpad_moved = true; }
                 
                 /* Keep camera within course boundaries */
-                if (s_gba_render_ctx.cam_x > 900)  s_gba_render_ctx.cam_x = 900;
-                if (s_gba_render_ctx.cam_x < -900) s_gba_render_ctx.cam_x = -900;
-                if (s_gba_render_ctx.cam_y > 300)  s_gba_render_ctx.cam_y = 300;
-                if (s_gba_render_ctx.cam_y < -950) s_gba_render_ctx.cam_y = -950;
+                if (s_gba_render_ctx.cam_x > 1200)  s_gba_render_ctx.cam_x = 1200;
+                if (s_gba_render_ctx.cam_x < -1200) s_gba_render_ctx.cam_x = -1200;
+                if (s_gba_render_ctx.cam_y > 400)   s_gba_render_ctx.cam_y = 400;
+                if (s_gba_render_ctx.cam_y < -1200) s_gba_render_ctx.cam_y = -1200;
                 
                 /* If shot was locked and player moves D-Pad or presses B, unlock so player can re-aim! */
                 if (s_gba_render_ctx.aim_locked && (dpad_moved || gba_key_pressed(KEY_B))) {
@@ -128,14 +157,21 @@ int main(void) {
                     gba_sfx_bounce();
                 }
                 
-                /* Shoulder Triggers (RT / LT -> R / L) to cycle through all 14 clubs:
+                /* Shoulder Triggers (R / L) to cycle through all 14 clubs:
                  * Driver -> 1W -> 2W -> 3W -> 4I..9I -> PW -> SW -> LW -> PT */
                 if (gba_key_pressed(KEY_R)) {
                     golf_change_club(&s_gba_game_state, 1);
+                    s_club_manually_chosen = true;
                     gba_sfx_bounce();
                 } else if (gba_key_pressed(KEY_L)) {
                     golf_change_club(&s_gba_game_state, -1);
+                    s_club_manually_chosen = true;
                     gba_sfx_bounce();
+                }
+                
+                /* Auto-recommend club when aiming if player hasn't manually chosen one yet */
+                if (!s_gba_render_ctx.aim_locked && !s_club_manually_chosen) {
+                    s_gba_game_state.current_club = gba_recommend_club(s_gba_render_ctx.cross_dist_yds, s_gba_game_state.ball.current_surf);
                 }
                 
                 /* A BUTTON: 2-Click Sequence
@@ -144,14 +180,19 @@ int main(void) {
                 if (gba_key_pressed(KEY_A)) {
                     if (!s_gba_render_ctx.aim_locked) {
                         /* Click 1: Lock aim pin & return camera to ball */
+                        ClubType chosen_club = s_gba_game_state.current_club;
                         s_gba_render_ctx.aim_target_gx = s_gba_render_ctx.cross_gx;
                         s_gba_render_ctx.aim_target_gy = s_gba_render_ctx.cross_gy;
                         s_gba_render_ctx.aim_locked = true;
+                        s_club_manually_chosen = true;
                         
                         golf_set_aim_target(&s_gba_game_state,
                             TO_FIXED(s_gba_render_ctx.aim_target_gx) + FIXED_HALF,
                             TO_FIXED(s_gba_render_ctx.aim_target_gy) + FIXED_HALF);
                         s_gba_game_state.aim_distance_yds = s_gba_render_ctx.cross_dist_yds;
+                        
+                        /* CRITICAL: Preserve player's chosen club against auto-recommend overwrite */
+                        s_gba_game_state.current_club = chosen_club;
                         
                         /* Snap camera back to center on ball */
                         int bgx = FROM_FIXED(s_gba_game_state.ball.x);
@@ -168,8 +209,13 @@ int main(void) {
                         
                         gba_sfx_cup_sink();
                     } else {
-                        /* Click 2: Untimed Shot Execution */
+                        /* Click 2: Untimed Shot Execution with Full Club Power */
+                        const ClubData *cd = golf_get_club_data(s_gba_game_state.current_club);
+                        if (!cd->is_putter) {
+                            s_gba_game_state.aim_distance_yds = cd->nominal_yards;
+                        }
                         golf_execute_shot(&s_gba_game_state);
+                        s_club_manually_chosen = false;
                         if (s_gba_game_state.audio_event != AUDIO_EVT_NONE) {
                             dispatch_gba_audio(s_gba_game_state.audio_event, (int)s_gba_game_state.current_club);
                             s_gba_game_state.audio_event = AUDIO_EVT_NONE;
@@ -183,12 +229,29 @@ int main(void) {
                     s_gba_game_state.theme = (CourseTheme)((s_gba_game_state.theme + 1) % THEME_COUNT);
                     golf_randomize_hole(&s_gba_game_state, seed);
                     s_gba_render_ctx.aim_locked = false;
+                    s_club_manually_chosen = false;
                     gba_sfx_gopher_chuckle();
                 }
             }
             
-            /* Game Physics & Entity Simulation */
-            golf_tick(&s_gba_game_state);
+            /* Multi-tick Game Physics & Entity Simulation */
+            int num_ticks = 1;
+            if (s_gba_game_state.ball.state == BALL_IN_FLIGHT || s_gba_game_state.ball.state == BALL_BOUNCING || s_gba_game_state.ball.state == BALL_ROLLING) {
+                num_ticks = 2; /* 2x faster flight/roll */
+            } else if (s_gba_game_state.golfer.state == GOLFER_STATE_WALKING) {
+                num_ticks = 3; /* 3x faster walking */
+            }
+            
+            for (int t = 0; t < num_ticks; ++t) {
+                golf_tick(&s_gba_game_state);
+                if (s_gba_game_state.audio_event != AUDIO_EVT_NONE) {
+                    dispatch_gba_audio(s_gba_game_state.audio_event, (int)s_gba_game_state.current_club);
+                    s_gba_game_state.audio_event = AUDIO_EVT_NONE;
+                }
+                if (s_gba_game_state.ball.state == BALL_IDLE && s_gba_game_state.golfer.state != GOLFER_STATE_WALKING) {
+                    break;
+                }
+            }
             
             if (s_gba_game_state.audio_event != AUDIO_EVT_NONE) {
                 dispatch_gba_audio(s_gba_game_state.audio_event, (int)s_gba_game_state.current_club);

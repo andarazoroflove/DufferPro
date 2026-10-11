@@ -40,19 +40,6 @@
 #define REG_WAITCNT     ((volatile uint16_t*)0x04000204)
 #define REG_IME         ((volatile uint16_t*)0x04000208)
 
-/* GBA DMA Registers */
-#define REG_DMA0CNT     ((volatile uint32_t*)0x040000BA)
-#define REG_DMA1CNT     ((volatile uint32_t*)0x040000C6)
-#define REG_DMA2CNT     ((volatile uint32_t*)0x040000D2)
-#define REG_DMA3SAD     ((volatile uint32_t*)0x040000D4)
-#define REG_DMA3DAD     ((volatile uint32_t*)0x040000D8)
-#define REG_DMA3CNT     ((volatile uint32_t*)0x040000DC)
-
-/* GBA Timer Registers */
-#define REG_TM0CNT      ((volatile uint16_t*)0x04000102)
-#define REG_TM1CNT      ((volatile uint16_t*)0x04000106)
-#define REG_TM2CNT      ((volatile uint16_t*)0x0400010A)
-#define REG_TM3CNT      ((volatile uint16_t*)0x0400010E)
 
 
 /* GBA Sound Registers */

@@ -26,10 +26,15 @@ static void dispatch_gba_audio(GolfAudioEvent evt, int club) {
 int main(void) {
     /* 1. Hardware Initialization */
     gba_hw_init();
-    golf_init(&s_gba_game_state);
     gba_render_init(&s_gba_render_ctx);
+    s_gba_game_state.mode = MODE_SPLASH;
     
-    /* Start directly on title/splash screen with hole pre-generated in RAM */
+    /* Draw and display title screen immediately so screen is vibrant on boot */
+    gba_render_splash(&s_gba_render_ctx, 0);
+    gba_flip();
+    
+    /* Pre-generate initial course hole in RAM */
+    golf_init(&s_gba_game_state);
     s_gba_game_state.mode = MODE_SPLASH;
     int splash_timer = 0;
     

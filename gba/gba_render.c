@@ -518,6 +518,8 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     /* 3. Add Dynamic Entities (Golfer, Caddy, Ball, Gopher, Carl) */
     int golfer_gx = FROM_FIXED(gs->golfer.x);
     int golfer_gy = FROM_FIXED(gs->golfer.y);
+    if (golfer_gx < 0) golfer_gx = 0; if (golfer_gx >= GRID_W) golfer_gx = GRID_W - 1;
+    if (golfer_gy < 0) golfer_gy = 0; if (golfer_gy >= GRID_H) golfer_gy = GRID_H - 1;
     int g_sx = (golfer_gx - golfer_gy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
     int g_sy = (golfer_gx + golfer_gy) * GBA_TILE_HALF_H - (gs->grid[golfer_gx][golfer_gy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
     add_drawable(GBA_ENT_GOLFER, g_sx, g_sy, (golfer_gx + golfer_gy) * 32 + 16, gs->golfer.state);
@@ -535,6 +537,8 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     if (gs->gopher.visible) {
         int goph_gx = gs->gopher.gx;
         int goph_gy = gs->gopher.gy;
+        if (goph_gx < 0) goph_gx = 0; if (goph_gx >= GRID_W) goph_gx = GRID_W - 1;
+        if (goph_gy < 0) goph_gy = 0; if (goph_gy >= GRID_H) goph_gy = GRID_H - 1;
         int gp_sx = (goph_gx - goph_gy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
         int gp_sy = (goph_gx + goph_gy) * GBA_TILE_HALF_H - (gs->grid[goph_gx][goph_gy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
         add_drawable(GBA_ENT_GOPHER, gp_sx, gp_sy, (goph_gx + goph_gy) * 32 + 13, gs->gopher.anim_frame);
@@ -544,6 +548,8 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
     if (gs->carl.active) {
         int cgx = FROM_FIXED(gs->carl.x);
         int cgy = FROM_FIXED(gs->carl.y);
+        if (cgx < 0) cgx = 0; if (cgx >= GRID_W) cgx = GRID_W - 1;
+        if (cgy < 0) cgy = 0; if (cgy >= GRID_H) cgy = GRID_H - 1;
         int c_sx = (cgx - cgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
         int c_sy = (cgx + cgy) * GBA_TILE_HALF_H - (gs->grid[cgx][cgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
         add_drawable(GBA_ENT_CARL, c_sx, c_sy, (cgx + cgy) * 32 + 17, 0);
@@ -553,6 +559,8 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
             (gs->carl.state == CARL_STATE_DYNAMITE_PLANT || gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE || gs->carl.state == CARL_STATE_CELEBRATING)) {
             int pgx = FROM_FIXED(gs->carl.plunger_x);
             int pgy = FROM_FIXED(gs->carl.plunger_y);
+            if (pgx < 0) pgx = 0; if (pgx >= GRID_W) pgx = GRID_W - 1;
+            if (pgy < 0) pgy = 0; if (pgy >= GRID_H) pgy = GRID_H - 1;
             int p_sx = (pgx - pgy) * GBA_TILE_HALF_W + grc->cam_x + GBA_TILE_HALF_W;
             int p_sy = (pgx + pgy) * GBA_TILE_HALF_H - (gs->grid[pgx][pgy].elevation * GBA_HEIGHT_STEP) + grc->cam_y + GBA_TILE_HALF_H;
             bool plunged = (gs->carl.state == CARL_STATE_DYNAMITE_PLUNGE && gs->carl.timer >= 14) || gs->carl.state == CARL_STATE_CELEBRATING;

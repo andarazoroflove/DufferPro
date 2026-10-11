@@ -746,9 +746,9 @@ void golf_randomize_hole(GolfState *gs, uint32_t seed) {
     /* Stamp Fairway Corridor over generated terrain: guarantees playability! */
     int start_y = gs->pin_gy + 4;
     int end_y = gs->tee_gy - 1;
+    int dy_span = end_y - start_y;
     for (int y = start_y; y <= end_y; ++y) {
-        float t = (float)(y - start_y) / (float)(end_y - start_y);
-        int center_x = (int)((1.0f - t) * gs->pin_gx + t * gs->tee_gx);
+        int center_x = (dy_span > 0) ? (gs->pin_gx + ((y - start_y) * (gs->tee_gx - gs->pin_gx)) / dy_span) : gs->pin_gx;
         int half_w = 2 + (int)(core_rand() % 3);
         
         for (int x = center_x - half_w; x <= center_x + half_w; ++x) {
@@ -2217,8 +2217,8 @@ void golf_tick(GolfState *gs) {
                 if (gs->gopher.timer % 30 == 0) {
                     int w_dx = (int)(core_rand() % 3) - 1;
                     int w_dy = (int)(core_rand() % 3) - 1;
-                    gs->gopher.x += TO_FIXED(w_dx * 0.15);
-                    gs->gopher.y += TO_FIXED(w_dy * 0.15);
+                    gs->gopher.x += w_dx * 9830;
+                    gs->gopher.y += w_dy * 9830;
                     gs->gopher.gx = FROM_FIXED(gs->gopher.x);
                     gs->gopher.gy = FROM_FIXED(gs->gopher.y);
                     gs->gopher.current_z = golf_get_ground_z_fixed(gs, gs->gopher.x, gs->gopher.y);

@@ -1,7 +1,7 @@
 # Duffer Pro ⛳
 
 > **High-Definition 2.5D Isometric Golf Simulation & Course Architect**  
-> *Version `0.75-noonan`* (SemVer: `v0.7.5`) — Pure ANSI C99 · Windows · macOS Sonoma · Game Boy Advance
+> *Version `0.76-noonan`* (SemVer: `v0.7.6`) — Pure ANSI C99 · Windows · macOS Sonoma · Game Boy Advance
 
 ![Duffer Pro Title Screen](docs/screenshots/screenshot_splash.png)
 

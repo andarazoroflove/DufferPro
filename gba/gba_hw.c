@@ -1,7 +1,7 @@
 #include "gba_hw.h"
 
-/* Offscreen Backbuffer in 256KB EWRAM (76,800 bytes) */
-static uint16_t s_backbuffer[GBA_SCREEN_W * GBA_SCREEN_H];
+/* Offscreen Backbuffer in 256KB EWRAM (76,800 bytes) - strictly 4-byte aligned */
+__attribute__((aligned(4))) static uint16_t s_backbuffer[GBA_SCREEN_W * GBA_SCREEN_H];
 
 /* Key states */
 static uint16_t s_prev_keys = 0x03FF;
@@ -9,20 +9,35 @@ static uint16_t s_curr_keys = 0x03FF;
 static uint16_t s_pressed_keys = 0;
 
 void gba_hw_init(void) {
-    /* Disable and acknowledge all interrupts for clean startup */
+    /* 1. Disable and acknowledge all interrupts for clean startup */
     *REG_IME = 0;
     *REG_IE = 0;
     *REG_IF = 0xFFFF;
 
-    /* Set Video Mode 3 (240x160 15-bit color bitmap) + BG2 layer enable */
+    /* 2. Configure ROM waitstates & prefetch buffer (3,1 waitstates) */
+    *REG_WAITCNT = 0x4317;
+
+    /* 3. Disable all DMA channels to prevent bootloader / flashcart conflicts */
+    *REG_DMA0CNT = 0;
+    *REG_DMA1CNT = 0;
+    *REG_DMA2CNT = 0;
+    *REG_DMA3CNT = 0;
+
+    /* 4. Disable all hardware timers */
+    *REG_TM0CNT = 0;
+    *REG_TM1CNT = 0;
+    *REG_TM2CNT = 0;
+    *REG_TM3CNT = 0;
+
+    /* 5. Set Video Mode 3 (240x160 15-bit color bitmap) + BG2 layer enable */
     *REG_DISPCNT = 0x0403;
 
-    /* Initialize Sound Hardware (Master Enable + 100% Volume on all PSG channels) */
+    /* 6. Initialize Sound Hardware (Master Enable + 100% Volume on all PSG channels) */
     *REG_SOUNDCNT_X = 0x0080;
     *REG_SOUNDCNT_L = 0x7777;
     *REG_SOUNDCNT_H = 0x0002;
 
-    /* Clear VRAM and Backbuffer safely with native 16-bit stores */
+    /* 7. Clear VRAM and Backbuffer safely with native 16-bit stores */
     for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H); ++i) {
         VRAM[i] = 0;
         s_backbuffer[i] = 0;
@@ -30,28 +45,20 @@ void gba_hw_init(void) {
 }
 
 void gba_vsync(void) {
-    /* Wait for VBlank scanline 160..227 */
-    while (*REG_VCOUNT >= 160);
-    while (*REG_VCOUNT < 160);
+    /* Wait for VBlank scanline 160..227 with timeout protection against hardware stalls */
+    int timeout = 100000;
+    while (*REG_VCOUNT >= 160 && --timeout > 0);
+    timeout = 100000;
+    while (*REG_VCOUNT < 160 && --timeout > 0);
 }
 
 void gba_flip(void) {
     gba_vsync();
 
-    /* Fast 32-bit copy from EWRAM backbuffer to VRAM */
-    const uint32_t *src = (const uint32_t*)s_backbuffer;
-    volatile uint32_t *dst = (volatile uint32_t*)VRAM;
-    
-    for (int i = 0; i < (GBA_SCREEN_W * GBA_SCREEN_H) / 2; i += 8) {
-        dst[i + 0] = src[i + 0];
-        dst[i + 1] = src[i + 1];
-        dst[i + 2] = src[i + 2];
-        dst[i + 3] = src[i + 3];
-        dst[i + 4] = src[i + 4];
-        dst[i + 5] = src[i + 5];
-        dst[i + 6] = src[i + 6];
-        dst[i + 7] = src[i + 7];
-    }
+    /* Fast hardware DMA Channel 3 copy from EWRAM backbuffer to VRAM */
+    *REG_DMA3SAD = (uint32_t)s_backbuffer;
+    *REG_DMA3DAD = (uint32_t)VRAM;
+    *REG_DMA3CNT = 0x84000000 | (19200); /* 19,200 words = 76,800 bytes, 32-bit transfer */
 }
 
 uint16_t* gba_get_backbuffer(void) {

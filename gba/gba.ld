@@ -24,6 +24,7 @@ SECTIONS {
 
     __data_load = LOADADDR(.data);
     .data : {
+        . = ALIGN(4);
         __data_start = .;
         *(.data*)
         . = ALIGN(4);
@@ -31,6 +32,7 @@ SECTIONS {
     } > ewram AT > rom
 
     .bss (NOLOAD) : {
+        . = ALIGN(4);
         __bss_start = .;
         *(.bss*)
         *(COMMON)

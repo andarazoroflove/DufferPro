@@ -26,11 +26,11 @@ static void dispatch_gba_audio(GolfAudioEvent evt, int club) {
 int main(void) {
     /* 1. Hardware Initialization */
     gba_hw_init();
+    golf_init(&s_gba_game_state);
     gba_render_init(&s_gba_render_ctx);
     
-    /* Start directly on splash screen without blocking on terrain generation */
+    /* Start directly on title/splash screen with hole pre-generated in RAM */
     s_gba_game_state.mode = MODE_SPLASH;
-    bool hole_ready = false;
     int splash_timer = 0;
     
     /* 2. Main Game Loop */
@@ -41,13 +41,10 @@ int main(void) {
             splash_timer++;
             gba_audio_tick_splash(splash_timer);
             
-            /* Press START or A to Tee Off */
-            if (gba_key_pressed(KEY_START) || gba_key_pressed(KEY_A)) {
+            /* Press START, A, B or hold to Tee Off immediately */
+            if (gba_key_pressed(KEY_START) || gba_key_pressed(KEY_A) || gba_key_pressed(KEY_B) ||
+                (splash_timer > 25 && (gba_key_held(KEY_START) || gba_key_held(KEY_A)))) {
                 gba_audio_stop_music();
-                if (!hole_ready) {
-                    golf_init(&s_gba_game_state);
-                    hole_ready = true;
-                }
                 golf_set_mode(&s_gba_game_state, MODE_PLAY);
                 gba_sfx_whistle();
             }

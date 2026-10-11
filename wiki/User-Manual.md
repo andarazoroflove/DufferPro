@@ -1,5 +1,5 @@
 # Duffer Pro: Championship Edition – User Manual
-**Version:** `0.75-noonan` (SemVer `v0.7.5`)  
+**Version:** `0.76-noonan` (SemVer `v0.7.6`)  
 **Platforms:** Windows (x86/x64) · macOS Sonoma (Universal 2: Apple Silicon & Intel) · Game Boy Advance (Bare-Metal ROM)
 
 ---

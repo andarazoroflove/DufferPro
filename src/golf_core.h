@@ -7,14 +7,14 @@
 
 /* Version Identification
  * Versioning Protocol:
- * - Current Release: 0.75-noonan (SemVer base: 0.7.5)
+ * - Current Release: 0.76-noonan (SemVer: 0.7.6)
  * - Step Changes: Increment 0.0.xx for each step (0.7.5 -> 0.7.6 -> 0.7.7...)
  * - Rollover: When reaching x.x.99, increment middle step (e.g., 0.7.99 -> 0.8.0)
  * - Formal Releases: Published strictly on multiples of 5 (0.7.5, 0.7.10, 0.7.15...)
  */
-#define DUFFER_VERSION      "0.75-noonan"
-#define DUFFER_VERSION_NAME "0.75-noonan"
-#define DUFFER_SEMVER       "0.7.5"
+#define DUFFER_VERSION      "0.76-noonan"
+#define DUFFER_VERSION_NAME "0.76-noonan"
+#define DUFFER_SEMVER       "0.7.6"
 
 /* Grid Dimensions */
 #define GRID_W              32

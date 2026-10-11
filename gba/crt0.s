@@ -31,9 +31,13 @@ __slave_number:
     .align 2
     .global start_vector
 start_vector:
-    @ 1. Disable interrupts immediately via REG_IME (0x04000208)
-    mov r0, #0x04000000
-    str r0, [r0, #0x208]
+    @ 1. Disable interrupts and configure ROM waitstates & prefetch buffer
+    ldr r0, =0x04000200
+    mov r1, #0
+    strh r1, [r0, #8]           @ REG_IME = 0 (0x04000208, 16-bit store)
+    strh r1, [r0, #0]           @ REG_IE  = 0 (0x04000200, 16-bit store)
+    ldr r2, =0x4317             @ WAITCNT: 3,1 waitstates, Game Pak prefetch buffer enabled
+    strh r2, [r0, #4]           @ REG_WAITCNT = 0x4317 (0x04000204)
 
     @ 2. Initialize IRQ stack pointer
     mov r0, #0xD2               @ CPSR mode: IRQ (0x12) + I=1, F=1

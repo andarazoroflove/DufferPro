@@ -434,9 +434,9 @@ void golf_place_default_routing(GolfState *gs) {
     }
     
     /* 3. Fairway Routing corridor */
+    int dy_total = (gs->tee_gy - 1) - (gs->pin_gy + 4);
     for (int y = gs->pin_gy + 4; y < gs->tee_gy - 1; ++y) {
-        float t = (float)(y - (gs->pin_gy + 4)) / (float)(gs->tee_gy - 1 - (gs->pin_gy + 4));
-        int center_x = (int)((1.0f - t) * gs->pin_gx + t * gs->tee_gx);
+        int center_x = (dy_total > 0) ? (gs->pin_gx + ((y - (gs->pin_gy + 4)) * (gs->tee_gx - gs->pin_gx)) / dy_total) : gs->pin_gx;
         int half_w = 2 + (int)((core_rand() % 3));
         
         for (int x = center_x - half_w; x <= center_x + half_w; ++x) {

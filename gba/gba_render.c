@@ -765,42 +765,314 @@ void gba_render_draw_frame(GbaRenderContext *grc, const GolfState *gs) {
 }
 
 /* ========================================================================= */
-/* GBA TITLE / SPLASH SCREEN                                                 */
+/* GBA TITLE / SPLASH SCREEN (CADDYSHACK EDITION)                            */
 /* ========================================================================= */
+
+/* Draw Weathered Caddyshack Building with Caddy Kids */
+static void draw_gba_caddyshack_building(uint16_t *fb, int bx, int by) {
+    /* 1. Ground Drop Shadow under building */
+    gba_draw_rect(fb, bx + 2, by + 46, 80, 5, RGB15(2, 6, 2));
+
+    /* 2. Weathered Cedar Wood Walls (70 x 36 px) */
+    for (int y = 14; y <= 45; ++y) {
+        int py = by + y;
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+        
+        bool is_groove = (y % 4 == 0);
+        uint16_t plank_col = is_groove ? RGB15(10, 7, 4) : (((y % 8) < 4) ? RGB15(18, 12, 7) : RGB15(15, 10, 6));
+
+        for (int x = 6; x <= 74; ++x) {
+            int px = bx + x;
+            if (px < 0 || px >= GBA_SCREEN_W) continue;
+            
+            /* Corner support timber beams */
+            if (x <= 10 || x >= 70) {
+                fb[py * GBA_SCREEN_W + px] = RGB15(12, 8, 4);
+            } else {
+                fb[py * GBA_SCREEN_W + px] = plank_col;
+            }
+        }
+    }
+
+    /* 3. Corrugated Galvanized Tin Roof */
+    for (int y = 0; y <= 14; ++y) {
+        int py = by + y;
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+
+        int x_start = bx + 2 + (14 - y);
+        int x_end   = bx + 78 - (14 - y);
+
+        for (int px = x_start; px <= x_end; ++px) {
+            if (px < 0 || px >= GBA_SCREEN_W) continue;
+            
+            /* Vertical corrugated ribs */
+            int rib = px % 3;
+            uint16_t metal_col = (rib == 0) ? RGB15(22, 23, 25) : ((rib == 1) ? RGB15(17, 18, 20) : RGB15(12, 13, 15));
+            fb[py * GBA_SCREEN_W + px] = metal_col;
+        }
+    }
+
+    /* Roof Overhang Eaves Rafter Shadow */
+    gba_draw_rect(fb, bx + 5, by + 14, 70, 2, RGB15(6, 4, 2));
+
+    /* 4. Stacked "CADDY" and "SHACK" Wooden Signs above Doorway */
+    gba_draw_rect(fb, bx + 13, by + 16, 42, 8, RGB15(7, 4, 2));
+    gba_draw_rect(fb, bx + 14, by + 17, 40, 6, RGB15(16, 11, 6));
+    gba_draw_text(fb, bx + 14, by + 16, "CADDY", GBA_GOLD, false);
+
+    gba_draw_rect(fb, bx + 13, by + 24, 42, 8, RGB15(7, 4, 2));
+    gba_draw_rect(fb, bx + 14, by + 25, 40, 6, RGB15(16, 11, 6));
+    gba_draw_text(fb, bx + 14, by + 24, "SHACK", GBA_GOLD, false);
+
+    /* 5. Open Rustic Doorway & Counter */
+    gba_draw_rect(fb, bx + 25, by + 32, 18, 14, RGB15(3, 2, 2)); /* Dark interior */
+    gba_draw_rect(fb, bx + 25, by + 37, 18, 2, RGB15(15, 10, 5)); /* Wooden Counter Shelf */
+    gba_draw_rect(fb, bx + 27, by + 39, 14, 7, RGB15(12, 8, 4));  /* Lower half-door */
+
+    /* 6. Window with Wooden Shutters (shifted right so zero text overlap) */
+    gba_draw_rect(fb, bx + 58, by + 22, 13, 12, RGB15(4, 5, 8));  /* Window glass */
+    gba_draw_rect(fb, bx + 57, by + 21, 15, 1, RGB15(16, 11, 6)); /* Frame */
+    gba_draw_rect(fb, bx + 57, by + 33, 15, 1, RGB15(16, 11, 6));
+    gba_draw_rect(fb, bx + 57, by + 21, 1, 13, RGB15(16, 11, 6));
+    gba_draw_rect(fb, bx + 71, by + 21, 1, 13, RGB15(16, 11, 6));
+    gba_draw_rect(fb, bx + 63, by + 22, 1, 11, RGB15(14, 9, 5));  /* Mullion */
+    gba_draw_rect(fb, bx + 58, by + 27, 13, 1, RGB15(14, 9, 5));
+
+    /* 7. Caddy Kids hanging around in white pants & red/black shirts */
+    /* Kid 1: Leaning against doorframe in red shirt & white slacks */
+    gba_draw_rect(fb, bx + 18, by + 25, 5, 3, RGB15(28, 4, 4));    /* Red cap */
+    gba_draw_rect(fb, bx + 18, by + 28, 5, 4, RGB15(28, 20, 16));  /* Face */
+    gba_draw_rect(fb, bx + 17, by + 32, 7, 7, RGB15(26, 4, 4));    /* Red shirt */
+    gba_draw_rect(fb, bx + 18, by + 39, 5, 7, GBA_WHITE);           /* White trousers */
+    gba_draw_rect(fb, bx + 17, by + 45, 6, 2, RGB15(5, 5, 5));     /* Shoes */
+
+    /* Kid 2: Sitting by wall in black shirt & white slacks with golf bag */
+    gba_draw_rect(fb, bx + 72, by + 26, 5, 3, GBA_WHITE);           /* White cap */
+    gba_draw_rect(fb, bx + 72, by + 29, 5, 4, RGB15(28, 20, 16));  /* Face */
+    gba_draw_rect(fb, bx + 71, by + 33, 7, 7, RGB15(3, 3, 5));     /* Black shirt */
+    gba_draw_rect(fb, bx + 72, by + 40, 6, 6, GBA_WHITE);           /* White slacks */
+    /* Leather Golf Bag with Clubs */
+    gba_draw_rect(fb, bx + 78, by + 32, 5, 14, RGB15(15, 9, 4));   /* Leather bag */
+    gba_draw_rect(fb, bx + 79, by + 27, 3, 5, RGB15(28, 28, 30));  /* Irons */
+    gba_draw_rect(fb, bx + 78, by + 25, 4, 3, RGB15(28, 4, 4));    /* Red headcover */
+
+    /* 8. Wooden "Bushwood" Sign on Posts */
+    gba_draw_rect(fb, bx + 87, by + 34, 2, 14, RGB15(11, 7, 3));   /* Left post */
+    gba_draw_rect(fb, bx + 152, by + 34, 2, 14, RGB15(11, 7, 3));  /* Right post */
+    gba_draw_rect(fb, bx + 84, by + 24, 73, 11, RGB15(7, 4, 2));   /* Sign frame */
+    gba_draw_rect(fb, bx + 85, by + 25, 71, 9, RGB15(17, 12, 7));  /* Timber board */
+    gba_draw_text(fb, bx + 88, by + 26, "BUSHWOOD", GBA_GOLD, true);
+}
+
+/* Draw Big Animated Dancing Caddyshack Gopher */
+static void draw_gba_giant_gopher(uint16_t *fb, int gx, int gy, int anim_f) {
+    /* 4-Frame Dancing Hop Beat */
+    int hop_y = 0;
+    if (anim_f == 1) hop_y = -2;
+    else if (anim_f == 3) hop_y = -5; /* Joyful leap in the air! */
+
+    /* 1. Dirt Burrow Mound & Pit */
+    for (int dy = -4; dy <= 4; ++dy) {
+        int py = gy + 32 + dy;
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+        int mw = 18 - dy * dy;
+        if (mw < 4) mw = 4;
+        for (int dx = -mw; dx <= mw; ++dx) {
+            int px = gx + dx;
+            if (px < 0 || px >= GBA_SCREEN_W) continue;
+            uint16_t d_col = ((dx ^ dy) & 2) ? RGB15(14, 9, 4) : RGB15(11, 7, 3);
+            fb[py * GBA_SCREEN_W + px] = d_col;
+        }
+    }
+    gba_draw_rect(fb, gx - 7, gy + 31, 14, 4, GBA_BLACK); /* Burrow hole entrance */
+
+    /* 2. Plump Furry Body */
+    int body_top = gy + 14 + hop_y;
+    int body_bot = gy + 31 + hop_y;
+    for (int py = body_top; py <= body_bot; ++py) {
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+        int bw = 9 - (body_bot - py) / 4;
+        if (bw < 6) bw = 6;
+        for (int px = gx - bw; px <= gx + bw; ++px) {
+            if (px < 0 || px >= GBA_SCREEN_W) continue;
+            fb[py * GBA_SCREEN_W + px] = RGB15(20, 13, 6);
+        }
+    }
+    /* Cream-colored belly patch */
+    gba_draw_rect(fb, gx - 4, body_top + 4, 8, 10, RGB15(28, 23, 17));
+
+    /* 3. Furry Chubby Head */
+    int head_top = gy + 2 + hop_y;
+    int head_bot = gy + 16 + hop_y;
+    for (int py = head_top; py <= head_bot; ++py) {
+        if (py < 0 || py >= GBA_SCREEN_H) continue;
+        int hw = (py < head_top + 5) ? 7 : 10; /* Chubby cheeks */
+        for (int px = gx - hw; px <= gx + hw; ++px) {
+            if (px < 0 || px >= GBA_SCREEN_W) continue;
+            fb[py * GBA_SCREEN_W + px] = RGB15(22, 14, 7);
+        }
+    }
+
+    /* 4. Pink Inner Ears */
+    /* Left Ear */
+    gba_draw_rect(fb, gx - 10, head_top - 4, 4, 6, RGB15(18, 11, 5));
+    gba_draw_rect(fb, gx - 9,  head_top - 3, 2, 4, RGB15(31, 18, 20));
+    /* Right Ear */
+    gba_draw_rect(fb, gx + 7,  head_top - 4, 4, 6, RGB15(18, 11, 5));
+    gba_draw_rect(fb, gx + 8,  head_top - 3, 2, 4, RGB15(31, 18, 20));
+
+    /* 5. Glossy Black Eyes with Catchlight */
+    /* Left Eye */
+    gba_draw_rect(fb, gx - 6, head_top + 4, 3, 4, GBA_BLACK);
+    gba_draw_rect(fb, gx - 5, head_top + 4, 1, 1, GBA_WHITE); /* Twinkle */
+    /* Right Eye */
+    gba_draw_rect(fb, gx + 4, head_top + 4, 3, 4, GBA_BLACK);
+    gba_draw_rect(fb, gx + 5, head_top + 4, 1, 1, GBA_WHITE);
+
+    /* 6. Tan Snout & Black Button Nose */
+    gba_draw_rect(fb, gx - 5, head_top + 7, 10, 6, RGB15(26, 19, 13)); /* Muzzle */
+    gba_draw_rect(fb, gx - 2, head_top + 7, 4, 2, GBA_BLACK);          /* Nose */
+
+    /* Cheerful Whiskers */
+    gba_draw_rect(fb, gx - 15, head_top + 8, 5, 1, RGB15(12, 8, 4));
+    gba_draw_rect(fb, gx - 15, head_top + 10, 5, 1, RGB15(12, 8, 4));
+    gba_draw_rect(fb, gx + 11, head_top + 8, 5, 1, RGB15(12, 8, 4));
+    gba_draw_rect(fb, gx + 11, head_top + 10, 5, 1, RGB15(12, 8, 4));
+
+    /* 7. Iconic Big White Buck Teeth! */
+    gba_draw_rect(fb, gx - 3, head_top + 12, 3, 4, GBA_WHITE);
+    gba_draw_rect(fb, gx + 1, head_top + 12, 3, 4, GBA_WHITE);
+    gba_draw_rect(fb, gx,     head_top + 12, 1, 4, GBA_BLACK); /* Gap */
+
+    /* 8. Expressive Dancing Paws (Outstretched and Waving) */
+    if (anim_f == 0) {
+        /* Left paw raised high waving out */
+        gba_draw_rect(fb, gx - 19, head_top + 2, 7, 5, RGB15(22, 14, 7));
+        gba_draw_rect(fb, gx - 21, head_top, 4, 4, RGB15(31, 20, 18)); /* Pink paw pad */
+        /* Right paw on hip */
+        gba_draw_rect(fb, gx + 9,  body_top + 6, 6, 5, RGB15(22, 14, 7));
+    } else if (anim_f == 1) {
+        /* Both paws extended outward in dance groove */
+        gba_draw_rect(fb, gx - 18, body_top + 4, 8, 5, RGB15(22, 14, 7));
+        gba_draw_rect(fb, gx - 20, body_top + 3, 4, 4, RGB15(31, 20, 18));
+        gba_draw_rect(fb, gx + 10, body_top + 4, 8, 5, RGB15(22, 14, 7));
+        gba_draw_rect(fb, gx + 16, body_top + 3, 4, 4, RGB15(31, 20, 18));
+    } else if (anim_f == 2) {
+        /* Right paw raised high waving out */
+        gba_draw_rect(fb, gx + 12, head_top + 2, 7, 5, RGB15(22, 14, 7));
+        gba_draw_rect(fb, gx + 17, head_top, 4, 4, RGB15(31, 20, 18)); /* Pink paw pad */
+        /* Left paw on hip */
+        gba_draw_rect(fb, gx - 15, body_top + 6, 6, 5, RGB15(22, 14, 7));
+    } else {
+        /* Joyful jump: both paws thrown high up into the air! */
+        gba_draw_rect(fb, gx - 19, head_top - 5, 8, 6, RGB15(22, 14, 7));
+        gba_draw_rect(fb, gx - 21, head_top - 8, 5, 5, RGB15(31, 20, 18));
+        gba_draw_rect(fb, gx + 11, head_top - 5, 8, 6, RGB15(22, 14, 7));
+        gba_draw_rect(fb, gx + 16, head_top - 8, 5, 5, RGB15(31, 20, 18));
+    }
+}
+
 
 void gba_render_splash(GbaRenderContext *grc, int anim_tick) {
     uint16_t *fb = gba_get_backbuffer();
     grc->tick_count = anim_tick;
     
-    /* Sunset Sky Gradient */
-    for (int y = 0; y < 100; ++y) {
-        uint16_t sky_col = RGB15(16 + y / 8, 8 + y / 12, 14 + y / 16);
+    /* 1. Sunset Sky Gradient (Dusk Purple -> Peach -> Gold Horizon) */
+    for (int y = 0; y < 65; ++y) {
+        int r = 16 + (y * 15) / 65;
+        int g = 6  + (y * 18) / 65;
+        int b = 14 + (y * 4)  / 65;
+        uint16_t sky_col = RGB15(r, g, b);
         for (int x = 0; x < GBA_SCREEN_W; ++x) {
             fb[y * GBA_SCREEN_W + x] = sky_col;
         }
     }
-    /* Rolling Green Hill */
-    for (int y = 100; y < GBA_SCREEN_H; ++y) {
-        uint16_t turf_col = ((y + (anim_tick / 4)) & 2) ? RGB15(5, 22, 6) : RGB15(4, 18, 5);
-        for (int x = 0; x < GBA_SCREEN_W; ++x) {
-            fb[y * GBA_SCREEN_W + x] = turf_col;
+
+    /* 2. Setting Sun Orb on Horizon */
+    for (int dy = -14; dy <= 14; ++dy) {
+        int py = 52 + dy;
+        if (py < 0 || py >= 65) continue;
+        for (int dx = -14; dx <= 14; ++dx) {
+            if (dx * dx + dy * dy <= 14 * 14) {
+                int px = 195 + dx;
+                if (px >= 0 && px < GBA_SCREEN_W) {
+                    fb[py * GBA_SCREEN_W + px] = RGB15(31, 28, 18);
+                }
+            }
         }
     }
-    
-    /* Golden 3D Title "DUFFER PRO GBA" */
-    gba_draw_text(fb, 54, 25, "DUFFER PRO GBA", GBA_BLACK, false);
-    gba_draw_text(fb, 52, 23, "DUFFER PRO GBA", GBA_GOLD, true);
-    
-    gba_draw_text(fb, 42, 39, "CHAMPIONSHIP SIMGOLF", RGB15(28, 28, 30), true);
-    gba_draw_text(fb, 26, 52, "(CADDYSHACK EDITION)", RGB15(28, 20, 8), true);
-    
-    /* Dancing Caddyshack Gopher on Title Screen! */
-    int goph_frame = (anim_tick / 12) % 4;
-    draw_gba_gopher(fb, 120, 115, goph_frame);
-    
-    /* Pulsing "PRESS START OR A" */
-    if ((anim_tick / 20) & 1) {
-        gba_draw_text(fb, 36, 138, ">> PRESS START OR A <<", GBA_WHITE, true);
+
+    /* 3. Distant Slate Mountain Silhouette */
+    for (int x = 0; x < GBA_SCREEN_W; ++x) {
+        int my = 50 + (((x * 7) ^ (x / 13)) % 5);
+        for (int y = my; y < 65; ++y) {
+            fb[y * GBA_SCREEN_W + x] = RGB15(9, 7, 12);
+        }
     }
-    gba_draw_text(fb, 144, 148, "v0.75-noonan", RGB15(12, 16, 12), false);
+
+    /* 4. Rolling Emerald Fairway Turf */
+    for (int y = 65; y < GBA_SCREEN_H; ++y) {
+        int t = y - 65;
+        for (int x = 0; x < GBA_SCREEN_W; ++x) {
+            /* Mowed diagonal fairway stripes */
+            int stripe = ((x + y) / 10) & 1;
+            uint16_t turf = stripe ? RGB15(4 + t / 32, 18 + t / 16, 5 + t / 32) : RGB15(3 + t / 32, 15 + t / 16, 4 + t / 32);
+            fb[y * GBA_SCREEN_W + x] = turf;
+        }
+    }
+
+    /* 5. Putting Green & White Sand Bunker on Right */
+    /* Sand trap */
+    for (int dy = -7; dy <= 7; ++dy) {
+        int py = 76 + dy;
+        if (py >= 0 && py < GBA_SCREEN_H) {
+            for (int dx = -16; dx <= 16; ++dx) {
+                if (dx * dx * 2 + dy * dy * 10 <= 16 * 16 * 2) {
+                    int px = 205 + dx;
+                    if (px >= 0 && px < GBA_SCREEN_W) {
+                        fb[py * GBA_SCREEN_W + px] = (dy < -3) ? RGB15(22, 19, 11) : RGB15(29, 26, 17);
+                    }
+                }
+            }
+        }
+    }
+    /* Putting Green surface */
+    for (int dy = -8; dy <= 8; ++dy) {
+        int py = 66 + dy;
+        if (py >= 0 && py < GBA_SCREEN_H) {
+            for (int dx = -14; dx <= 14; ++dx) {
+                if (dx * dx * 2 + dy * dy * 8 <= 14 * 14 * 2) {
+                    int px = 216 + dx;
+                    if (px >= 0 && px < GBA_SCREEN_W) {
+                        fb[py * GBA_SCREEN_W + px] = RGB15(8, 28, 10);
+                    }
+                }
+            }
+        }
+    }
+    /* Flagstick & Fluttering Red Pennant */
+    gba_draw_rect(fb, 218, 50, 1, 20, GBA_WHITE);
+    gba_draw_rect(fb, 219, 50, 7, 5, GBA_RED);
+
+    /* 6. The Caddyshack Building with Caddy Kids & Bushwood Sign */
+    draw_gba_caddyshack_building(fb, 4, 44);
+
+    /* 7. Big Dancing Caddyshack Gopher */
+    int goph_frame = (anim_tick / 8) % 4;
+    draw_gba_giant_gopher(fb, 184, 82, goph_frame);
+
+    /* 8. Title Banner at Top */
+    gba_draw_text(fb, 44, 7, "DUFFER PRO GBA", GBA_BLACK, false);
+    gba_draw_text(fb, 42, 6, "DUFFER PRO GBA", GBA_GOLD, true);
+    gba_draw_text(fb, 36, 18, "CHAMPIONSHIP SIMGOLF", RGB15(29, 29, 31), true);
+
+    /* 9. Pulsing "PRESS START OR A" */
+    if ((anim_tick / 16) & 1) {
+        gba_draw_text(fb, 34, 135, ">> PRESS START OR A <<", GBA_WHITE, true);
+    }
+
+    /* 10. Version Stamp */
+    gba_draw_text(fb, 132, 147, "v0.7.6-noonan", RGB15(20, 24, 20), true);
 }
+
+
